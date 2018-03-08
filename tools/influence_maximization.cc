@@ -19,13 +19,19 @@
 #include <iostream>
 #include <string>
 
+#include "im/influence_maximization.h"
+#include "im/loaders.h"
+
 #include "boost/program_options.hpp"
+
+#include "omp.h"
 
 namespace im {
 
 //! \brief The command line configuration
 struct Configuration {
   std::string IFileName;  //!< The input file name
+  size_t k;  //!< The size of the seedset
 };
 
 Configuration ParseCmdOptions(int argc, char **argv) {
@@ -33,24 +39,35 @@ Configuration ParseCmdOptions(int argc, char **argv) {
 
   namespace po = boost::program_options;
 
-  po::options_description description("Options");
-  description.add_options()("help,h", "Print this help message")(
+  bool tim;
+
+  po::options_description general("General Options");
+  general.add_options()("help,h", "Print this help message")(
       "input-graph,i", po::value<std::string>(&CFG.IFileName)->required(),
-      "The input file with the edge-list.");
+      "The input file with the edge-list.")(
+      "seed-set-size,k", po::value<size_t>(&CFG.k)->default_value(false),
+       "The size of the seed set");
+  po::options_description algorithm("Algorithm Selection");
+  algorithm.add_options()
+      ("tim", po::bool_switch(&tim)->default_value(false),
+       "The TIM algorithm (Tang Y. et all)");
+
+  po::options_description all;
+  all.add(general).add(algorithm);
 
   po::variables_map VM;
   try {
-    po::store(po::parse_command_line(argc, argv, description), VM);
+    po::store(po::parse_command_line(argc, argv, all), VM);
 
     if (VM.count("help")) {
       std::cout << argv[0] << " [options]" << std::endl;
-      std::cout << description << std::endl;
+      std::cout << all << std::endl;
       exit(0);
     }
 
     po::notify(VM);
   } catch (po::error &e) {
-    std::cerr << "Error: " << e.what() << "\n" << description << std::endl;
+    std::cerr << "Error: " << e.what() << "\n" << all << std::endl;
     exit(-1);
   }
 
@@ -61,5 +78,11 @@ Configuration ParseCmdOptions(int argc, char **argv) {
 
 int main(int argc, char **argv) {
   im::Configuration CFG = im::ParseCmdOptions(argc, argv);
+
+  im::Graph<uint32_t> G;
+
+  im::load(CFG.IFileName, G, im::weighted_edge_list_tsv());
+
+  im::influence_maximization(G, CFG.k, im::tim_tag());
   return 0;
 }

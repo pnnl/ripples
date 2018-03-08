@@ -11,7 +11,9 @@ def options(opt):
 
 def configure(conf):
   conf.load('compiler_cxx')
-  conf.env.CXXFLAGS += ['-std=c++14']
+  conf.env.CXXFLAGS += ['-std=c++14', '-fopenmp']
+  # conf.env.LDFLAGS += ['-L/usr/local/opt/llvm/lib', '-lomp']
+  conf.env.LDFLAGS += ['-L/usr/local/opt/llvm/lib', '-fopenmp=libomp']
 
   conf.load('boost')
   # Using boost for command line arguments

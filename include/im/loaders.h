@@ -26,17 +26,19 @@
 
 #include "boost/lexical_cast.hpp"
 
-#include "im/Graph.h"
+#include "im/graph.h"
 
 namespace im {
 
 struct edge_list_tsv {};
 
 template <typename Format>
-void load(std::string &inputFile, Graph &G, Format &);
+void load(std::string &inputFile, Graph<uint32_t> &G, const Format &&);
 
 template <>
-void load<edge_list_tsv>(std::string &inputFile, Graph &G, edge_list_tsv &) {
+void
+load<edge_list_tsv>(
+    std::string &inputFile, Graph<uint32_t> &G, const edge_list_tsv &&) {
   std::ifstream GFS(inputFile);
   size_t lineNumber = 0;
   for (std::string line; std::getline(GFS, line); ++lineNumber) {
@@ -51,8 +53,42 @@ void load<edge_list_tsv>(std::string &inputFile, Graph &G, edge_list_tsv &) {
     if (source.length() == 0 && destination.length() == 0) continue;
 
     try {
-      graph_[boost::lexical_cast<uint64_t>(source) - 1].emplace_back(
-          boost::lexical_cast<uint64_t>(destination) - 1);
+      G[boost::lexical_cast<uint64_t>(source) - 1].emplace_back(
+          std::make_pair(
+              boost::lexical_cast<uint64_t>(destination) - 1, 1.0f));
+    } catch (boost::bad_lexical_cast &e) {
+      std::cout << inputFile << ":" << lineNumber << " " << e.what()
+                << std::endl;
+      throw e;
+    }
+  }
+}
+
+struct weighted_edge_list_tsv {};
+
+template <>
+void
+load<weighted_edge_list_tsv>(
+    std::string &inputFile, Graph<uint32_t> &G, const weighted_edge_list_tsv &&) {
+  std::ifstream GFS(inputFile);
+  size_t lineNumber = 0;
+  for (std::string line; std::getline(GFS, line); ++lineNumber) {
+    if (line.find('%') != std::string::npos) continue;
+
+    std::stringstream SS(line);
+
+    std::string source;
+    std::string destination;
+    std::string weight;
+    SS >> source >> destination >> weight;
+
+    if (source.length() == 0 && destination.length() == 0) continue;
+
+    try {
+      G[boost::lexical_cast<uint64_t>(source) - 1].emplace_back(
+          std::make_pair(
+              boost::lexical_cast<uint64_t>(destination) - 1,
+              boost::lexical_cast<float>(weight)));
     } catch (boost::bad_lexical_cast &e) {
       std::cout << inputFile << ":" << lineNumber << " " << e.what()
                 << std::endl;

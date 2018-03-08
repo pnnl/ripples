@@ -37,7 +37,7 @@ class Graph {
   using allocator_type = Allocator;
   using size_type = typename allocator_type::size_type;
   using vertex_type = Vertex;
-  using edge_list_type = std::vector<vertex_type>;
+  using edge_list_type = std::vector<std::pair<vertex_type, float>>;
 
   using iterator =
       typename std::unordered_map<vertex_type, edge_list_type>::iterator;
@@ -53,28 +53,53 @@ class Graph {
   iterator end() { return graph_.end(); }
   const_iterator end() const { return graph_.end(); }
 
-  edge_iterator begin_neighbor(const vertex_type v) {
-    return graph_[v].begin();
+  edge_iterator begin_out_edges(const vertex_type v) {
+    return graph_[v].first.begin();
   }
-  const_edge_iterator begin_neighbor(const vertex_type v) const {
-    return graph_[v].begin();
+  const_edge_iterator begin_out_edges(const vertex_type v) const {
+    return graph_[v].first.begin();
   }
 
-  edge_iterator end_neighbor(const vertex_type v) { return graph_[v].end(); }
-  const_edge_iterator end_neighbor(const vertex_type v) const {
-    return graph_[v].end();
+  edge_iterator end_out_edges(const vertex_type v) {
+    return graph_[v].first.end();
+  }
+  const_edge_iterator end_out_edges(const vertex_type v) const {
+    return graph_[v].first.end();
+  }
+
+  edge_iterator begin_in_edges(const vertex_type v) {
+    return graph_[v].second.begin();
+  }
+  const_edge_iterator begin_in_edges(const vertex_type v) const {
+    return graph_[v].second.begin();
+  }
+
+  edge_iterator end_in_edges(const vertex_type v) {
+    return graph_[v].second.end();
+  }
+  const_edge_iterator end_in_edges(const vertex_type v) const {
+    return graph_[v].second.end();
+  }
+
+  edge_list_type & operator[](vertex_type v) {
+    return graph_[v].first;
+  }
+
+  const edge_list_type & operator[](vertex_type v) const {
+    return graph_[v].first;
   }
 
   size_type size() const {
     size_type size = 0;
-    for (auto &NL : graph_) size += NL.second.size();
+    for (auto &NL : graph_) size += NL.second.first.size();
     return size;
   }
 
   size_type scale() const { return graph_.size(); }
 
  private:
-  std::unordered_map<vertex_type, edge_list_type> graph_;
+  std::unordered_map<
+   vertex_type, std::pair<edge_list_type, edge_list_type>> graph_;
 };
 
 }  // namespace im
