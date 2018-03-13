@@ -84,10 +84,21 @@ int main(int argc, char **argv) {
 
   im::Graph<uint32_t> G;
 
+  std::cout << "Loading..." << std::endl;
   im::load(CFG.IFileName, G, im::weighted_edge_list_tsv());
+
+  std::cout << "Size: " << G.size() << std::endl;
+  std::cout << "Scale: " << G.scale() << std::endl;
 
   std::cout << G << std::endl;
 
-  im::influence_maximization(G, CFG.k, CFG.epsilon, im::tim_tag());
+  auto seedSet =
+      im::influence_maximization(G, CFG.k, CFG.epsilon, im::tim_tag());
+
+  std::cout << "Seed Set : {";
+  for(auto v : seedSet)
+    std::cout << " " << v;
+  std::cout << " }" << std::endl;
+  
   return 0;
 }

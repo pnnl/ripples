@@ -49,6 +49,11 @@ class Graph {
   using dest_type  = DestTy;
   using edge_list_type = std::vector<dest_type>;
 
+  Graph()
+      : size_(0)
+      , graph_()
+  {}
+
   class Neighborhood {
    public:
     using iterator = typename edge_list_type::iterator;
@@ -73,7 +78,9 @@ class Graph {
     vertex_iterator(typename GraphTy_::iterator Itr) : GraphTy_::iterator(Itr) {}
 
     vertex_type const * operator->() { return &GraphTy_::iterator::operator->()->first; }
-    vertex_type operator*() { return GraphTy_::iterator::operator*().first; }
+    vertex_type operator*() {
+      return GraphTy_::iterator::operator*().first;
+    }
   };
 
  public:
@@ -97,11 +104,11 @@ class Graph {
   }
 
   neighborhood_type out_neighbors(const vertex_type & v) {
-    return neighborhood_type(v, graph_[v].first);
+    return neighborhood_type(v, graph_.at(v).first);
   }
 
   neighborhood_type in_neighbors(const vertex_type & v) {
-    return neighborhood_type(v, graph_[v].second);
+    return neighborhood_type(v, graph_.at(v).second);
   }
 
   iterator begin() { return vertex_iterator(graph_.begin()); }

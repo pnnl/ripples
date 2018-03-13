@@ -12,6 +12,7 @@ def options(opt):
 def configure(conf):
   conf.load('compiler_cxx')
   conf.env.CXXFLAGS += ['-std=c++14', '-fopenmp']
+  conf.env.CXXFLAGS += ['-Ofast', '-march=native']
   # conf.env.LDFLAGS += ['-L/usr/local/opt/llvm/lib', '-lomp']
   conf.env.LDFLAGS += ['-L/usr/local/opt/llvm/lib', '-fopenmp=libomp']
 
