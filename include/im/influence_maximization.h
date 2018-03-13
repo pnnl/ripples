@@ -36,7 +36,8 @@ namespace im {
 //! \param k The size of the seed set for the influence maximization.
 template <typename GraphTy, typename method_tag>
 std::set<typename GraphTy::vertex_type>
-influence_maximization(const GraphTy &G, size_t k, const method_tag &);
+influence_maximization(
+    const GraphTy &G, size_t k, double epsilon, const method_tag &);
 
 }  // namespae im
 

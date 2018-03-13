@@ -32,6 +32,7 @@ namespace im {
 struct Configuration {
   std::string IFileName;  //!< The input file name
   size_t k;  //!< The size of the seedset
+  double epsilon;  //!< The epsilon of the IM algorithm
 };
 
 Configuration ParseCmdOptions(int argc, char **argv) {
@@ -45,8 +46,10 @@ Configuration ParseCmdOptions(int argc, char **argv) {
   general.add_options()("help,h", "Print this help message")(
       "input-graph,i", po::value<std::string>(&CFG.IFileName)->required(),
       "The input file with the edge-list.")(
-      "seed-set-size,k", po::value<size_t>(&CFG.k)->default_value(false),
-       "The size of the seed set");
+      "seed-set-size,k", po::value<size_t>(&CFG.k),
+      "The size of the seed set")(
+      "epsilon,e", po::value<double>(&CFG.epsilon)->default_value(0.001),
+      "The approximation factor.");
   po::options_description algorithm("Algorithm Selection");
   algorithm.add_options()
       ("tim", po::bool_switch(&tim)->default_value(false),
@@ -83,6 +86,8 @@ int main(int argc, char **argv) {
 
   im::load(CFG.IFileName, G, im::weighted_edge_list_tsv());
 
-  im::influence_maximization(G, CFG.k, im::tim_tag());
+  std::cout << G << std::endl;
+
+  im::influence_maximization(G, CFG.k, CFG.epsilon, im::tim_tag());
   return 0;
 }

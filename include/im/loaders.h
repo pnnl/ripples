@@ -53,9 +53,9 @@ load<edge_list_tsv>(
     if (source.length() == 0 && destination.length() == 0) continue;
 
     try {
-      G[boost::lexical_cast<uint64_t>(source) - 1].emplace_back(
-          std::make_pair(
-              boost::lexical_cast<uint64_t>(destination) - 1, 1.0f));
+      G.add_edge(boost::lexical_cast<uint64_t>(source) - 1,
+                 typename Graph<uint32_t>::dest_type(
+                     boost::lexical_cast<uint64_t>(destination) - 1, 1.0f));
     } catch (boost::bad_lexical_cast &e) {
       std::cout << inputFile << ":" << lineNumber << " " << e.what()
                 << std::endl;
@@ -85,10 +85,10 @@ load<weighted_edge_list_tsv>(
     if (source.length() == 0 && destination.length() == 0) continue;
 
     try {
-      G[boost::lexical_cast<uint64_t>(source) - 1].emplace_back(
-          std::make_pair(
-              boost::lexical_cast<uint64_t>(destination) - 1,
-              boost::lexical_cast<float>(weight)));
+      G.add_edge(boost::lexical_cast<uint64_t>(source) - 1,
+                 typename Graph<uint32_t>::dest_type(
+                     boost::lexical_cast<uint64_t>(destination) - 1,
+                     boost::lexical_cast<float>(weight)));
     } catch (boost::bad_lexical_cast &e) {
       std::cout << inputFile << ":" << lineNumber << " " << e.what()
                 << std::endl;

@@ -19,9 +19,12 @@
 #ifndef IM_TIM_H
 #define IM_TIM_H
 
-#include <set>
-#include <cstddef>
+#include <iostream>
 #include <cmath>
+#include <cstddef>
+#include <set>
+
+#include "boost/math/special_functions/binomial.hpp"
 
 namespace im {
 
@@ -33,15 +36,12 @@ struct tim_tag {};
 //! \param G The graph instance.
 //! \return A random RR set.
 template <typename GraphTy>
-std::set<typename GraphTy::vertex_type>
-BFSOnRandomGraph(const GraphTy &G) {
+std::set<typename GraphTy::vertex_type> BFSOnRandomGraph(const GraphTy &G) {
   // This will be a slightly modified BFS.
   std::set<typename GraphTy::vertex_type> result;
-  for (size_t i = 0; i < G.scale(); ++i)
-    result.insert(i);
+  for (size_t i = 0; i < G.scale(); ++i) result.insert(i);
   return result;
 }
-
 
 //! \brief TIM theta estimation function.
 //!
@@ -49,24 +49,24 @@ BFSOnRandomGraph(const GraphTy &G) {
 //! \param G The graph instance.
 //! \param k The size of the seed set
 template <typename GraphTy>
-size_t thetaEstimation(const GraphTy &G, size_t k) {
+size_t thetaEstimation(const GraphTy &G, size_t k, double epsilon) {
   // Compute KPT* according to Algorithm 2
   size_t KPTStar = 1;
   for (size_t i = 1; i < G.scale(); i <<= 1) {
-    float c_i = 6 * log10(G.scale()) + 6 * log10(log2(G.scale()));
-    float sum = 0;
+    double c_i = 6 * log10(G.scale()) + 6 * log10(log2(G.scale())) * i;
+    double sum = 0;
     for (size_t j = 0; j < c_i; ++j) {
       auto RRset = BFSOnRandomGraph(G);
 
       size_t WR = 0;
       for (auto vertex : RRset) {
-        // WR += G.indegre(vertex);
+        WR += G.in_degree(vertex);
       }
-      float KR = 1 - pow(1 - WR/G.size(), k);
+      double KR = 1 - pow(1 - WR / G.size(), k);
       sum += KR;
     }
 
-    if ((sum / c_i) > (1/i)) {
+    if ((sum / c_i) > (1 / i)) {
       KPTStar = G.scale() * sum / (c_i * 2);
       break;
     }
@@ -79,13 +79,18 @@ size_t thetaEstimation(const GraphTy &G, size_t k) {
   size_t KPTPlus = std::max(KPTStar, KPTPrime);
 
   // Compute lambda from equation (4)
-  size_t lambda = 42;
+  size_t l = 1;
+  double lambda =
+      (8 + 2 * epsilon) * G.scale() *
+      (log10(l * G.scale()) +
+       log10(boost::math::binomial_coefficient<double>(G.scale(), k)) +
+       log10(2.0)) *
+      pow(epsilon, -2);
 
   // Compute theta
-  size_t theta = lambda/KPTPlus;
+  size_t theta = lambda / KPTPlus;
   return theta;
 }
-
 
 //! \brief Generate Random RR sets.
 //!
@@ -94,16 +99,16 @@ size_t thetaEstimation(const GraphTy &G, size_t k) {
 //! \param theta The number of random RR set to be generated
 //! \return A set of theta random RR set.
 template <typename GraphTy>
-std::vector<std::set<typename GraphTy::vertex_type>>
-generateRandomRRSet(const GraphTy &G, size_t theta) {
+std::vector<std::set<typename GraphTy::vertex_type>> generateRandomRRSet(
+    const GraphTy &G, size_t theta) {
   std::vector<std::set<typename GraphTy::vertex_type>> result;
-  for(size_t i = 0; i < theta; ++i) {
+  std::cout << "theta is " << theta << std::endl;
+  for (size_t i = 0; i < theta; ++i) {
     auto influenced_set = BFSOnRandomGraph(G);
-    result.emplace_back(influenced_set);
+    result.emplace_back(std::move(influenced_set));
   }
   return result;
 }
-
 
 //! \brief Find the most influential node
 //!
@@ -113,8 +118,7 @@ generateRandomRRSet(const GraphTy &G, size_t theta) {
 //! \param R A collection of random RR sets.
 //! \return The vertex appearing the most in R.
 template <typename GraphTy, typename RRRSetList>
-typename GraphTy::vertex_type
-GetMostInfluential(GraphTy &G, RRRSetList & R) {
+typename GraphTy::vertex_type GetMostInfluential(GraphTy &G, RRRSetList &R) {
   typename GraphTy::vertex_type best_vertex = 0;
 
   size_t best_count = 0;
@@ -133,7 +137,6 @@ GetMostInfluential(GraphTy &G, RRRSetList & R) {
   return best_vertex;
 }
 
-
 //! \brief Remove all the RR set containing a given vertex.
 //!
 //! \tparam GraphTy The type of the graph.
@@ -142,8 +145,8 @@ GetMostInfluential(GraphTy &G, RRRSetList & R) {
 //! \param R A collection of random RR sets.
 //! \return The updated list of RR sets.
 template <typename GraphTy, typename RRRSetList>
-RRRSetList
-ReduceRandomRRSetList(typename GraphTy::vertex_type v, RRRSetList & R) {
+RRRSetList ReduceRandomRRSetList(typename GraphTy::vertex_type v,
+                                 RRRSetList &R) {
   RRRSetList result;
   for (auto itr = R.begin(), end = R.end(); itr != end; ++itr) {
     if (itr->find(v) != itr->end()) continue;
@@ -152,7 +155,6 @@ ReduceRandomRRSetList(typename GraphTy::vertex_type v, RRRSetList & R) {
   return result;
 }
 
-
 //! \brief The TIM influence maximization algorithm.
 //!
 //! \tparm GraphTy The type of the graph.
@@ -160,15 +162,17 @@ ReduceRandomRRSetList(typename GraphTy::vertex_type v, RRRSetList & R) {
 //! \param G The instance of the graph.
 //! \param k The size of the seed set.
 template <typename GraphTy>
-std::set<typename GraphTy::vertex_type>
-influence_maximization(const GraphTy &G, size_t k, const tim_tag&&) {
+std::set<typename GraphTy::vertex_type> influence_maximization(
+    const GraphTy &G, size_t k, double epsilon, const tim_tag &&) {
   // Estimate the number of Random Reverse Reacheable Sets needed
   // Algorithm 2 in Tang Y. et all
-  size_t theta = thetaEstimation(G, k);
+  size_t theta = thetaEstimation(G, k, epsilon);
+  std::cout << "theta Estimated" << std::endl;
 
   // - Random Reverse Reacheable Set initialize to the empty set
   using RRRSet = std::set<typename GraphTy::vertex_type>;
   std::vector<RRRSet> R = generateRandomRRSet(G, theta);
+  std::cout << "Reverse Reacheable Sets Generated" << std::endl;
 
   // - Initialize the seed set to the empty set
   std::set<typename GraphTy::vertex_type> seedSet;
