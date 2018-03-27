@@ -19,61 +19,18 @@
 #ifndef IM_TIM_H
 #define IM_TIM_H
 
-#include <iostream>
 #include <cmath>
 #include <cstddef>
 #include <set>
 #include <random>
+
+#include "im/bfs.h"
 
 #include "boost/math/special_functions/binomial.hpp"
 
 namespace im {
 
 struct tim_tag {};
-
-//! \brief Execute a randomize BFS to generate a Random RR Set.
-//!
-//! \tparam GraphTy The type of the graph.
-//! \param G The graph instance.
-//! \return A random RR set.
-template <typename GraphTy>
-std::set<typename GraphTy::vertex_type> BFSOnRandomGraph(GraphTy &G) {
-  // This will be a slightly modified BFS.
-  std::random_device rd;
-  std::default_random_engine generator(rd());
-  std::uniform_int_distribution<size_t> distribution(0, G.scale() - 1);
-  typename GraphTy::vertex_type root = distribution(generator);
-
-  std::uniform_real_distribution<double> value(0.0, 1.0);
-
-  std::vector<typename GraphTy::vertex_type> queue(G.scale());
-  auto start = std::begin(queue);
-  auto end = std::begin(queue) + 1;
-  auto next = std::begin(queue) + 1;
-
-  *start = root;
-  std::set<typename GraphTy::vertex_type> result;
-  result.insert(root);
-
-  while (start != end) {
-    for(auto itr = start; itr != end; ++itr) {
-      auto vertex = *itr;
-      for (auto neighbor : G.in_neighbors(vertex)) {
-        if (result.find(neighbor.v) == result.end() &&
-            value(generator) > neighbor.attribute) {
-          *next = neighbor.v;
-          result.insert(neighbor.v);
-          ++next;
-        }
-      }
-    }
-
-    start = end;
-    end = next;
-  }
-
-  return result;
-}
 
 //! \brief TIM theta estimation function.
 //!
@@ -87,16 +44,21 @@ size_t thetaEstimation(GraphTy &G, size_t k, double epsilon) {
   for (size_t i = 1; i < G.scale(); i <<= 1) {
     double c_i = 6 * log10(G.scale()) + 6 * log10(log2(G.scale())) * i;
     double sum = 0;
-    for (size_t j = 0; j < c_i; ++j) {
-      auto RRset = BFSOnRandomGraph(G);
 
-      size_t WR = 0;
-      for (auto vertex : RRset) {
-        WR += G.in_degree(vertex);
+    {
+      size_t end = c_i;
+#pragma omp parallel for schedule(static) reduction(+:sum)
+      for (size_t j = 0; j < end; ++j) {
+        auto RRset = BFSOnRandomGraph(G);
+
+        size_t WR = 0;
+        for (auto vertex : RRset) {
+          WR += G.in_degree(vertex);
+        }
+        // Equation (8) of the paper.
+        double KR = 1 - pow(1 - WR / G.size(), k);
+        sum += KR;
       }
-      // Equation (8) of the paper.
-      double KR = 1 - pow(1 - WR / G.size(), k);
-      sum += KR;
     }
 
     if ((sum / c_i) > (1 / i)) {
@@ -135,9 +97,12 @@ template <typename GraphTy>
 std::vector<std::set<typename GraphTy::vertex_type>> generateRandomRRSet(
     GraphTy &G, size_t theta) {
   std::vector<std::set<typename GraphTy::vertex_type>> result;
-  std::cout << "theta is " << theta << std::endl;
+
+#pragma omp paralell for schedule(static)
   for (size_t i = 0; i < theta; ++i) {
     auto influenced_set = BFSOnRandomGraph(G);
+
+#pragma omp critical
     result.emplace_back(std::move(influenced_set));
   }
   return result;
@@ -152,22 +117,43 @@ std::vector<std::set<typename GraphTy::vertex_type>> generateRandomRRSet(
 //! \return The vertex appearing the most in R.
 template <typename GraphTy, typename RRRSetList>
 typename GraphTy::vertex_type GetMostInfluential(GraphTy &G, RRRSetList &R) {
-  typename GraphTy::vertex_type best_vertex;
+  struct MostInfluential {
+    MostInfluential(const typename GraphTy::vertex_type &v, size_t c)
+        : vertex(v), count(c) {}
 
-  size_t best_count = 0;
-  for (auto v : G) {
-    size_t count = 0;
-    for (auto itr = R.begin(), end = R.end(); itr != end; ++itr) {
-      if (itr->find(v) != itr->end()) ++count;
+    bool operator<(const MostInfluential &rhs) const {
+      return count < rhs.count;
     }
 
-    if (count > best_count) {
-      best_count = count;
-      best_vertex = v;
+    typename GraphTy::vertex_type vertex;
+    size_t count;
+  };
+
+  MostInfluential MI(0, 0);
+
+// #pragma omp declare reduction \
+//   (MIMax:MostInfluential:omp_out=std::max(omp_out, omp_in))     \
+//   initializer(omp_priv=MostInfluential(0, 0))
+
+#pragma omp parallel
+  {
+#pragma omp single
+    {
+      for (auto v : G) {
+#pragma omp task
+        {
+          MostInfluential lMI(v, 0);
+          for (auto itr = R.begin(), end = R.end(); itr != end; ++itr) {
+            if (itr->find(v) != itr->end()) ++lMI.count;
+          }
+
+#pragma omp critical
+          MI = std::max(MI, lMI);
+        }
+      }
     }
   }
-
-  return best_vertex;
+  return MI.vertex;
 }
 
 //! \brief Remove all the RR set containing a given vertex.
@@ -181,8 +167,12 @@ template <typename GraphTy, typename RRRSetList>
 RRRSetList ReduceRandomRRSetList(typename GraphTy::vertex_type v,
                                  RRRSetList &R) {
   RRRSetList result;
-  for (auto itr = R.begin(), end = R.end(); itr != end; ++itr) {
+
+#pragma omp parallel for schedule(static)
+  for (auto itr = R.begin(); itr < R.end(); ++itr) {
     if (itr->find(v) != itr->end()) continue;
+
+#pragma omp critical
     result.emplace_back(std::move(*itr));
   }
   return result;
@@ -200,12 +190,10 @@ std::set<typename GraphTy::vertex_type> influence_maximization(
   // Estimate the number of Random Reverse Reacheable Sets needed
   // Algorithm 2 in Tang Y. et all
   size_t theta = thetaEstimation(G, k, epsilon);
-  std::cout << "theta Estimated >> "<< G.scale() << std::endl;
 
   // - Random Reverse Reacheable Set initialize to the empty set
   using RRRSet = std::set<typename GraphTy::vertex_type>;
   std::vector<RRRSet> R = generateRandomRRSet(G, theta);
-  std::cout << "Reverse Reacheable Sets Generated >> " << G.scale() << std::endl;
 
   // - Initialize the seed set to the empty set
   std::set<typename GraphTy::vertex_type> seedSet;

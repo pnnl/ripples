@@ -19,6 +19,7 @@
 #include <iostream>
 #include <string>
 
+#include "im/configuration.h"
 #include "im/influence_maximization.h"
 #include "im/loaders.h"
 
@@ -28,17 +29,13 @@
 
 namespace im {
 
-//! \brief The command line configuration
-struct Configuration {
-  std::string IFileName;  //!< The input file name
-  size_t k;  //!< The size of the seedset
-  double epsilon;  //!< The epsilon of the IM algorithm
-};
+Configuration CFG;
 
 Configuration ParseCmdOptions(int argc, char **argv) {
-  Configuration CFG;
-
   namespace po = boost::program_options;
+  using seed_type = typename std::default_random_engine::result_type;
+
+  seed_type seed;
 
   bool tim;
 
@@ -46,14 +43,16 @@ Configuration ParseCmdOptions(int argc, char **argv) {
   general.add_options()("help,h", "Print this help message")(
       "input-graph,i", po::value<std::string>(&CFG.IFileName)->required(),
       "The input file with the edge-list.")(
-      "seed-set-size,k", po::value<size_t>(&CFG.k),
-      "The size of the seed set")(
+      "seed-set-size,k", po::value<size_t>(&CFG.k), "The size of the seed set")(
       "epsilon,e", po::value<double>(&CFG.epsilon)->default_value(0.001),
-      "The approximation factor.");
+      "The approximation factor.")(
+       "seed,s",
+       po::value<seed_type>(&seed)->default_value(0),
+       "The seed of the random number generator.");
+
   po::options_description algorithm("Algorithm Selection");
-  algorithm.add_options()
-      ("tim", po::bool_switch(&tim)->default_value(false),
-       "The TIM algorithm (Tang Y. et all)");
+  algorithm.add_options()("tim", po::bool_switch(&tim)->default_value(false),
+                          "The TIM algorithm (Tang Y. et all)");
 
   po::options_description all;
   all.add(general).add(algorithm);
@@ -69,6 +68,10 @@ Configuration ParseCmdOptions(int argc, char **argv) {
     }
 
     po::notify(VM);
+
+    if (seed != 0) {
+      CFG.generator.seed(seed);
+    }
   } catch (po::error &e) {
     std::cerr << "Error: " << e.what() << "\n" << all << std::endl;
     exit(-1);
@@ -96,9 +99,8 @@ int main(int argc, char **argv) {
       im::influence_maximization(G, CFG.k, CFG.epsilon, im::tim_tag());
 
   std::cout << "Seed Set : {";
-  for(auto v : seedSet)
-    std::cout << " " << v;
+  for (auto v : seedSet) std::cout << " " << v;
   std::cout << " }" << std::endl;
-  
+
   return 0;
 }

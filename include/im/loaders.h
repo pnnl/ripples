@@ -88,7 +88,12 @@ load<weighted_edge_list_tsv>(
       G.add_edge(boost::lexical_cast<uint64_t>(source) - 1,
                  typename Graph<uint32_t>::dest_type(
                      boost::lexical_cast<uint64_t>(destination) - 1,
-                     boost::lexical_cast<float>(weight)));
+                     boost::lexical_cast<float>(0.1f)));
+
+      G.add_edge(boost::lexical_cast<uint64_t>(destination) - 1,
+                 typename Graph<uint32_t>::dest_type(
+                     boost::lexical_cast<uint64_t>(source) - 1,
+                     boost::lexical_cast<float>(0.1f)));
     } catch (boost::bad_lexical_cast &e) {
       std::cout << inputFile << ":" << lineNumber << " " << e.what()
                 << std::endl;
