@@ -23,6 +23,9 @@
 #include <cstddef>
 #include <set>
 #include <random>
+#include <iterator>
+
+#include <omp.h>
 
 #include "im/bfs.h"
 
@@ -31,6 +34,7 @@
 namespace im {
 
 struct tim_tag {};
+struct rr_size_measure_tag{};
 
 //! \brief TIM theta estimation function.
 //!
@@ -41,6 +45,7 @@ template <typename GraphTy>
 size_t thetaEstimation(GraphTy &G, size_t k, double epsilon) {
   // Compute KPT* according to Algorithm 2
   size_t KPTStar = 1;
+
   for (size_t i = 1; i < G.scale(); i <<= 1) {
     double c_i = 6 * log10(G.scale()) + 6 * log10(log2(G.scale())) * i;
     double sum = 0;
@@ -49,7 +54,9 @@ size_t thetaEstimation(GraphTy &G, size_t k, double epsilon) {
       size_t end = c_i;
 #pragma omp parallel for schedule(static) reduction(+:sum)
       for (size_t j = 0; j < end; ++j) {
-        auto RRset = BFSOnRandomGraph(G);
+        std::default_random_engine generator;
+        generator.discard(i * j * G.size());
+        auto RRset = BFSOnRandomGraph(G, generator);
 
         size_t WR = 0;
         for (auto vertex : RRset) {
@@ -95,16 +102,51 @@ size_t thetaEstimation(GraphTy &G, size_t k, double epsilon) {
 //! \return A set of theta random RR set.
 template <typename GraphTy>
 std::vector<std::set<typename GraphTy::vertex_type>> generateRandomRRSet(
-    GraphTy &G, size_t theta) {
+    GraphTy &G, size_t theta, const tim_tag &) {
   std::vector<std::set<typename GraphTy::vertex_type>> result;
 
-#pragma omp paralell for schedule(static)
-  for (size_t i = 0; i < theta; ++i) {
-    auto influenced_set = BFSOnRandomGraph(G);
+#pragma omp parallel
+  {
+    size_t size = omp_get_num_threads();
+    size_t rank = omp_get_thread_num();
 
+    std::default_random_engine generator;
+    generator.discard(rank * (theta * G.size() / size));
+
+    std::vector<std::set<typename GraphTy::vertex_type>> intermediate_result;
+    for (size_t i = rank * theta/size; i < (rank + 1) * theta/size; ++i) {
+      auto influenced_set = BFSOnRandomGraph(G, generator);
+      intermediate_result.emplace_back(std::move(influenced_set));
+    }
 #pragma omp critical
-    result.emplace_back(std::move(influenced_set));
+    result.insert(result.end(), intermediate_result.begin(), intermediate_result.end());
   }
+
+  return result;
+}
+
+template <typename GraphTy>
+std::vector<size_t> generateRandomRRSet(
+    GraphTy &G, size_t theta, const rr_size_measure_tag &) {
+  std::vector<size_t> result;
+
+#pragma omp parallel
+  {
+    size_t size = omp_get_num_threads();
+    size_t rank = omp_get_thread_num();
+
+    std::default_random_engine generator;
+    generator.discard(rank * (theta * G.size() / size));
+
+    std::vector<size_t> intermediate_result;
+    for (size_t i = rank * theta/size; i < (rank + 1) * theta/size; ++i) {
+      auto influenced_set = BFSOnRandomGraph(G, generator);
+      intermediate_result.emplace_back(influenced_set.size());
+    }
+#pragma omp critical
+    result.insert(result.end(), intermediate_result.begin(), intermediate_result.end());
+  }
+
   return result;
 }
 
@@ -118,8 +160,12 @@ std::vector<std::set<typename GraphTy::vertex_type>> generateRandomRRSet(
 template <typename GraphTy, typename RRRSetList>
 typename GraphTy::vertex_type GetMostInfluential(GraphTy &G, RRRSetList &R) {
   struct MostInfluential {
-    MostInfluential(const typename GraphTy::vertex_type &v, size_t c)
+    MostInfluential(const typename GraphTy::vertex_type v, size_t c)
         : vertex(v), count(c) {}
+
+    MostInfluential() = default;
+
+    MostInfluential(const MostInfluential &rhs) = default;
 
     bool operator<(const MostInfluential &rhs) const {
       return count < rhs.count;
@@ -131,28 +177,41 @@ typename GraphTy::vertex_type GetMostInfluential(GraphTy &G, RRRSetList &R) {
 
   MostInfluential MI(0, 0);
 
-// #pragma omp declare reduction \
-//   (MIMax:MostInfluential:omp_out=std::max(omp_out, omp_in))     \
-//   initializer(omp_priv=MostInfluential(0, 0))
+#if 0
+
+#pragma omp declare reduction \
+  (MIMax:MostInfluential:omp_out=std::max(omp_out, omp_in))     \
+  initializer(omp_priv=MostInfluential(0, 0))
+
+#pragma omp parallel for reduction(MIMax:MI)
+  for (size_t i = 0; i < G.scale(); ++i) {
+    // There is the assumption that vertices are from 0 to N.
+    // auto vItr = std::advance(std::begin(G), i);
+    MostInfluential lMI(i, 0);
+    for (auto itr = R.begin(), end = R.end(); itr != end; ++itr) {
+      if (itr->find(i) != itr->end()) ++lMI.count;
+    }
+
+    MI = std::max(MI, lMI);
+  }
+
+#else
 
 #pragma omp parallel
+  for (auto v : G)
+#pragma omp single nowait
   {
-#pragma omp single
-    {
-      for (auto v : G) {
-#pragma omp task
-        {
-          MostInfluential lMI(v, 0);
-          for (auto itr = R.begin(), end = R.end(); itr != end; ++itr) {
-            if (itr->find(v) != itr->end()) ++lMI.count;
-          }
-
-#pragma omp critical
-          MI = std::max(MI, lMI);
-        }
-      }
+    // There is the assumption that vertices are from 0 to N.
+    // auto vItr = std::advance(std::begin(G), i);
+    MostInfluential lMI(v, 0);
+    for (auto itr = R.begin(), end = R.end(); itr != end; ++itr) {
+      if (itr->find(v) != itr->end()) ++lMI.count;
     }
+#pragma omp critical
+    MI = std::max(MI, lMI);
   }
+#endif
+
   return MI.vertex;
 }
 
@@ -186,14 +245,16 @@ RRRSetList ReduceRandomRRSetList(typename GraphTy::vertex_type v,
 //! \param k The size of the seed set.
 template <typename GraphTy>
 std::set<typename GraphTy::vertex_type> influence_maximization(
-    GraphTy &G, size_t k, double epsilon, const tim_tag &&) {
+    GraphTy &G, size_t k, double epsilon, const tim_tag & tag) {
   // Estimate the number of Random Reverse Reacheable Sets needed
   // Algorithm 2 in Tang Y. et all
   size_t theta = thetaEstimation(G, k, epsilon);
 
   // - Random Reverse Reacheable Set initialize to the empty set
   using RRRSet = std::set<typename GraphTy::vertex_type>;
-  std::vector<RRRSet> R = generateRandomRRSet(G, theta);
+  std::vector<RRRSet> R = generateRandomRRSet(G, theta, tag);
+
+  assert(R.size() == theta);
 
   // - Initialize the seed set to the empty set
   std::set<typename GraphTy::vertex_type> seedSet;

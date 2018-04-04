@@ -42,5 +42,6 @@ influence_maximization(
 }  // namespae im
 
 #include "im/tim.h"
+#include "im/bart.h"
 
 #endif /* IM_INFLUENCE_MAXIMIZATION_H */

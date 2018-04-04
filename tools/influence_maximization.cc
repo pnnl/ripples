@@ -29,15 +29,16 @@
 
 namespace im {
 
-Configuration CFG;
-
 Configuration ParseCmdOptions(int argc, char **argv) {
   namespace po = boost::program_options;
   using seed_type = typename std::default_random_engine::result_type;
 
+  Configuration CFG;
+
   seed_type seed;
 
   bool tim;
+  bool bart;
 
   po::options_description general("General Options");
   general.add_options()("help,h", "Print this help message")(
@@ -48,11 +49,17 @@ Configuration ParseCmdOptions(int argc, char **argv) {
       "The approximation factor.")(
        "seed,s",
        po::value<seed_type>(&seed)->default_value(0),
-       "The seed of the random number generator.");
+       "The seed of the random number generator.")
+      (",p",
+       po::value<double>(&CFG.p)->default_value(0.02),
+       "Probability of false positive in bloom filters");
 
   po::options_description algorithm("Algorithm Selection");
-  algorithm.add_options()("tim", po::bool_switch(&tim)->default_value(false),
-                          "The TIM algorithm (Tang Y. et all)");
+  algorithm.add_options()
+      ("tim", po::bool_switch(&tim)->default_value(false),
+       "The TIM algorithm (Tang Y. et all)")
+      ("bart", po::bool_switch(&bart)->default_value(false),
+       "The Bart algorithm");
 
   po::options_description all;
   all.add(general).add(algorithm);
@@ -68,6 +75,14 @@ Configuration ParseCmdOptions(int argc, char **argv) {
     }
 
     po::notify(VM);
+
+    std::cout << tim << " " << bart << std::endl;
+
+    if (tim && bart) throw po::error("Please, select only one alogorithm");
+    if (!tim && !bart) throw po::error("Please, select at least one alogorithm");
+
+    if (tim) CFG.algo = Algorithm::TIM;
+    else if (bart) CFG.algo = Algorithm::BART;
 
     if (seed != 0) {
       CFG.generator.seed(seed);
@@ -93,10 +108,18 @@ int main(int argc, char **argv) {
   std::cout << "Size: " << G.size() << std::endl;
   std::cout << "Scale: " << G.scale() << std::endl;
 
-  std::cout << G << std::endl;
+  std::set<typename im::Graph<uint32_t>::vertex_type> seedSet;
 
-  auto seedSet =
-      im::influence_maximization(G, CFG.k, CFG.epsilon, im::tim_tag());
+  switch (CFG.algo) {
+    case im::Algorithm::TIM:
+      seedSet = im::influence_maximization(G, CFG.k, CFG.epsilon, im::tim_tag());
+      break;
+    case im::Algorithm::BART:
+      seedSet = im::influence_maximization(G, CFG.k, CFG.epsilon, CFG.p, im::bart_tag());
+      break;
+    default:
+      throw std::string("Unknown algorithm requested");
+  }
 
   std::cout << "Seed Set : {";
   for (auto v : seedSet) std::cout << " " << v;
