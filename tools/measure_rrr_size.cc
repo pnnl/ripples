@@ -99,14 +99,14 @@ int main(int argc, char **argv) {
   auto endTheta = std::chrono::high_resolution_clock::now();
   std::chrono::duration<double> exTimeTheta =
       std::chrono::duration_cast<std::chrono::duration<double>>(endTheta - startTheta);
-  std::cout << "# Theta estimate in " << exTimeTheta.count() << " seconds" << std::endl;
+  std::cout << "# Theta estimate as " << theta << " in " << exTimeTheta.count() << " seconds" << std::endl;
 
   auto startRRRGeneration = std::chrono::high_resolution_clock::now();
   auto RRRSetsSizes = generateRandomRRSet(G, theta, im::rr_size_measure_tag());
   auto endRRRGeneration = std::chrono::high_resolution_clock::now();
   std::chrono::duration<double> exTimeRRRGeneration =
       std::chrono::duration_cast<std::chrono::duration<double>>(endRRRGeneration - startRRRGeneration);
-  std::cout << "# Theta estimate in " << exTimeRRRGeneration.count() << " seconds" << std::endl;
+  std::cout << "# RRR sets generated in " << exTimeRRRGeneration.count() << " seconds" << std::endl;
 
   rapidjson::Document root;
   rapidjson::Document::AllocatorType& Allocator = root.GetAllocator();
