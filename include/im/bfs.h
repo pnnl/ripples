@@ -19,7 +19,7 @@
 #ifndef IM_BFS_H
 #define IM_BFS_H
 
-#include <set>
+#include <unordered_set>
 #include <random>
 
 #include "im/configuration.h"
@@ -35,7 +35,7 @@ namespace im {
 template <
   typename GraphTy,
   typename PRNGeneratorTy,
-  typename VisitedSetTy = std::set<typename GraphTy::vertex_type>
+  typename VisitedSetTy = std::unordered_set<typename GraphTy::vertex_type>
   >
 VisitedSetTy BFSOnRandomGraph(GraphTy &G, PRNGeneratorTy &generator) {
   // This will be a slightly modified BFS.

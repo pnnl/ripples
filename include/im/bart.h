@@ -133,7 +133,7 @@ RRRSetList ReduceRandomRRSetList(typename GraphTy::vertex_type v,
 //! \param G The instance of the graph.
 //! \param k The size of the seed set.
 template <typename GraphTy>
-std::set<typename GraphTy::vertex_type> influence_maximization(
+std::unordered_set<typename GraphTy::vertex_type> influence_maximization(
     GraphTy &G, size_t k, double epsilon, double p, const bart_tag & tag) {
   // Estimate the number of Random Reverse Reacheable Sets needed
   // Algorithm 2 in Tang Y. et all
@@ -144,7 +144,7 @@ std::set<typename GraphTy::vertex_type> influence_maximization(
   std::vector<RRRSet> R = generateRandomRRSet(G, theta, p, tag);
 
   // - Initialize the seed set to the empty set
-  std::set<typename GraphTy::vertex_type> seedSet;
+  std::unordered_set<typename GraphTy::vertex_type> seedSet;
   while (seedSet.size() < k && !R.empty()) {
     // 1 - Find the most influential vertex v
     typename GraphTy::vertex_type v = GetMostInfluential(G, R, tag);

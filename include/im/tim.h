@@ -22,7 +22,7 @@
 #include <algorithm>
 #include <cmath>
 #include <cstddef>
-#include <set>
+#include <unordered_set>
 #include <random>
 #include <iterator>
 
@@ -54,7 +54,7 @@ size_t thetaEstimation(GraphTy &G, size_t k, double epsilon) {
   size_t start = 0;
   double sum = 0;
 
-  std::vector<std::set<typename GraphTy::vertex_type>> result;
+  std::vector<std::unordered_set<typename GraphTy::vertex_type>> result;
 
   for (size_t i = 1; i < G.scale(); i <<= 1) {
     double c_i = 6 * log10(G.scale()) + 6 * log10(log2(G.scale())) * i;
@@ -69,7 +69,7 @@ size_t thetaEstimation(GraphTy &G, size_t k, double epsilon) {
       std::default_random_engine generator;
       generator.discard(start + rank * (chunk * G.size() / size));
 
-      std::vector<std::set<typename GraphTy::vertex_type>> intermediate_result;
+      std::vector<std::unordered_set<typename GraphTy::vertex_type>> intermediate_result;
       for (size_t j = rank * chunk/size; j < (rank + 1) * chunk/size; ++j) {
         auto RRset = BFSOnRandomGraph(G, generator);
 
@@ -85,7 +85,7 @@ size_t thetaEstimation(GraphTy &G, size_t k, double epsilon) {
       }
 
 #pragma omp critical
-      result.insert(result.end(), intermediate_result.begin(), intermediate_result.end());
+      std::move(intermediate_result.begin(), intermediate_result.end(), std::back_inserter(result));
     }
 
     start = std::ceil(c_i);
@@ -98,17 +98,22 @@ size_t thetaEstimation(GraphTy &G, size_t k, double epsilon) {
 
   size_t l = 1;
 
+  std::cout << "#### starting theta refinement" << std::endl;
+
   // Try to refine the bound computing KPT' with Algorithm 3
-  std::set<typename GraphTy::vertex_type> seedSet;
+  std::unordered_set<typename GraphTy::vertex_type> seedSet;
   while (seedSet.size() < k && !result.empty()) {
+    std::cout << "#### i = " << seedSet.size() << std::endl;
     // 1 - Find the most influential vertex v
     typename GraphTy::vertex_type v = GetMostInfluential(G, result);
+    std::cout << "#### Most influential found " << std::endl;
 
     // 2 - Add v to seedSet
     seedSet.insert(v);
 
     // 3 - Remove all the RRRSet that includes v
     result = std::move(ReduceRandomRRSetList<GraphTy>(v, result));
+    std::cout << "#### Updated RRR sets " << std::endl;
   }
   double epsilonPrime = 5 * cbrt(l * pow(epsilon, 2) / (k + l));
   double lambdaPrime = (2 + epsilonPrime) * l * G.scale() * log10(G.scale()) * pow(epsilonPrime, -2);
@@ -147,9 +152,9 @@ size_t thetaEstimation(GraphTy &G, size_t k, double epsilon) {
 //! \param theta The number of random RR set to be generated
 //! \return A set of theta random RR set.
 template <typename GraphTy>
-std::vector<std::set<typename GraphTy::vertex_type>> generateRandomRRSet(
+std::vector<std::unordered_set<typename GraphTy::vertex_type>> generateRandomRRSet(
     GraphTy &G, size_t theta, const tim_tag &) {
-  std::vector<std::set<typename GraphTy::vertex_type>> result;
+  std::vector<std::unordered_set<typename GraphTy::vertex_type>> result;
 
 #pragma omp parallel
   {
@@ -159,13 +164,13 @@ std::vector<std::set<typename GraphTy::vertex_type>> generateRandomRRSet(
     std::default_random_engine generator;
     generator.discard(rank * (theta * G.size() / size));
 
-    std::vector<std::set<typename GraphTy::vertex_type>> intermediate_result;
+    std::vector<std::unordered_set<typename GraphTy::vertex_type>> intermediate_result;
     for (size_t i = rank * theta/size; i < (rank + 1) * theta/size; ++i) {
       auto influenced_set = BFSOnRandomGraph(G, generator);
       intermediate_result.emplace_back(std::move(influenced_set));
     }
 #pragma omp critical
-    result.insert(result.end(), intermediate_result.begin(), intermediate_result.end());
+    std::move(intermediate_result.begin(), intermediate_result.end(), std::back_inserter(result));
   }
 
   return result;
@@ -229,7 +234,7 @@ typename GraphTy::vertex_type GetMostInfluential(GraphTy &G, RRRSetList &R) {
   (MIMax:MostInfluential:omp_out=std::max(omp_out, omp_in))     \
   initializer(omp_priv=MostInfluential(0, 0))
 
-#pragma omp parallel for reduction(MIMax:MI)
+#pragma omp parallel for schedule(static) reduction(MIMax:MI)
   for (size_t i = 0; i < G.scale(); ++i) {
     // There is the assumption that vertices are from 0 to N.
     // auto vItr = std::advance(std::begin(G), i);
@@ -272,13 +277,16 @@ template <typename GraphTy, typename RRRSetList>
 RRRSetList ReduceRandomRRSetList(typename GraphTy::vertex_type v,
                                  RRRSetList &R) {
   RRRSetList result;
-
+#pragma omp parallel
+  {
+    RRRSetList intermediate_result;
 #pragma omp parallel for schedule(static)
-  for (auto itr = R.begin(); itr < R.end(); ++itr) {
-    if (itr->find(v) != itr->end()) continue;
-
+    for (auto itr = R.begin(); itr < R.end(); ++itr) {
+      if (itr->find(v) != itr->end()) continue;
+      intermediate_result.emplace_back(*itr);
+    }
 #pragma omp critical
-    result.emplace_back(std::move(*itr));
+    std::move(intermediate_result.begin(), intermediate_result.end(), std::back_inserter(result));
   }
   return result;
 }
@@ -290,20 +298,20 @@ RRRSetList ReduceRandomRRSetList(typename GraphTy::vertex_type v,
 //! \param G The instance of the graph.
 //! \param k The size of the seed set.
 template <typename GraphTy>
-std::set<typename GraphTy::vertex_type> influence_maximization(
+std::unordered_set<typename GraphTy::vertex_type> influence_maximization(
     GraphTy &G, size_t k, double epsilon, const tim_tag & tag) {
   // Estimate the number of Random Reverse Reacheable Sets needed
   // Algorithm 2 in Tang Y. et all
   size_t theta = thetaEstimation(G, k, epsilon);
 
   // - Random Reverse Reacheable Set initialize to the empty set
-  using RRRSet = std::set<typename GraphTy::vertex_type>;
+  using RRRSet = std::unordered_set<typename GraphTy::vertex_type>;
   std::vector<RRRSet> R = generateRandomRRSet(G, theta, tag);
 
   assert(R.size() == theta);
 
   // - Initialize the seed set to the empty set
-  std::set<typename GraphTy::vertex_type> seedSet;
+  std::unordered_set<typename GraphTy::vertex_type> seedSet;
   while (seedSet.size() < k && !R.empty()) {
     // 1 - Find the most influential vertex v
     typename GraphTy::vertex_type v = GetMostInfluential(G, R);

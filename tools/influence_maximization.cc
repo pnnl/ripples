@@ -108,7 +108,7 @@ int main(int argc, char **argv) {
   std::cout << "Size: " << G.size() << std::endl;
   std::cout << "Scale: " << G.scale() << std::endl;
 
-  std::set<typename im::Graph<uint32_t>::vertex_type> seedSet;
+  std::unordered_set<typename im::Graph<uint32_t>::vertex_type> seedSet;
 
   switch (CFG.algo) {
     case im::Algorithm::TIM:
