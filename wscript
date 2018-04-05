@@ -7,7 +7,6 @@ APPNAME='influence-maximization'
 
 def options(opt):
   opt.load('compiler_cxx')
-  opt.load('bison')
 
 def configure(conf):
   conf.load('compiler_cxx')
