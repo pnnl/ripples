@@ -19,6 +19,7 @@
 #ifndef IM_TIM_H
 #define IM_TIM_H
 
+#include <algorithm>
 #include <cmath>
 #include <cstddef>
 #include <set>
@@ -36,6 +37,10 @@ namespace im {
 struct tim_tag {};
 struct rr_size_measure_tag{};
 
+template <typename GraphTy, typename RRRSetList>
+RRRSetList ReduceRandomRRSetList(typename GraphTy::vertex_type v,
+                                 RRRSetList &R);
+
 //! \brief TIM theta estimation function.
 //!
 //! \tparam GraphTy The type of the graph.
@@ -46,16 +51,26 @@ size_t thetaEstimation(GraphTy &G, size_t k, double epsilon) {
   // Compute KPT* according to Algorithm 2
   size_t KPTStar = 1;
 
+  size_t start = 0;
+  double sum = 0;
+
+  std::vector<std::set<typename GraphTy::vertex_type>> result;
+
   for (size_t i = 1; i < G.scale(); i <<= 1) {
     double c_i = 6 * log10(G.scale()) + 6 * log10(log2(G.scale())) * i;
-    double sum = 0;
-
+#pragma omp parallel  reduction(+:sum)
     {
-      size_t end = c_i;
-#pragma omp parallel for schedule(static) reduction(+:sum)
-      for (size_t j = 0; j < end; ++j) {
-        std::default_random_engine generator;
-        generator.discard(i * j * G.size());
+      size_t size = omp_get_num_threads();
+      size_t rank = omp_get_thread_num();
+
+      size_t end = std::ceil(c_i);
+      size_t chunk = end - start;
+
+      std::default_random_engine generator;
+      generator.discard(start + rank * (chunk * G.size() / size));
+
+      std::vector<std::set<typename GraphTy::vertex_type>> intermediate_result;
+      for (size_t j = rank * chunk/size; j < (rank + 1) * chunk/size; ++j) {
         auto RRset = BFSOnRandomGraph(G, generator);
 
         size_t WR = 0;
@@ -65,8 +80,15 @@ size_t thetaEstimation(GraphTy &G, size_t k, double epsilon) {
         // Equation (8) of the paper.
         double KR = 1 - pow(1 - WR / G.size(), k);
         sum += KR;
+
+        intermediate_result.emplace_back(std::move(RRset));
       }
+
+#pragma omp critical
+      result.insert(result.end(), intermediate_result.begin(), intermediate_result.end());
     }
+
+    start = std::ceil(c_i);
 
     if ((sum / c_i) > (1 / i)) {
       KPTStar = G.scale() * sum / (c_i * 2);
@@ -74,14 +96,38 @@ size_t thetaEstimation(GraphTy &G, size_t k, double epsilon) {
     }
   }
 
+  size_t l = 1;
+
   // Try to refine the bound computing KPT' with Algorithm 3
-  size_t KPTPrime = 1;
+  std::set<typename GraphTy::vertex_type> seedSet;
+  while (seedSet.size() < k && !result.empty()) {
+    // 1 - Find the most influential vertex v
+    typename GraphTy::vertex_type v = GetMostInfluential(G, result);
+
+    // 2 - Add v to seedSet
+    seedSet.insert(v);
+
+    // 3 - Remove all the RRRSet that includes v
+    result = std::move(ReduceRandomRRSetList<GraphTy>(v, result));
+  }
+  double epsilonPrime = 5 * cbrt(l * pow(epsilon, 2) / (k + l));
+  double lambdaPrime = (2 + epsilonPrime) * l * G.scale() * log10(G.scale()) * pow(epsilonPrime, -2);
+  size_t thetaPrime = lambdaPrime / KPTStar;
+
+  auto RRRsecond = generateRandomRRSet(G, thetaPrime, tim_tag());
+  double f = 0;
+  for (auto & set : RRRsecond) {
+    auto itr = std::find_first_of(set.begin(), set.end(), seedSet.begin(), seedSet.end());
+    if (itr != set.end()) ++f;
+  }
+  f /= RRRsecond.size();
+  
+  size_t KPTPrime = std::ceil(f * G.scale()/(1 + epsilonPrime));
 
   // KPT+ = max{KPT*, KPT'}
   size_t KPTPlus = std::max(KPTStar, KPTPrime);
 
   // Compute lambda from equation (4)
-  size_t l = 1;
   double lambda =
       (8 + 2 * epsilon) * G.scale() *
       (log10(l * G.scale()) +
