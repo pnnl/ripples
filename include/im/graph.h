@@ -95,20 +95,20 @@ class Graph {
     ++size_;
   }
 
-  size_type out_degree(const vertex_type &v) const {
-    return graph_.at(v).first.size();
+  size_type out_degree(const vertex_type &v) {
+    return graph_[v].first.size();
   }
 
-  size_type in_degree(const vertex_type &v) const {
-    return graph_.at(v).second.size();
+  size_type in_degree(const vertex_type &v) {
+    return graph_[v].second.size();
   }
 
   neighborhood_type out_neighbors(const vertex_type & v) {
-    return neighborhood_type(v, graph_.at(v).first);
+    return neighborhood_type(v, graph_[v].first);
   }
 
   neighborhood_type in_neighbors(const vertex_type & v) {
-    return neighborhood_type(v, graph_.at(v).second);
+    return neighborhood_type(v, graph_[v].second);
   }
 
   iterator begin() { return vertex_iterator(graph_.begin()); }
