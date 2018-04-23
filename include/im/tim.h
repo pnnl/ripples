@@ -58,7 +58,7 @@ size_t thetaEstimation(GraphTy &G, size_t k, double epsilon) {
 
   for (size_t i = 1; i < G.scale(); i <<= 1) {
     double c_i = 6 * log10(G.scale()) + 6 * log10(log2(G.scale())) * i;
-#pragma omp parallel  reduction(+:sum)
+#pragma omp parallel reduction(+:sum)
     {
       size_t size = omp_get_num_threads();
       size_t rank = omp_get_thread_num();
@@ -103,7 +103,7 @@ size_t thetaEstimation(GraphTy &G, size_t k, double epsilon) {
   // Try to refine the bound computing KPT' with Algorithm 3
   std::unordered_set<typename GraphTy::vertex_type> seedSet;
   while (seedSet.size() < k && !result.empty()) {
-    std::cout << "#### i = " << seedSet.size() << std::endl;
+    std::cout << "#### i = " << seedSet.size() << ", RR = " << result.size() << std::endl;
     // 1 - Find the most influential vertex v
     typename GraphTy::vertex_type v = GetMostInfluential(G, result);
     std::cout << "#### Most influential found " << std::endl;
@@ -113,13 +113,14 @@ size_t thetaEstimation(GraphTy &G, size_t k, double epsilon) {
 
     // 3 - Remove all the RRRSet that includes v
     result = std::move(ReduceRandomRRSetList<GraphTy>(v, result));
-    std::cout << "#### Updated RRR sets " << std::endl;
+    std::cout << "#### Updated RRR sets " << result.size() << std::endl;
   }
   double epsilonPrime = 5 * cbrt(l * pow(epsilon, 2) / (k + l));
   double lambdaPrime = (2 + epsilonPrime) * l * G.scale() * log10(G.scale()) * pow(epsilonPrime, -2);
   size_t thetaPrime = lambdaPrime / KPTStar;
 
   auto RRRsecond = generateRandomRRSet(G, thetaPrime, tim_tag());
+
   double f = 0;
   for (auto & set : RRRsecond) {
     auto itr = std::find_first_of(set.begin(), set.end(), seedSet.begin(), seedSet.end());
@@ -210,60 +211,36 @@ std::vector<size_t> generateRandomRRSet(
 //! \return The vertex appearing the most in R.
 template <typename GraphTy, typename RRRSetList>
 typename GraphTy::vertex_type GetMostInfluential(GraphTy &G, RRRSetList &R) {
-  struct MostInfluential {
-    MostInfluential(const typename GraphTy::vertex_type v, size_t c)
-        : vertex(v), count(c) {}
+  std::vector<size_t> counters(G.scale(), 0ul);
 
-    MostInfluential() = default;
-
-    MostInfluential(const MostInfluential &rhs) = default;
-
-    bool operator<(const MostInfluential &rhs) const {
-      return count < rhs.count;
+#pragma omp parallel for schedule(static)
+  for (size_t i = 0; i < G.scale(); ++i) {
+    for (auto & r : R) {
+      if (r.find(i) != r.end())
+        ++counters[i];
     }
+  }
 
+  struct alignas(64) maxVertex {
     typename GraphTy::vertex_type vertex;
-    size_t count;
+    size_t value{0};
   };
 
-  MostInfluential MI(0, 0);
-
-#if 0
-
-#pragma omp declare reduction \
-  (MIMax:MostInfluential:omp_out=std::max(omp_out, omp_in))     \
-  initializer(omp_priv=MostInfluential(0, 0))
-
-#pragma omp parallel for schedule(static) reduction(MIMax:MI)
-  for (size_t i = 0; i < G.scale(); ++i) {
-    // There is the assumption that vertices are from 0 to N.
-    // auto vItr = std::advance(std::begin(G), i);
-    MostInfluential lMI(i, 0);
-    for (auto itr = R.begin(), end = R.end(); itr != end; ++itr) {
-      if (itr->find(i) != itr->end()) ++lMI.count;
+  std::cout << "%%%% n = " << omp_get_max_threads() << std::endl;
+  alignas(64) maxVertex result[omp_get_max_threads()];
+#pragma omp parallel for schedule(static)
+  for (size_t i = 0; i < counters.size(); ++i) {
+    if (result[omp_get_thread_num()].value < counters[i]) {
+      result[omp_get_thread_num()].vertex = i;
+      result[omp_get_thread_num()].value = counters[i];
     }
-
-    MI = std::max(MI, lMI);
   }
 
-#else
-
-#pragma omp parallel
-  for (auto v : G)
-#pragma omp single nowait
-  {
-    // There is the assumption that vertices are from 0 to N.
-    // auto vItr = std::advance(std::begin(G), i);
-    MostInfluential lMI(v, 0);
-    for (auto itr = R.begin(), end = R.end(); itr != end; ++itr) {
-      if (itr->find(v) != itr->end()) ++lMI.count;
-    }
-#pragma omp critical
-    MI = std::max(MI, lMI);
-  }
-#endif
-
-  return MI.vertex;
+  for (size_t i = 1; i < omp_get_max_threads(); ++i)
+    if (result[0].value < result[i].value)
+      result[0] = result[i];
+  std::cout << "%%%% v = " << result[0].vertex << ", count = " << result[0].value << std::endl;
+  return result[0].vertex;
 }
 
 //! \brief Remove all the RR set containing a given vertex.
@@ -277,17 +254,21 @@ template <typename GraphTy, typename RRRSetList>
 RRRSetList ReduceRandomRRSetList(typename GraphTy::vertex_type v,
                                  RRRSetList &R) {
   RRRSetList result;
+
 #pragma omp parallel
   {
     RRRSetList intermediate_result;
-#pragma omp parallel for schedule(static)
+
+#pragma omp for schedule(static)
     for (auto itr = R.begin(); itr < R.end(); ++itr) {
-      if (itr->find(v) != itr->end()) continue;
-      intermediate_result.emplace_back(*itr);
+      if (itr->find(v) == itr->end()) {
+        intermediate_result.emplace_back(std::move(*itr));
+      }
     }
 #pragma omp critical
     std::move(intermediate_result.begin(), intermediate_result.end(), std::back_inserter(result));
   }
+
   return result;
 }
 
