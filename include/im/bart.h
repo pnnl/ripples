@@ -28,6 +28,61 @@ namespace im {
 
 struct bart_tag {};
 
+//! \brief Execute a randomize BFS to generate a Random RR Set.
+//!
+//! \tparam GraphTy The type of the graph.
+//! \param G The graph instance.
+//! \return A random RR set.
+template <
+  typename GraphTy,
+  typename PRNGeneratorTy,
+  typename VisitedSetTy = std::unordered_set<typename GraphTy::vertex_type>
+  >
+std::vector<uint64_t> BlockBFSOnRandomGraph(GraphTy &G, PRNGeneratorTy &generator) {
+  // This will be a slightly modified BFS.
+  std::uniform_int_distribution<size_t> distribution(0, G.scale() - 1);
+  std::uniform_real_distribution<double> value(0.0, 1.0);
+
+  std::vector<uint64_t> result(G.scale(), 0);
+
+  for (size_t j = 0; j < 64; ++j) {
+    typename GraphTy::vertex_type root = distribution(generator);
+    std::vector<typename GraphTy::vertex_type> queue(G.scale());
+
+    auto start = std::begin(queue);
+    auto end = std::begin(queue) + 1;
+    auto next = std::begin(queue) + 1;
+
+    for (auto & v : result)
+      v <<= 1;
+
+    *start = root;
+    VisitedSetTy visited;
+    visited.insert(root);
+
+    while (start != end) {
+      for(auto itr = start; itr != end; ++itr) {
+        auto vertex = *itr;
+        for (auto neighbor : G.in_neighbors(vertex)) {
+          if (visited.find(neighbor.v) == visited.end() &&
+              value(generator) <= neighbor.attribute) {
+            *next = neighbor.v;
+            visited.insert(neighbor.v);
+            result[neighbor.v] |= 1;
+            ++next;
+          }
+        }
+      }
+
+      start = end;
+      end = next;
+    }
+  }
+
+  return result;
+}
+
+
 //! \brief Generate Random RR sets.
 //!
 //! \tparam GraphTy The type of the graph.
@@ -35,26 +90,27 @@ struct bart_tag {};
 //! \param theta The number of random RR set to be generated
 //! \return A set of theta random RR set.
 template <typename GraphTy>
-std::vector<im::bloomfilter<uint64_t>>
+std::vector<std::vector<uint64_t>>
 generateRandomRRSet(
     GraphTy &G, size_t theta, double p, const bart_tag &) {
-  std::vector<im::bloomfilter<uint64_t>> result;
+  std::vector<std::vector<uint64_t>> result(G.scale(), std::vector<uint64_t>(theta/64, 0));
 
 #pragma omp parallel
   {
     size_t size = omp_get_num_threads();
     size_t rank = omp_get_thread_num();
 
+    size_t blocks = theta / 64;
+
     std::default_random_engine generator;
     generator.discard(rank * (theta * G.size() / size));
 
-    std::vector<im::bloomfilter<uint64_t>> intermediate_result;
-    for (size_t i = rank * theta/size; i < (rank + 1) * theta/size; ++i) {
-      auto influenced_set = BFSOnRandomGraph(G, generator, p);
-      intermediate_result.emplace_back(std::move(influenced_set));
+    for (size_t i = rank * blocks/size; i < (rank + 1) * blocks/size; ++i) {
+      auto block_result = BlockBFSOnRandomGraph(G, generator);
+
+      for (size_t j = 0; j < G.scale(); ++j)
+        result[j][i] = block_result[j];
     }
-#pragma omp critical
-    result.insert(result.end(), intermediate_result.begin(), intermediate_result.end());
   }
   return result;
 }
@@ -67,7 +123,7 @@ generateRandomRRSet(
 //! \param R A collection of random RR sets.
 //! \return The vertex appearing the most in R.
 template <typename GraphTy, typename RRRSetList>
-typename GraphTy::vertex_type GetMostInfluential(GraphTy &G, RRRSetList &R, const bart_tag &) {
+typename GraphTy::vertex_type GetMostInfluential(GraphTy &G, RRRSetList &R, std::vector<uint64_t> &mask, const bart_tag &) {
   struct MostInfluential {
     MostInfluential(const typename GraphTy::vertex_type &v, size_t c)
         : vertex(v), count(c) {}
@@ -82,48 +138,41 @@ typename GraphTy::vertex_type GetMostInfluential(GraphTy &G, RRRSetList &R, cons
 
   MostInfluential MI(0, 0);
 
-// #pragma omp declare reduction \
-//   (MIMax:MostInfluential:omp_out=std::max(omp_out, omp_in))     \
-//   initializer(omp_priv=MostInfluential(0, 0))
-
 #pragma omp parallel
   {
-    for (auto v : G) {
-#pragma omp single nowait
-      {
-        MostInfluential lMI(v, 0);
-        for (auto itr = R.begin(), end = R.end(); itr != end; ++itr) {
-          if (itr->find(v)) ++lMI.count;
-        }
+    MostInfluential lMI(0,0);
+
+#pragma omp for schedule(static)
+    for (size_t i = 0; i < R.size(); ++i) {
+      size_t count = 0;
+      for (size_t j = 0; j < R[i].size(); ++j) {
+        size_t v = mask[j] ^ R[i][j];
+        count += __builtin_popcount(v);
+      }
+
+      if (count == 0) R[i].resize(0);
+
+      lMI = std::max(lMI, MostInfluential(i, count));
+    }
 
 #pragma omp critical
-        MI = std::max(MI, lMI);
-      }
-    }
+    MI = std::max(MI, lMI);
   }
+
   return MI.vertex;
 }
 
-//! \brief Remove all the RR set containing a given vertex.
-//!
-//! \tparam GraphTy The type of the graph.
-//! \tparam RRRSetlist The type used to store the Random RR set.
-//! \param v The vertex.
-//! \param R A collection of random RR sets.
-//! \return The updated list of RR sets.
 template <typename GraphTy, typename RRRSetList>
-RRRSetList ReduceRandomRRSetList(typename GraphTy::vertex_type v,
-                                 RRRSetList &R, const bart_tag &) {
-  RRRSetList result;
-
-#pragma omp parallel for schedule(static)
-  for (auto itr = R.begin(); itr < R.end(); ++itr) {
-    if (itr->find(v)) continue;
-
-#pragma omp critical
-    result.emplace_back(std::move(*itr));
+bool UpdateMask(typename GraphTy::vertex_type v,
+                RRRSetList &R, std::vector<uint64_t> &mask, const bart_tag &) {
+  size_t used = 0;
+#pragma omp parallel for schedule(static) reduction(+:used)
+  for (size_t i = 0; i < mask.size(); ++i) {
+    mask[i] |= R[v][i];
+    used += __builtin_popcount(mask[i]);
   }
-  return result;
+
+  return used == (mask.size() * 64);
 }
 
 //! \brief The TIM influence maximization algorithm.
@@ -139,22 +188,40 @@ std::unordered_set<typename GraphTy::vertex_type> influence_maximization(
   // Algorithm 2 in Tang Y. et all
   size_t theta = thetaEstimation(G, k, epsilon);
 
+  auto roundTheta =
+      [](size_t theta) -> uint64_t { 
+        constexpr size_t mask = 63;
+        theta += ((theta & mask) ^ mask) + 1;
+        return theta;
+      };
+  
+  // make theta a multiple of 64
+  theta = roundTheta(theta);
+
+  std::cout << "Theta : " << theta << std::endl;
+
   // - Random Reverse Reacheable Set initialize to the empty set
-  using RRRSet = im::bloomfilter<uint64_t>;
-  std::vector<RRRSet> R = generateRandomRRSet(G, theta, p, tag);
+  using RRRSet = std::vector<uint64_t>;
+  std::vector<uint64_t> mask(theta, 0);
+  std::vector<RRRSet> R = std::move(generateRandomRRSet(G, theta, p, tag));
+
+  std::cout << "Generated RRR" << std::endl;
 
   // - Initialize the seed set to the empty set
   std::unordered_set<typename GraphTy::vertex_type> seedSet;
-  while (seedSet.size() < k && !R.empty()) {
+
+  bool emptyRRR = false;
+  while (seedSet.size() < k && !emptyRRR) {
     // 1 - Find the most influential vertex v
-    typename GraphTy::vertex_type v = GetMostInfluential(G, R, tag);
+    typename GraphTy::vertex_type v = GetMostInfluential(G, R, mask, tag);
 
     // 2 - Add v to seedSet
     seedSet.insert(v);
 
     // 3 - Remove all the RRRSet that includes v
-    R = std::move(ReduceRandomRRSetList<GraphTy>(v, R, tag));
+    emptyRRR = UpdateMask<GraphTy, std::vector<RRRSet>>(v, R, mask, tag);
   }
+
   return seedSet;
 }
 

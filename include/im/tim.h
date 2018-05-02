@@ -98,22 +98,17 @@ size_t thetaEstimation(GraphTy &G, size_t k, double epsilon) {
 
   size_t l = 1;
 
-  std::cout << "#### starting theta refinement" << std::endl;
-
   // Try to refine the bound computing KPT' with Algorithm 3
   std::unordered_set<typename GraphTy::vertex_type> seedSet;
   while (seedSet.size() < k && !result.empty()) {
-    std::cout << "#### i = " << seedSet.size() << ", RR = " << result.size() << std::endl;
     // 1 - Find the most influential vertex v
     typename GraphTy::vertex_type v = GetMostInfluential(G, result);
-    std::cout << "#### Most influential found " << std::endl;
 
     // 2 - Add v to seedSet
     seedSet.insert(v);
 
     // 3 - Remove all the RRRSet that includes v
     result = std::move(ReduceRandomRRSetList<GraphTy>(v, result));
-    std::cout << "#### Updated RRR sets " << result.size() << std::endl;
   }
   double epsilonPrime = 5 * cbrt(l * pow(epsilon, 2) / (k + l));
   double lambdaPrime = (2 + epsilonPrime) * l * G.scale() * log10(G.scale()) * pow(epsilonPrime, -2);
@@ -226,7 +221,7 @@ typename GraphTy::vertex_type GetMostInfluential(GraphTy &G, RRRSetList &R) {
     size_t value{0};
   };
 
-  std::cout << "%%%% n = " << omp_get_max_threads() << std::endl;
+
   alignas(64) maxVertex result[omp_get_max_threads()];
 #pragma omp parallel for schedule(static)
   for (size_t i = 0; i < counters.size(); ++i) {
@@ -239,7 +234,7 @@ typename GraphTy::vertex_type GetMostInfluential(GraphTy &G, RRRSetList &R) {
   for (size_t i = 1; i < omp_get_max_threads(); ++i)
     if (result[0].value < result[i].value)
       result[0] = result[i];
-  std::cout << "%%%% v = " << result[0].vertex << ", count = " << result[0].value << std::endl;
+
   return result[0].vertex;
 }
 
@@ -285,11 +280,14 @@ std::unordered_set<typename GraphTy::vertex_type> influence_maximization(
   // Algorithm 2 in Tang Y. et all
   size_t theta = thetaEstimation(G, k, epsilon);
 
+  std::cout << "Theta : " << theta << std::endl;
+
   // - Random Reverse Reacheable Set initialize to the empty set
   using RRRSet = std::unordered_set<typename GraphTy::vertex_type>;
-  std::vector<RRRSet> R = generateRandomRRSet(G, theta, tag);
+  std::vector<RRRSet> R = std::move(generateRandomRRSet(G, theta, tag));
 
   assert(R.size() == theta);
+  std::cout << "Generated RRR" << std::endl;
 
   // - Initialize the seed set to the empty set
   std::unordered_set<typename GraphTy::vertex_type> seedSet;
