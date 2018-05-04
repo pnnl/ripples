@@ -20,6 +20,7 @@
 #define IM_LOADERS_H
 
 #include <fstream>
+#include <unordered_map>
 #include <iostream>
 #include <sstream>
 #include <string>
@@ -41,6 +42,7 @@ load<edge_list_tsv>(
     std::string &inputFile, Graph<uint32_t> &G, const edge_list_tsv &&) {
   std::ifstream GFS(inputFile);
   size_t lineNumber = 0;
+  Graph<uint32_t> tmpG;
   for (std::string line; std::getline(GFS, line); ++lineNumber) {
     if (line.find('%') != std::string::npos) continue;
 
@@ -53,13 +55,24 @@ load<edge_list_tsv>(
     if (source.length() == 0 && destination.length() == 0) continue;
 
     try {
-      G.add_edge(boost::lexical_cast<uint64_t>(source) - 1,
-                 typename Graph<uint32_t>::dest_type(
-                     boost::lexical_cast<uint64_t>(destination) - 1, 1.0f));
+      tmpG.add_edge(boost::lexical_cast<uint64_t>(source) - 1,
+                    typename Graph<uint32_t>::dest_type(
+                        boost::lexical_cast<uint64_t>(destination) - 1, 1.0f));
     } catch (boost::bad_lexical_cast &e) {
       std::cout << inputFile << ":" << lineNumber << " " << e.what()
                 << std::endl;
       throw e;
+    }
+  }
+
+  std::unordered_map<uint32_t,uint32_t> vertexMap;
+  uint32_t newID = 0;
+  for (auto v : tmpG)
+    vertexMap[v] = newID++;
+
+  for (auto v : tmpG) {
+    for (auto e : tmpG.out_neighbors(v)) {
+      G.add_edge(vertexMap[v], typename Graph<uint32_t>::dest_type(vertexMap[e.v], e.attribute));
     }
   }
 }
@@ -72,6 +85,8 @@ load<weighted_edge_list_tsv>(
     std::string &inputFile, Graph<uint32_t> &G, const weighted_edge_list_tsv &&) {
   std::ifstream GFS(inputFile);
   size_t lineNumber = 0;
+  Graph<uint32_t> tmpG;
+
   for (std::string line; std::getline(GFS, line); ++lineNumber) {
     if (line.find('%') != std::string::npos) continue;
 
@@ -85,19 +100,30 @@ load<weighted_edge_list_tsv>(
     if (source.length() == 0 && destination.length() == 0) continue;
 
     try {
-      G.add_edge(boost::lexical_cast<uint64_t>(source) - 1,
+      tmpG.add_edge(boost::lexical_cast<uint64_t>(source) - 1,
                  typename Graph<uint32_t>::dest_type(
                      boost::lexical_cast<uint64_t>(destination) - 1,
                      boost::lexical_cast<float>(0.1f)));
 
-      G.add_edge(boost::lexical_cast<uint64_t>(destination) - 1,
-                 typename Graph<uint32_t>::dest_type(
-                     boost::lexical_cast<uint64_t>(source) - 1,
-                     boost::lexical_cast<float>(0.1f)));
+      tmpG.add_edge(boost::lexical_cast<uint64_t>(destination) - 1,
+                    typename Graph<uint32_t>::dest_type(
+                        boost::lexical_cast<uint64_t>(source) - 1,
+                        boost::lexical_cast<float>(0.1f)));
     } catch (boost::bad_lexical_cast &e) {
       std::cout << inputFile << ":" << lineNumber << " " << e.what()
                 << std::endl;
       throw e;
+    }
+  }
+
+  std::unordered_map<uint32_t,uint32_t> vertexMap;
+  uint32_t newID = 0;
+  for (auto v : tmpG)
+    vertexMap[v] = newID++;
+
+  for (auto v : tmpG) {
+    for (auto e : tmpG.out_neighbors(v)) {
+      G.add_edge(vertexMap[v], typename Graph<uint32_t>::dest_type(vertexMap[e.v], e.attribute));
     }
   }
 }

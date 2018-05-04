@@ -58,6 +58,7 @@ size_t thetaEstimation(GraphTy &G, size_t k, double epsilon) {
 
   for (size_t i = 1; i < G.scale(); i <<= 1) {
     double c_i = 6 * log10(G.scale()) + 6 * log10(log2(G.scale())) * i;
+
 #pragma omp parallel reduction(+:sum)
     {
       size_t size = omp_get_num_threads();
@@ -73,12 +74,14 @@ size_t thetaEstimation(GraphTy &G, size_t k, double epsilon) {
       for (size_t j = rank * chunk/size; j < (rank + 1) * chunk/size; ++j) {
         auto RRset = BFSOnRandomGraph(G, generator);
 
-        size_t WR = 0;
+        assert(!RRset.empty());
+
+        double WR = 0;
         for (auto vertex : RRset) {
           WR += G.in_degree(vertex);
         }
         // Equation (8) of the paper.
-        double KR = 1 - pow(1 - WR / G.size(), k);
+        double KR = 1 - pow(1.0 - WR / G.size(), k);
         sum += KR;
 
         intermediate_result.emplace_back(std::move(RRset));
@@ -90,7 +93,7 @@ size_t thetaEstimation(GraphTy &G, size_t k, double epsilon) {
 
     start = std::ceil(c_i);
 
-    if ((sum / c_i) > (1 / i)) {
+    if ((sum / c_i) > (1.0 / i)) {
       KPTStar = G.scale() * sum / (c_i * 2);
       break;
     }

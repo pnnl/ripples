@@ -19,6 +19,7 @@
 #ifndef IM_GRAPH_H
 #define IM_GRAPH_H
 
+#include <algorithm>
 #include <memory>
 #include <unordered_map>
 #include <vector>
@@ -33,6 +34,10 @@ struct Destination {
 
   Destination(const VertexIDTy v, const AttributeTy & a) :
       v(v), attribute(a) {}
+
+  bool operator==(const Destination & lhs) const {
+    return this->v == lhs.v;
+  }
 
   VertexIDTy v;
   AttributeTy attribute;
@@ -89,10 +94,12 @@ class Graph {
   using const_iterator = typename GraphTy_::const_iterator;
 
   void add_edge(const vertex_type &source, const dest_type &destination) {
-    graph_[source].first.emplace_back(destination);
-    graph_[destination.v].second.emplace_back(
-        dest_type(source, destination.attribute));
-    ++size_;
+    if (std::find(graph_[source].first.begin(), graph_[source].first.end(), destination) == graph_[source].first.end()) {
+      graph_[source].first.emplace_back(destination);
+      graph_[destination.v].second.emplace_back(
+          dest_type(source, destination.attribute));
+      ++size_;
+    }
   }
 
   size_type out_degree(const vertex_type &v) {

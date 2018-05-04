@@ -76,8 +76,6 @@ Configuration ParseCmdOptions(int argc, char **argv) {
 
     po::notify(VM);
 
-    std::cout << tim << " " << bart << std::endl;
-
     if (tim && bart) throw po::error("Please, select only one alogorithm");
     if (!tim && !bart) throw po::error("Please, select at least one alogorithm");
 

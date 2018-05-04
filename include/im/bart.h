@@ -68,6 +68,8 @@ std::vector<uint64_t> BlockBFSOnRandomGraph(GraphTy &G, PRNGeneratorTy &generato
               value(generator) <= neighbor.attribute) {
             *next = neighbor.v;
             visited.insert(neighbor.v);
+            if (neighbor.v > G.scale())
+              std::cout << "Ooooh Maaaan!!!" << std::endl;
             result[neighbor.v] |= 1;
             ++next;
           }
@@ -167,12 +169,12 @@ bool UpdateMask(typename GraphTy::vertex_type v,
                 RRRSetList &R, std::vector<uint64_t> &mask, const bart_tag &) {
   size_t used = 0;
 #pragma omp parallel for schedule(static) reduction(+:used)
-  for (size_t i = 0; i < mask.size(); ++i) {
+  for (size_t i = 0; i < R[v].size(); ++i) {
     mask[i] |= R[v][i];
     used += __builtin_popcount(mask[i]);
   }
 
-  return used == (mask.size() * 64);
+  return used == 0;
 }
 
 //! \brief The TIM influence maximization algorithm.
@@ -195,9 +197,9 @@ std::unordered_set<typename GraphTy::vertex_type> influence_maximization(
         return theta;
       };
   
+  std::cout << "Theta : " << theta << std::endl;
   // make theta a multiple of 64
   theta = roundTheta(theta);
-
   std::cout << "Theta : " << theta << std::endl;
 
   // - Random Reverse Reacheable Set initialize to the empty set
