@@ -283,14 +283,11 @@ std::unordered_set<typename GraphTy::vertex_type> influence_maximization(
   // Algorithm 2 in Tang Y. et all
   size_t theta = thetaEstimation(G, k, epsilon);
 
-  std::cout << "Theta : " << theta << std::endl;
-
   // - Random Reverse Reacheable Set initialize to the empty set
   using RRRSet = std::unordered_set<typename GraphTy::vertex_type>;
   std::vector<RRRSet> R = std::move(generateRandomRRSet(G, theta, tag));
 
   assert(R.size() == theta);
-  std::cout << "Generated RRR" << std::endl;
 
   // - Initialize the seed set to the empty set
   std::unordered_set<typename GraphTy::vertex_type> seedSet;
