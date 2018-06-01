@@ -27,6 +27,6 @@ def configure(conf):
     package='benchmark', args=['--cflags', '--libs'], uselib_store='BENCHMARK')
 
 def build(bld):
-  directories = ['include', 'tools', 'benchmarks']
+  directories = ['3rd-party', 'include', 'tools', 'benchmarks']
 
   bld.recurse(directories)
