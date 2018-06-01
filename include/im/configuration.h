@@ -26,23 +26,17 @@
 namespace im {
 
 enum class Algorithm {
-  TIM,
-  BART
+  TIM
 };
 
 //! \brief The command line configuration
 struct Configuration {
-  std::string IFileName;  //!< The input file name
-  size_t k;               //!< The size of the seedset
-  double epsilon;         //!< The epsilon of the IM algorithm
-  double p;               //!< False posive probability in bloom filters.
-
-  Algorithm algo;
-
-  std::default_random_engine generator;  //!< The random number generator.
+  std::string IFileName{""};               //!< The input file name
+  size_t k{10};                            //!< The size of the seedset
+  double epsilon{0.15};                    //!< The epsilon of the IM algorithm
+  Algorithm algo{Algorithm::TIM};          //!< The algorithm to be used.
+  std::default_random_engine generator{0}; //!< The random number generator.
 };
-
-extern Configuration CFG;
 
 };  // namespace im
 
