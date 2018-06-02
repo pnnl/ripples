@@ -71,7 +71,7 @@ int main(int argc, char **argv) {
 
   switch (CFG.algo) {
     case im::Algorithm::TIM:
-      seedSet = im::influence_maximization(G, CFG.k, CFG.epsilon, im::tim_tag());
+      seedSet = im::TIM(G, CFG.k, CFG.epsilon);
       break;
     default:
       throw std::string("Unknown algorithm requested");
