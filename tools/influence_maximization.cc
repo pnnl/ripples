@@ -1,18 +1,6 @@
 //===------------------------------------------------------------*- C++ -*-===//
 //
-// Copyright 2017 Pacific Northwest National Laboratory
-//
-// Licensed under the Apache License, Version 2.0 (the "License"); you may not
-// use this file except in compliance with the License. You may obtain a copy
-// of the License at
-//
-//     http://www.apache.org/licenses/LICENSE-2.0
-//
-// Unless required by applicable law or agreed to in writing, software
-// distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
-// WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
-// License for the specific language governing permissions and limitations
-// under the License.
+// Copyright 2018 Battelle Memorial Institute
 //
 //===----------------------------------------------------------------------===//
 
@@ -20,6 +8,7 @@
 #include <string>
 
 #include "im/configuration.h"
+#include "im/graph.h"
 #include "im/tim.h"
 #include "im/loaders.h"
 
@@ -59,27 +48,50 @@ Configuration ParseCmdOptions(int argc, char **argv) {
 int main(int argc, char **argv) {
   im::Configuration CFG = im::ParseCmdOptions(argc, argv);
 
-  im::Graph<uint32_t> G;
-
   std::cout << "Loading..." << std::endl;
-  im::load(CFG.IFileName, G, im::weighted_edge_list_tsv());
+  auto edgeList = im::load<im::Edge<uint32_t, double>>(CFG.IFileName, im::edge_list_tsv());
+  std::cout << "Loading Done!" << std::endl;
 
-  std::cout << "Size: " << G.size() << std::endl;
-  std::cout << "Scale: " << G.scale() << std::endl;
+  im::Graph<uint32_t, double> G(edgeList.begin(), edgeList.end());
+  std::cout << "Number of Nodes : " << G.num_nodes() << std::endl;
+  std::cout << "Number of Edges : " << G.num_edges() << std::endl;
 
-  std::unordered_set<typename im::Graph<uint32_t>::vertex_type> seedSet;
-
-  switch (CFG.algo) {
-    case im::Algorithm::TIM:
-      seedSet = im::TIM(G, CFG.k, CFG.epsilon);
-      break;
-    default:
-      throw std::string("Unknown algorithm requested");
+  for (size_t i = 0; i < G.num_nodes(); ++i) {
+    std::cout << i
+              << " " <<  G.out_degree(i) << " :";
+    for (auto n : G.out_neighbors(i))
+      std::cout << " " <<  n;
+    std::cout << std::endl;
   }
 
-  std::cout << "Seed Set : {";
-  for (auto v : seedSet) std::cout << " " << v;
-  std::cout << " }" << std::endl;
+  // for (auto v : G) {
+  //   std::cout << v << "{ ";
+  //   for (auto & e : G[v]) {
+  //     std::cout << "(" << e.first << ", " << e.second << "), ";
+  //   }
+  //   std::cout << "}" << std::endl;
+  // }
+
+  // size_t KPT = KptEstimation(G, CFG.k, CFG.epsilon, 0.5);
+
+  // std::cout << "#### KPT" << KPT << std::endl;
+
+  // std::cout << "Size: " << G.size() << std::endl;
+  // std::cout << "Scale: " << G.scale() << std::endl;
+
+  // std::unordered_set<typename im::Graph<uint32_t>::vertex_type> seedSet;
+
+  // switch (CFG.algo) {
+  //   case im::Algorithm::TIM:
+  //     seedSet = im::TIM(G, CFG.k, CFG.epsilon);
+  //     break;
+  //   default:
+  //     throw std::string("Unknown algorithm requested");
+  // }
+
+  // std::cout << "Seed Set : {";
+  // for (auto v : seedSet) std::cout << " " << v;
+  // std::cout << " }" << std::endl;
 
   return EXIT_SUCCESS;
 }

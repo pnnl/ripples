@@ -1,163 +1,155 @@
 //===------------------------------------------------------------*- C++ -*-===//
 //
-// Copyright 2017 Pacific Northwest National Laboratory
-//
-// Licensed under the Apache License, Version 2.0 (the "License"); you may not
-// use this file except in compliance with the License. You may obtain a copy
-// of the License at
-//
-//     http://www.apache.org/licenses/LICENSE-2.0
-//
-// Unless required by applicable law or agreed to in writing, software
-// distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
-// WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
-// License for the specific language governing permissions and limitations
-// under the License.
+// Copyright 2018 Battelle Memorial Institute
 //
 //===----------------------------------------------------------------------===//
 
 #ifndef IM_GRAPH_H
 #define IM_GRAPH_H
 
+#include <iostream>
 #include <algorithm>
+#include <cstddef>
+#include <map>
 #include <memory>
-#include <unordered_map>
 #include <vector>
-
-#include "boost/lexical_cast.hpp"
 
 namespace im {
 
-template <typename VertexIDTy, typename AttributeTy>
-struct Destination {
-  Destination() {}
-
-  Destination(const VertexIDTy v, const AttributeTy & a) :
-      v(v), attribute(a) {}
-
-  bool operator==(const Destination & lhs) const {
-    return this->v == lhs.v;
-  }
-
-  VertexIDTy v;
-  AttributeTy attribute;
+template <typename VertexTy, typename WeightTy>
+struct Edge {
+  VertexTy source;
+  VertexTy destination;
+  WeightTy weight;
 };
 
-//! \brief The Graph data structure.
-//!
-//! \tparam VertexTy The type representing the vertex.
-template <typename VertexTy, typename DestTy = Destination<VertexTy, float>>
+template <typename VertexTy, typename WeightTy>
 class Graph {
  public:
   using size_type = size_t;
+  using edge_type = Edge<VertexTy, WeightTy>;
   using vertex_type = VertexTy;
-  using dest_type  = DestTy;
-  using edge_list_type = std::vector<dest_type>;
 
-  Graph()
-      : size_(0)
-      , graph_()
-  {}
+  template<typename EdgeIterator>
+  Graph(EdgeIterator begin, EdgeIterator end) {
+    std::map<VertexTy, VertexTy> idMap;
+    for (auto itr = begin; itr != end; ++itr) {
+      idMap[itr->source];
+      idMap[itr->destination];
+    }
+
+    size_t nodes = idMap.size();
+    size_t edges = std::distance(begin, end);
+
+    inIndex = new VertexTy* [nodes + 1]{nullptr};
+    inEdges = new VertexTy[edges]{0};
+    inWeightIndex = new WeightTy* [nodes + 1]{nullptr};
+    inEdgeWeights = new WeightTy[edges]{0};
+    outIndex = new VertexTy* [nodes + 1]{nullptr};
+    outEdges = new VertexTy[edges]{0};
+    outWeightIndex = new WeightTy* [nodes + 1]{nullptr};
+    outEdgeWeights = new WeightTy[edges]{0};
+
+    numNodes = nodes;
+    numEdges = edges;
+    
+    VertexTy currentID{0};
+    for (auto itr = std::begin(idMap), end = std::end(idMap); itr != end; ++itr) {
+      itr->second = currentID++;
+    }
+
+    for (auto itr = begin; itr != end; ++itr) {
+      itr->source = idMap[itr->source];
+      itr->destination = idMap[itr->destination];
+      *(reinterpret_cast<size_t *>(&inIndex[itr->destination + 1])) += sizeof(VertexTy);
+      *(reinterpret_cast<size_t *>(&outIndex[itr->source + 1])) += sizeof(VertexTy);
+      *(reinterpret_cast<size_t *>(&inWeightIndex[itr->destination + 1])) += sizeof(VertexTy);
+      *(reinterpret_cast<size_t *>(&outWeightIndex[itr->source + 1])) += sizeof(VertexTy);
+    }
+
+    inIndex[0] = inEdges;
+    inWeightIndex[0] = inEdgeWeights;
+    outIndex[0] = outEdges;
+    outWeightIndex[0] = outEdgeWeights;
+    for (size_t i = 1; i <= nodes; ++i) {
+      *reinterpret_cast<size_t *>(&inIndex[i]) += reinterpret_cast<size_t>(inIndex[i - 1]);
+      *reinterpret_cast<size_t *>(&inWeightIndex[i]) += reinterpret_cast<size_t>(inWeightIndex[i - 1]);
+      *reinterpret_cast<size_t *>(&outIndex[i]) += reinterpret_cast<size_t>(outIndex[i - 1]);
+      *reinterpret_cast<size_t *>(&outWeightIndex[i]) += reinterpret_cast<size_t>(outWeightIndex[i - 1]);
+    }
+
+    std::vector<VertexTy *> ptrInEdge(inIndex, inIndex + nodes);
+    std::vector<VertexTy *> ptrOutEdge(outIndex, outIndex + nodes);
+    std::vector<WeightTy *> ptrInWeight(inWeightIndex, inWeightIndex + nodes);
+    std::vector<WeightTy *> ptrOutWeight(outWeightIndex, outWeightIndex + nodes);
+    for (auto itr = begin; itr != end; ++itr) {
+      *ptrInEdge.at(itr->destination) = itr->source;
+      ++ptrInEdge[itr->destination];
+
+      *ptrInWeight[itr->destination] = itr->weight;
+      ++ptrInWeight[itr->destination];
+
+      *ptrOutEdge[itr->source] = itr->destination;
+      ++ptrOutEdge[itr->source];
+
+      *ptrOutWeight[itr->source] = itr->weight;
+      ++ptrOutWeight[itr->source];
+    }
+  }
+
+  ~Graph() {
+    delete[] inIndex;
+    delete[] inEdges;
+    delete[] inWeightIndex;
+    delete[] inEdgeWeights;
+
+    delete[] outIndex;
+    delete[] outEdges;
+    delete[] outWeightIndex;
+    delete[] outEdgeWeights;
+  }
 
   class Neighborhood {
    public:
-    using iterator = typename edge_list_type::iterator;
-
-    Neighborhood(const vertex_type & v, edge_list_type & EL)
-        : v_(v), edge_list_(&EL) {}
-
-    iterator begin() { return edge_list_->begin(); }
-    iterator end() { return edge_list_->end(); }
+    Neighborhood(VertexTy v, VertexTy * B, VertexTy *E)
+        : v_(v), begin_(B), end_(E) {}
+    VertexTy * begin() const { return begin_; }
+    VertexTy * end() const { return end_; }
    private:
-    vertex_type v_;
-    edge_list_type * edge_list_;
+    VertexTy v_;
+    VertexTy * begin_;
+    VertexTy * end_;
   };
 
- private:
-  using GraphTy_ =
-      std::unordered_map<vertex_type, std::pair<edge_list_type, edge_list_type>>;
+  size_t in_degree(VertexTy v) const { return inIndex[v + 1] - inIndex[v]; }
+  size_t out_degree(VertexTy v) const { return outIndex[v + 1] - outIndex[v]; }
 
-  class vertex_iterator : public GraphTy_::iterator {
-   public:
-    vertex_iterator() : GraphTy_::iterator() {}
-    vertex_iterator(typename GraphTy_::iterator Itr) : GraphTy_::iterator(Itr) {}
-
-    vertex_type const * operator->() { return &GraphTy_::iterator::operator->()->first; }
-    vertex_type operator*() {
-      return GraphTy_::iterator::operator*().first;
-    }
-  };
-
- public:
-  using neighborhood_type = Neighborhood;
-  using iterator = vertex_iterator;
-  using const_iterator = typename GraphTy_::const_iterator;
-
-  void add_edge(const vertex_type &source, const dest_type &destination) {
-    if (std::find(graph_[source].first.begin(), graph_[source].first.end(), destination) == graph_[source].first.end()) {
-      graph_[source].first.emplace_back(destination);
-      graph_[destination.v].second.emplace_back(
-          dest_type(source, destination.attribute));
-      ++size_;
-    }
+  Neighborhood out_neighbors(VertexTy v) const {
+    return Neighborhood(v, outIndex[v], outIndex[v + 1]);
   }
 
-  size_type out_degree(const vertex_type &v) {
-    return graph_[v].first.size();
+  Neighborhood in_neighbors(VertexTy v) const {
+    return Neighborhood(v, inIndex[v], inIndex[v + 1]);
   }
 
-  size_type in_degree(const vertex_type &v) {
-    return graph_[v].second.size();
-  }
-
-  neighborhood_type out_neighbors(const vertex_type & v) {
-    return neighborhood_type(v, graph_[v].first);
-  }
-
-  neighborhood_type in_neighbors(const vertex_type & v) {
-    return neighborhood_type(v, graph_[v].second);
-  }
-
-  iterator begin() { return vertex_iterator(graph_.begin()); }
-  iterator end() { return vertex_iterator(graph_.end()); }
-
-  //! \brief The size of the Graph
-  //! \return the size of the graph (number of edges).
-  size_type size() const noexcept { return size_; }
-
-  //! \brief The scale of the Graph
-  //! \return the scale of the graph (number of vertices).
-  size_type scale() const noexcept { return graph_.size(); }
-
-  friend std::ostream& operator<<(std::ostream &S, Graph &G) {
-    S << "G {\n";
-
-    for (auto v : G) {
-      S << "[" << v << "]";
-
-      S << " out : {";
-      for (auto e : G.out_neighbors(v)) {
-        S << " (" << e.v << "," << e.attribute << ")";
-      }
-      S << " }";
-      
-      S << " in : {";
-      for (auto e : G.in_neighbors(v)) {
-        S << " (" << e.v << "," << e.attribute << ")";
-      }
-      S << " }";
-
-      S << "\n";
-    }
-    
-    S << "}\n";
-    return S;
-  }
+  size_t num_nodes() const { return numNodes; }
+  size_t num_edges() const { return numEdges; }
 
  private:
-  size_type size_;
-  GraphTy_ graph_;
+  VertexTy** inIndex;
+  VertexTy*  inEdges;
+  WeightTy** inWeightIndex;
+  WeightTy*  inEdgeWeights;
+
+  VertexTy** outIndex;
+  VertexTy*  outEdges;
+  WeightTy** outWeightIndex;
+  WeightTy*  outEdgeWeights;
+
+  size_t numNodes;
+  size_t numEdges;
 };
+
 
 }  // namespace im
 

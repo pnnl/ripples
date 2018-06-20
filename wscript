@@ -11,20 +11,11 @@ def options(opt):
 def configure(conf):
   conf.load('compiler_cxx')
 
-  conf.env.CXXFLAGS += ['-std=c++11', '-fopenmp']
+  conf.env.CXXFLAGS += ['-std=c++11']
   conf.env.CXXFLAGS += ['-Ofast', '-march=native']
 
-  conf.env.LDFLAGS += ['-fopenmp']
-
-  conf.load('boost')
-  # Using boost for command line arguments
-  conf.check_boost('program_options')
-
   conf.check_cfg(
-    package='RapidJSON', args=['--cflags'], uselib_store='RAPIDJSON')
-
-  conf.check_cfg(
-    package='benchmark', args=['--cflags', '--libs'], uselib_store='BENCHMARK')
+    package='spdlog', args=['--cflags'], uselib_store='SPDLOG')
 
 def build(bld):
   directories = ['3rd-party', 'include', 'tools']

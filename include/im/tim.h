@@ -1,18 +1,6 @@
 //===------------------------------------------------------------*- C++ -*-===//
 //
-// Copyright 2017 Pacific Northwest National Laboratory
-//
-// Licensed under the Apache License, Version 2.0 (the "License"); you may not
-// use this file except in compliance with the License. You may obtain a copy
-// of the License at
-//
-//     http://www.apache.org/licenses/LICENSE-2.0
-//
-// Unless required by applicable law or agreed to in writing, software
-// distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
-// WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
-// License for the specific language governing permissions and limitations
-// under the License.
+// Copyright 2018 Battelle Memorial Institute
 //
 //===----------------------------------------------------------------------===//
 
@@ -25,6 +13,7 @@
 #include <unordered_set>
 #include <random>
 #include <iterator>
+#include <queue>
 
 #include <omp.h>
 
@@ -35,7 +24,6 @@
 namespace im {
 
 struct tim_tag {};
-struct rr_size_measure_tag{};
 
 #if 0
 template <typename GraphTy, typename RRRSetList>
@@ -307,21 +295,66 @@ std::unordered_set<typename GraphTy::vertex_type> influence_maximization(
 
 #endif
 
+template <typename GraphTy, typename PRNG>
+size_t WR(GraphTy &G, typename GraphTy::vertex_type r, PRNG &generator) {
+  using vertex_type = typename GraphTy::vertex_type;
+
+  std::uniform_real_distribution<double> value(0.0, 1.0);
+
+  std::queue<vertex_type> queue;
+  std::vector<bool> visited(G.nodes(), false);
+
+  queue.push(r);
+  visited[r] = true;
+  size_t wr = 1;
+
+  while (!queue.empty()) {
+    vertex_type v = queue.front();
+    queue.pop();
+
+    wr += G.in_degree(v);
+
+    for (auto u : G.in_neighbors(v)) {
+      if (!visited[u.v] &&
+          value(generator) > u.attribute) {
+        visited[u.v] = true;
+        queue.push(u.v);
+      }
+    }
+  }
+
+  return wr;
+}
+
 template <typename GraphTy>
 size_t KptEstimation(GraphTy &G, size_t k, double epsilon, double l) {
   // Compute KPT* according to Algorithm 2
   size_t KPTStar = 1;
 
-  for (size_t i = 0; i < log2(G.scale()); ++i) {
-    size_t c_i = 6/l * log10(G.scale()) + 6 * log10(log2(G.scale())) * (1ul << i);
+  std::default_random_engine generator;
+
+  for (size_t i = 0; i < log2(G.nodes()); ++i) {
+    size_t c_i = (6/l * log10(G.nodes()) + 6 * log10(log2(G.nodes()))) * (1ul << i);
+    size_t sum = 0;
     for (size_t j = 0; j < c_i; ++j) {
       // Pick a random vertex
-      typename GraphTy::vertex_type v;
+      typename GraphTy::vertex_type v = generator() % G.nodes();
 
-      
+      size_t wr = WR(G, v, generator);
+
+      // Equation (8) of the paper.
+      double KR = 1 - pow(1.0 - wr / G.edges(), k);
+      sum += KR;
+    }
+
+    sum /= c_i;
+    if (sum > (1.0 / (1ul << i))) {
+      KPTStar = G.nodes() * sum / (c_i * 2);
+      break;
     }
   }
 
+  return KPTStar;
 #if 0
   size_t start = 0;
   double sum = 0;

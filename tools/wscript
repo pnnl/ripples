@@ -6,8 +6,3 @@ def build(bld):
       source   = 'influence_maximization.cc',
       target   = 'influence-maximization',
       use = [ 'project-headers', '3rd-party' ])
-
-  # bld(features = 'cxx cxxprogram',
-  #     source   = 'measure_rrr_size.cc',
-  #     target   = 'measure_rrr_size',
-  #     use = [ 'project-headers', 'BOOST' ])

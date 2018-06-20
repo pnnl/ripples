@@ -1,18 +1,6 @@
 //===------------------------------------------------------------*- C++ -*-===//
 //
-// Copyright 2017 Pacific Northwest National Laboratory
-//
-// Licensed under the Apache License, Version 2.0 (the "License"); you may not
-// use this file except in compliance with the License. You may obtain a copy
-// of the License at
-//
-//     http://www.apache.org/licenses/LICENSE-2.0
-//
-// Unless required by applicable law or agreed to in writing, software
-// distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
-// WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
-// License for the specific language governing permissions and limitations
-// under the License.
+// Copyright 2018 Battelle Memorial Institute
 //
 //===----------------------------------------------------------------------===//
 
@@ -22,15 +10,12 @@
 #include <vector>
 #include <unordered_set>
 
+#include "CLI11/CLI11.hpp"
 #include "benchmark/benchmark.h"
-
-#include "boost/program_options.hpp"
 
 #include "im/graph.h"
 #include "im/tim.h"
 #include "im/loaders.h"
-
-#include "omp.h"
 
 struct Configuration {
   std::string InputGraph;
@@ -41,32 +26,25 @@ struct Configuration {
 Configuration Config;
 
 Configuration ParseCmdOptions(int argc, char **argv) {
-  namespace po = boost::program_options;
-
   Configuration CFG;
 
-  po::options_description general("Configuration Options");
-  general.add_options()("help,h", "Print this help message")(
-      "input-graph,i", po::value<std::string>(&CFG.InputGraph)->required(),
-      "The input file with the edge-list.")(
-      "seed-set-size,k", po::value<size_t>(&CFG.k), "The size of the seed set")(
-      "epsilon,e", po::value<double>(&CFG.epsilon)->default_value(0.001),
-      "The approximation factor.");
+  bool tim = true;
 
-  po::variables_map VM;
+  CLI::App app{"Yet another tool to experiment with INF-MAX"};
+  app.add_option("-i,--input-graph", CFG.InputGraph,
+                 "The input file with the edge-list.")
+      ->required();
+  app.add_option("-k,--seed-set-size", CFG.k,
+                 "The size of the seed set.")
+      ->required();
+  app.add_option("-e,--epsilon", CFG.epsilon,
+                 "The size of the seed set.")
+      ->required();
+
   try {
-    po::store(po::parse_command_line(argc, argv, general), VM);
-
-    if (VM.count("help")) {
-      std::cout << argv[0] << " [options]" << std::endl;
-      std::cout << general << std::endl;
-      exit(0);
-    }
-
-    po::notify(VM);
-  } catch (po::error &e) {
-    std::cerr << "Error: " << e.what() << "\n" << general << std::endl;
-    exit(-1);
+    app.parse(argc, argv);
+  } catch (const CLI::ParseError & e) {
+    exit(app.exit(e));
   }
 
   return CFG;
@@ -91,6 +69,17 @@ class TIM : public benchmark::Fixture {
   std::vector<std::unordered_set<uint32_t>> RRRSet_;
 };
 
+BENCHMARK_DEFINE_F(TIM, KptEstimation)(benchmark::State& state) {
+  for (auto _ : state) {
+    theta = KptEstimation(*GraphPtr_, Config.k, Config.epsilon, 1./2.);
+  }
+}
+
+BENCHMARK_REGISTER_F(TIM, KptEstimation)
+->UseRealTime()
+->Unit(benchmark::kMillisecond);
+
+#if 0
 BENCHMARK_DEFINE_F(TIM, ThetaEstimation)(benchmark::State& state) {
   omp_set_num_threads(state.range(0));
   for (auto _ : state) {
@@ -122,6 +111,7 @@ BENCHMARK_REGISTER_F(TIM, GenerateRRR)
 ->Unit(benchmark::kMillisecond)
 ->RangeMultiplier(2)
 ->Range(1, omp_get_max_threads());
+#endif
 
 int main(int argc, char *argv[]) {
   benchmark::Initialize(&argc, argv);
