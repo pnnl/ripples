@@ -18,6 +18,8 @@ namespace im {
 
 template <typename VertexTy, typename WeightTy>
 struct Edge {
+  using vertex_type = VertexTy;
+  using weight_type = WeightTy;
   VertexTy source;
   VertexTy destination;
   WeightTy weight;
@@ -41,14 +43,10 @@ class Graph {
     size_t nodes = idMap.size();
     size_t edges = std::distance(begin, end);
 
-    inIndex = new VertexTy* [nodes + 1]{nullptr};
-    inEdges = new VertexTy[edges]{0};
-    inWeightIndex = new WeightTy* [nodes + 1]{nullptr};
-    inEdgeWeights = new WeightTy[edges]{0};
-    outIndex = new VertexTy* [nodes + 1]{nullptr};
-    outEdges = new VertexTy[edges]{0};
-    outWeightIndex = new WeightTy* [nodes + 1]{nullptr};
-    outEdgeWeights = new WeightTy[edges]{0};
+    inIndex = new DestinationTy* [nodes + 1]{nullptr};
+    inEdges = new DestinationTy[edges];
+    outIndex = new DestinationTy* [nodes + 1]{nullptr};
+    outEdges = new DestinationTy[edges];
 
     numNodes = nodes;
     numEdges = edges;
@@ -61,90 +59,72 @@ class Graph {
     for (auto itr = begin; itr != end; ++itr) {
       itr->source = idMap[itr->source];
       itr->destination = idMap[itr->destination];
-      *(reinterpret_cast<size_t *>(&inIndex[itr->destination + 1])) += sizeof(VertexTy);
-      *(reinterpret_cast<size_t *>(&outIndex[itr->source + 1])) += sizeof(VertexTy);
-      *(reinterpret_cast<size_t *>(&inWeightIndex[itr->destination + 1])) += sizeof(VertexTy);
-      *(reinterpret_cast<size_t *>(&outWeightIndex[itr->source + 1])) += sizeof(VertexTy);
+      *(reinterpret_cast<size_t *>(&inIndex[itr->destination + 1])) += sizeof(DestinationTy);
+      *(reinterpret_cast<size_t *>(&outIndex[itr->source + 1])) += sizeof(DestinationTy);
     }
 
     inIndex[0] = inEdges;
-    inWeightIndex[0] = inEdgeWeights;
     outIndex[0] = outEdges;
-    outWeightIndex[0] = outEdgeWeights;
     for (size_t i = 1; i <= nodes; ++i) {
       *reinterpret_cast<size_t *>(&inIndex[i]) += reinterpret_cast<size_t>(inIndex[i - 1]);
-      *reinterpret_cast<size_t *>(&inWeightIndex[i]) += reinterpret_cast<size_t>(inWeightIndex[i - 1]);
       *reinterpret_cast<size_t *>(&outIndex[i]) += reinterpret_cast<size_t>(outIndex[i - 1]);
-      *reinterpret_cast<size_t *>(&outWeightIndex[i]) += reinterpret_cast<size_t>(outWeightIndex[i - 1]);
     }
 
-    std::vector<VertexTy *> ptrInEdge(inIndex, inIndex + nodes);
-    std::vector<VertexTy *> ptrOutEdge(outIndex, outIndex + nodes);
-    std::vector<WeightTy *> ptrInWeight(inWeightIndex, inWeightIndex + nodes);
-    std::vector<WeightTy *> ptrOutWeight(outWeightIndex, outWeightIndex + nodes);
+    std::vector<DestinationTy *> ptrInEdge(inIndex, inIndex + nodes);
+    std::vector<DestinationTy *> ptrOutEdge(outIndex, outIndex + nodes);
     for (auto itr = begin; itr != end; ++itr) {
-      *ptrInEdge.at(itr->destination) = itr->source;
+      *ptrInEdge.at(itr->destination) = { itr->source, itr->weight };
       ++ptrInEdge[itr->destination];
 
-      *ptrInWeight[itr->destination] = itr->weight;
-      ++ptrInWeight[itr->destination];
-
-      *ptrOutEdge[itr->source] = itr->destination;
+      *ptrOutEdge[itr->source] = { itr->destination, itr->weight };
       ++ptrOutEdge[itr->source];
-
-      *ptrOutWeight[itr->source] = itr->weight;
-      ++ptrOutWeight[itr->source];
     }
   }
 
   ~Graph() {
     delete[] inIndex;
     delete[] inEdges;
-    delete[] inWeightIndex;
-    delete[] inEdgeWeights;
 
     delete[] outIndex;
     delete[] outEdges;
-    delete[] outWeightIndex;
-    delete[] outEdgeWeights;
   }
+
+  struct DestinationTy {
+    VertexTy vertex;
+    WeightTy weight;
+  };
 
   class Neighborhood {
    public:
-    Neighborhood(VertexTy v, VertexTy * B, VertexTy *E)
-        : v_(v), begin_(B), end_(E) {}
-    VertexTy * begin() const { return begin_; }
-    VertexTy * end() const { return end_; }
+    Neighborhood(DestinationTy * B, DestinationTy *E)
+        : begin_(B), end_(E) {}
+    DestinationTy * begin() const { return begin_; }
+    DestinationTy * end() const { return end_; }
    private:
-    VertexTy v_;
-    VertexTy * begin_;
-    VertexTy * end_;
+    DestinationTy * begin_;
+    DestinationTy * end_;
   };
 
   size_t in_degree(VertexTy v) const { return inIndex[v + 1] - inIndex[v]; }
   size_t out_degree(VertexTy v) const { return outIndex[v + 1] - outIndex[v]; }
 
   Neighborhood out_neighbors(VertexTy v) const {
-    return Neighborhood(v, outIndex[v], outIndex[v + 1]);
+    return Neighborhood(outIndex[v], outIndex[v + 1]);
   }
 
   Neighborhood in_neighbors(VertexTy v) const {
-    return Neighborhood(v, inIndex[v], inIndex[v + 1]);
+    return Neighborhood(inIndex[v], inIndex[v + 1]);
   }
 
   size_t num_nodes() const { return numNodes; }
   size_t num_edges() const { return numEdges; }
 
  private:
-  VertexTy** inIndex;
-  VertexTy*  inEdges;
-  WeightTy** inWeightIndex;
-  WeightTy*  inEdgeWeights;
+  DestinationTy** inIndex;
+  DestinationTy*  inEdges;
 
-  VertexTy** outIndex;
-  VertexTy*  outEdges;
-  WeightTy** outWeightIndex;
-  WeightTy*  outEdgeWeights;
+  DestinationTy** outIndex;
+  DestinationTy*  outEdges;
 
   size_t numNodes;
   size_t numEdges;

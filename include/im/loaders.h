@@ -31,17 +31,13 @@ load(std::string &inputFile, const edge_list_tsv &&) {
 
     std::stringstream SS(line);
 
-    std::string source;
-    std::string destination;
-    double weight;
+    typename EdgeTy::vertex_type source;
+    typename EdgeTy::vertex_type destination;
+    typename EdgeTy::weight_type weight;
     SS >> source >> destination;
 
-    if (source.length() == 0 && destination.length() == 0) continue;
-
     if (!(SS >> weight)) weight = 0.10;
-    typename im::Graph<uint32_t, double>::vertex_type s = stoul(source);
-    typename im::Graph<uint32_t, double>::vertex_type d = stoul(destination);
-    typename im::Graph<uint32_t, double>::edge_type e{s, d, weight};
+    EdgeTy e = {source, destination, weight};
     result.emplace_back(e);
   }
   return result;
