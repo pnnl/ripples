@@ -21,6 +21,10 @@
 #include "im/utility.h"
 
 #include "spdlog/spdlog.h"
+#include "trng/yarn2.hpp"
+#include "trng/uniform01_dist.hpp"
+#include "trng/uniform_int_dist.hpp"
+
 
 namespace im {
 
@@ -298,7 +302,7 @@ template <typename GraphTy, typename PRNG>
 size_t WR(GraphTy &G, typename GraphTy::vertex_type r, PRNG &generator) {
   using vertex_type = typename GraphTy::vertex_type;
 
-  std::uniform_real_distribution<double> value(0.0, 1.0);
+  trng::uniform01_dist<float> value;
 
   std::queue<vertex_type> queue;
   std::vector<bool> visited(G.num_nodes(), false);
@@ -330,7 +334,9 @@ double KptEstimation(GraphTy &G, size_t k, double epsilon) {
   // Compute KPT* according to Algorithm 2
   double KPTStar = 1;
 
-  std::default_random_engine generator;
+  trng::yarn2 generator;
+
+  trng::uniform_int_dist root(0, G.num_nodes());
 
   for (size_t i = 1; i < log2(G.num_nodes()); ++i) {
     double sum = 0;
@@ -338,7 +344,7 @@ double KptEstimation(GraphTy &G, size_t k, double epsilon) {
 
     for (size_t j = 0; j < c_i; ++j) {
       // Pick a random vertex
-      typename GraphTy::vertex_type v = generator() % G.num_nodes();
+      typename GraphTy::vertex_type v = root(generator);
 
       double wr = WR(G, v, generator);
       wr /= G.num_edges();
@@ -362,7 +368,6 @@ double KptEstimation(GraphTy &G, size_t k, double epsilon) {
 template <typename GraphTy>
 double KptEstimation(GraphTy &G, size_t k, double epsilon, omp_parallel_tag &&) {
   double KPTStar = 1.0;
-  std::default_random_engine shared_generator;
 
   for (size_t i = 2; i < G.num_nodes(); i <<= 1) {
     size_t c_i = (6 * log(G.num_nodes()) + 6 * log(log2(G.num_nodes()))) * i;
@@ -373,14 +378,16 @@ double KptEstimation(GraphTy &G, size_t k, double epsilon, omp_parallel_tag &&) 
       size_t size = omp_get_num_threads();
       size_t rank = omp_get_thread_num();
 
-      size_t chunk = c_i;
+      trng::yarn2 generator;
+      generator.split(size, rank);
 
-      std::default_random_engine generator = shared_generator;
-      generator.discard(rank * (chunk * G.num_edges() / size));
+      trng::uniform_int_dist root(0, G.num_nodes());
+
+      size_t chunk = c_i;
 
       for (size_t j = rank * chunk/size; j < (rank + 1) * chunk/size; ++j) {
         // Pick a random vertex
-        typename GraphTy::vertex_type v = generator() % G.num_nodes();
+        typename GraphTy::vertex_type v = root(generator);
 
         double wr = WR(G, v, generator);
         wr /= G.num_edges();
@@ -390,8 +397,6 @@ double KptEstimation(GraphTy &G, size_t k, double epsilon, omp_parallel_tag &&) 
     }
 
     sum /= c_i;
-
-    shared_generator.discard(G.num_edges() * c_i);
 
     spdlog::get("console")->debug("c_i = {}, sum = {} < {}", c_i, sum, (1.0 / i));
     if (sum > (1.0 / i)) {

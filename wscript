@@ -18,6 +18,9 @@ def configure(conf):
   conf.check_cfg(
     package='spdlog', args=['--cflags'], uselib_store='SPDLOG')
 
+  conf.check_cfg(
+    package='libtrng', args=['--cflags', '--libs'], uselib_store='TRNG')
+
 def build(bld):
   directories = ['3rd-party', 'include', 'tools']
 
