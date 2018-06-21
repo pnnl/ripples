@@ -13,6 +13,7 @@
 #include "im/loaders.h"
 
 #include "CLI11/CLI11.hpp"
+#include "spdlog/spdlog.h"
 
 #include "omp.h"
 
@@ -48,16 +49,31 @@ Configuration ParseCmdOptions(int argc, char **argv) {
 int main(int argc, char **argv) {
   im::Configuration CFG = im::ParseCmdOptions(argc, argv);
 
-  std::cout << "Loading..." << std::endl;
+  spdlog::set_level(spdlog::level::debug);
+
+  auto console = spdlog::stdout_color_mt("console");
+  console->info("Loading...");
   auto edgeList = im::load<im::Edge<uint32_t, float>>(CFG.IFileName, im::edge_list_tsv());
-  std::cout << "Loading Done!" << std::endl;
+  console->info("Loading Done!");
 
   im::Graph<uint32_t, float> G(edgeList.begin(), edgeList.end());
-  std::cout << "Number of Nodes : " << G.num_nodes() << std::endl;
-  std::cout << "Number of Edges : " << G.num_edges() << std::endl;
+  console->info("Number of Nodes : {}", G.num_nodes());
+  console->info("Number of Edges : {}", G.num_edges());
+  {
+    auto start = std::chrono::high_resolution_clock::now();
+    auto kpt = KptEstimation(G, CFG.k, CFG.epsilon);
+    auto end = std::chrono::high_resolution_clock::now();
+    std::chrono::duration<double, std::milli> exTime = end - start;
+    console->info("kpt : {} {}ms", kpt, exTime.count());
+  }
 
-  auto kpt = KptEstimation(G, CFG.k, CFG.epsilon, 0.5);
-  std::cout << "kpt : " << kpt << std::endl;
+  {
+    auto start = std::chrono::high_resolution_clock::now();
+    auto kpt_parallel = KptEstimation(G, CFG.k, CFG.epsilon, im::omp_parallel_tag());
+    auto end = std::chrono::high_resolution_clock::now();
+    std::chrono::duration<double, std::milli> exTime = end - start;
+    console->info("kpt : {} {}ms", kpt_parallel, exTime.count());
+  }
 
   return EXIT_SUCCESS;
 }
