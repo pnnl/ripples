@@ -3,6 +3,6 @@
 
 def build(bld):
   bld(features = 'cxx cxxprogram',
-      source   = 'influence_maximization.cc',
-      target   = 'influence-maximization',
+      source   = 'tim.cc',
+      target   = 'tim',
       use = [ 'project-headers', '3rd-party' ])

@@ -56,5 +56,8 @@ int main(int argc, char **argv) {
   std::cout << "Number of Nodes : " << G.num_nodes() << std::endl;
   std::cout << "Number of Edges : " << G.num_edges() << std::endl;
 
+  auto kpt = KptEstimation(G, CFG.k, CFG.epsilon, 0.5);
+  std::cout << "kpt : " << kpt << std::endl;
+
   return EXIT_SUCCESS;
 }

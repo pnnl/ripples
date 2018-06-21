@@ -302,7 +302,7 @@ size_t WR(GraphTy &G, typename GraphTy::vertex_type r, PRNG &generator) {
   std::uniform_real_distribution<double> value(0.0, 1.0);
 
   std::queue<vertex_type> queue;
-  std::vector<bool> visited(G.nodes(), false);
+  std::vector<bool> visited(G.num_nodes(), false);
 
   queue.push(r);
   visited[r] = true;
@@ -315,10 +315,10 @@ size_t WR(GraphTy &G, typename GraphTy::vertex_type r, PRNG &generator) {
     wr += G.in_degree(v);
 
     for (auto u : G.in_neighbors(v)) {
-      if (!visited[u.v] &&
-          value(generator) > u.attribute) {
-        visited[u.v] = true;
-        queue.push(u.v);
+      if (!visited[u.vertex] &&
+          value(generator) > u.weight) {
+        visited[u.vertex] = true;
+        queue.push(u.vertex);
       }
     }
   }
@@ -333,23 +333,23 @@ size_t KptEstimation(GraphTy &G, size_t k, double epsilon, double l) {
 
   std::default_random_engine generator;
 
-  for (size_t i = 0; i < log2(G.nodes()); ++i) {
-    size_t c_i = (6/l * log10(G.nodes()) + 6 * log10(log2(G.nodes()))) * (1ul << i);
+  for (size_t i = 0; i < log2(G.num_nodes()); ++i) {
+    size_t c_i = (6/l * log10(G.num_nodes()) + 6 * log10(log2(G.num_nodes()))) * (1ul << i);
     size_t sum = 0;
     for (size_t j = 0; j < c_i; ++j) {
       // Pick a random vertex
-      typename GraphTy::vertex_type v = generator() % G.nodes();
+      typename GraphTy::vertex_type v = generator() % G.num_nodes();
 
       size_t wr = WR(G, v, generator);
 
       // Equation (8) of the paper.
-      double KR = 1 - pow(1.0 - wr / G.edges(), k);
+      double KR = 1 - pow(1.0 - wr / G.num_edges(), k);
       sum += KR;
     }
 
     sum /= c_i;
     if (sum > (1.0 / (1ul << i))) {
-      KPTStar = G.nodes() * sum / (c_i * 2);
+      KPTStar = G.num_nodes() * sum / (c_i * 2);
       break;
     }
   }
