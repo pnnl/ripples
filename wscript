@@ -11,9 +11,9 @@ def options(opt):
 def configure(conf):
   conf.load('compiler_cxx')
 
-  conf.env.CXXFLAGS += ['-std=c++11', '-fopenmp']
-  conf.env.CXXFLAGS += ['-Ofast', '-march=native']
-  conf.env.LDFLAGS += ['-L/usr/local/opt/llvm/lib', '-liomp5']
+  conf.env.CXXFLAGS += ['-std=c++11', '-fopenmp',
+                        '-O2', '-march=native', '-pipe', '-fomit-frame-pointer']
+  conf.env.LDFLAGS += ['-fopenmp']
 
   conf.check_cfg(
     package='spdlog', args=['--cflags'], uselib_store='SPDLOG')

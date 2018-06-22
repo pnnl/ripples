@@ -319,7 +319,7 @@ size_t WR(GraphTy &G, typename GraphTy::vertex_type r, PRNG &generator) {
 
     for (auto u : G.in_neighbors(v)) {
       if (!visited[u.vertex] &&
-          value(generator) > u.weight) {
+          value(generator) < u.weight) {
         visited[u.vertex] = true;
         queue.push(u.vertex);
       }
@@ -354,10 +354,10 @@ double KptEstimation(GraphTy &G, size_t k, double epsilon) {
 
     sum /= c_i;
 
-    spdlog::get("console")->debug("c_i = {}, sum = {} < {}", c_i, sum, (1.0 / (1ul << i)));
+    spdlog::get("perf")->debug("c_i = {}, sum = {} < {}", c_i, sum, (1.0 / (1ul << i)));
     if (sum > (1.0 / (1ul << i))) {
       KPTStar = G.num_nodes() * sum / 2;
-      spdlog::get("console")->debug("KPTStar = {}, sum = {}, c_i = {}", KPTStar, sum, c_i);
+      spdlog::get("perf")->debug("KPTStar = {}, sum = {}, c_i = {}", KPTStar, sum, c_i);
       break;
     }
   }
@@ -398,10 +398,10 @@ double KptEstimation(GraphTy &G, size_t k, double epsilon, omp_parallel_tag &&) 
 
     sum /= c_i;
 
-    spdlog::get("console")->debug("c_i = {}, sum = {} < {}", c_i, sum, (1.0 / i));
+    spdlog::get("perf")->debug("c_i = {}, sum = {} < {}", c_i, sum, (1.0 / i));
     if (sum > (1.0 / i)) {
       KPTStar = G.num_nodes() * sum / 2;
-      spdlog::get("console")->debug("KPTStar = {}, sum = {}, c_i = {}", KPTStar, sum, c_i);
+      spdlog::get("perf")->debug("KPTStar = {}, sum = {}, c_i = {}", KPTStar, sum, c_i);
       break;
     }
   }

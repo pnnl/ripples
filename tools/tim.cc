@@ -49,9 +49,13 @@ Configuration ParseCmdOptions(int argc, char **argv) {
 int main(int argc, char **argv) {
   im::Configuration CFG = im::ParseCmdOptions(argc, argv);
 
-  spdlog::set_level(spdlog::level::debug);
+  spdlog::set_level(spdlog::level::info);
 
-  auto console = spdlog::stdout_color_mt("console");
+  auto console = spdlog::stdout_color_st("console");
+  auto perf = spdlog::basic_logger_mt("perf", "perf.log");
+  spdlog::set_async_mode(8192);
+  perf->set_level(spdlog::level::trace);
+
   console->info("Loading...");
   auto edgeList = im::load<im::Edge<uint32_t, float>>(CFG.IFileName, im::edge_list_tsv());
   console->info("Loading Done!");
