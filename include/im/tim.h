@@ -14,6 +14,7 @@
 #include <random>
 #include <iterator>
 #include <queue>
+#include <utility>
 
 #include <omp.h>
 
@@ -330,7 +331,7 @@ size_t WR(GraphTy &G, typename GraphTy::vertex_type r, PRNG &generator) {
 }
 
 template <typename GraphTy>
-double KptEstimation(GraphTy &G, size_t k, double epsilon) {
+double KptEstimation(GraphTy &G, size_t k, double epsilon, sequential_tag&&) {
   // Compute KPT* according to Algorithm 2
   double KPTStar = 1;
 
@@ -407,6 +408,126 @@ double KptEstimation(GraphTy &G, size_t k, double epsilon, omp_parallel_tag &&) 
   }
 
   return KPTStar;
+}
+
+
+template <typename GraphTy, typename execution_tag>
+std::vector<std::unordered_set<typename GraphTy::vertex_type>>
+GenerateRRRSets(GraphTy &G, size_t theta, execution_tag &&tag) {
+  std::vector<std::unordered_set<typename GraphTy::vertex_type>> result (theta);
+
+  trng::yarn2 generator;
+  trng::uniform_int_dist start(0, G.num_nodes());
+
+  for (size_t i = 0; i < theta; ++i) {
+    typename GraphTy::vertex_type r = start(generator);
+    result[i] = std::move(BFSOnRandomGraph(G, r, generator));
+  }
+  return result;
+}
+
+template <typename GraphTy>
+std::pair<size_t, std::unordered_set<typename GraphTy::vertex_type>>
+FindMostInfluentialSet(
+    GraphTy &G, size_t k,
+    std::vector<std::unordered_set<typename GraphTy::vertex_type>> &RRRsets) {
+  using vertex_type = typename GraphTy::vertex_type;
+  using RRRMap = std::vector<std::unordered_set<vertex_type> *>;
+  std::vector<RRRMap> hyperGraph(G.num_nodes());
+  std::vector<size_t> vertexCoverage(G.num_nodes());
+
+  for (auto & r : RRRsets) {
+    for (auto v : r) {
+      hyperGraph[v].push_back(&r);
+    }
+  }
+
+#if 1
+  auto cmp = [](std::pair<vertex_type, size_t> &a, std::pair<vertex_type, size_t>& b) {
+               return a.second < b.second;
+             };
+  using priorityQueue = std::priority_queue<
+    std::pair<vertex_type, size_t>,
+    std::vector<std::pair<vertex_type, size_t>>,
+    decltype(cmp)>;
+
+  priorityQueue queue(cmp, std::vector<std::pair<vertex_type, size_t>>(G.num_nodes()));
+  for (vertex_type i = 0; i < G.num_nodes(); ++i) {
+    vertexCoverage[i] = hyperGraph[i].size();
+    queue.push(std::make_pair(i, vertexCoverage[i]));
+  }
+
+  std::unordered_set<typename GraphTy::vertex_type> result;
+  size_t uncovered = RRRsets.size();
+
+  while (result.size() < k && uncovered > 0) {
+    auto element = queue.top();
+    queue.pop();
+
+    if (element.second > vertexCoverage[element.first]) {
+      element.second = vertexCoverage[element.first];
+      queue.push(element);
+      continue;
+    }
+
+    uncovered -= vertexCoverage[element.first];
+
+    for (auto rrrSetPtr : hyperGraph[element.first]) {
+      for (auto v : *rrrSetPtr) {
+        vertexCoverage[v] -= 1;
+      }
+    }
+
+    result.insert(element.first);
+  }
+#else
+  std::unordered_set<typename GraphTy::vertex_type> result;
+  size_t uncovered = RRRsets.size();
+
+  while (result.size() < k && uncovered > 0) {
+    typename GraphTy::vertex_type maxVertex = 0;
+    for (typename GraphTy::vertex_type v = 0;
+         v < G.num_nodes() && result.find(v) == result.end(); ++v) {
+      if (vertexCoverage[maxVertex] < vertexCoverage[v]) {
+        maxVertex = v;
+      }
+    }
+
+    for (auto rrrSetPtr : hyperGraph[maxVertex]) {
+      for (auto v : *rrrSetPtr) {
+        vertexCoverage[v] -= 1;
+      }
+    }
+
+    uncovered -= vertexCoverage[maxVertex];
+    vertexCoverage[maxVertex] = 0;
+    result.insert(maxVertex);
+  }
+#endif
+
+  return std::make_pair(RRR.size() - uncovered, result);
+}
+
+
+template <typename GraphTy, typename execution_tag>
+double ThetaEstimation(GraphTy &G, size_t k, double epsilon, execution_tag &&tag) {
+  double kpt = KptEstimation(G, k, epsilon, std::forward<execution_tag>(tag));
+
+  double epsPrime = 5 * cbrt((epsilon * epsilon) / (k + 1));
+  size_t thetaPrime = (2 + epsPrime) * G.num_nodes() * log(G.num_nodes()) / (epsPrime * epsPrime * kpt);
+
+  auto start = std::chrono::high_resolution_clock::now();
+  auto RR = GenerateRRRSets(G, thetaPrime, std::forward<execution_tag>(tag));
+  auto end = std::chrono::high_resolution_clock::now();
+  std::chrono::duration<double, std::milli> exTime = end - start;
+  spdlog::get("console")->info("RRsize : {} {}ms", RR.size(), exTime.count());
+
+  auto seeds = FindMostInfluentialSet(G, k, RR);
+  double f = double(seeds.first) / RR.size();
+  double kptPrime = (f * G.num_nodes()) / (1 + epsPrime);
+
+  kpt = std::max(kpt, kptPrime);
+  return kpt;
 }
 
 template <typename GraphTy>

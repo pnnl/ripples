@@ -65,7 +65,7 @@ int main(int argc, char **argv) {
   console->info("Number of Edges : {}", G.num_edges());
   {
     auto start = std::chrono::high_resolution_clock::now();
-    auto kpt = KptEstimation(G, CFG.k, CFG.epsilon);
+    auto kpt = ThetaEstimation(G, CFG.k, CFG.epsilon, im::sequential_tag());
     auto end = std::chrono::high_resolution_clock::now();
     std::chrono::duration<double, std::milli> exTime = end - start;
     console->info("kpt : {} {}ms", kpt, exTime.count());
@@ -73,7 +73,7 @@ int main(int argc, char **argv) {
 
   {
     auto start = std::chrono::high_resolution_clock::now();
-    auto kpt_parallel = KptEstimation(G, CFG.k, CFG.epsilon, im::omp_parallel_tag());
+    auto kpt_parallel = ThetaEstimation(G, CFG.k, CFG.epsilon, im::omp_parallel_tag());
     auto end = std::chrono::high_resolution_clock::now();
     std::chrono::duration<double, std::milli> exTime = end - start;
     console->info("kpt : {} {}ms", kpt_parallel, exTime.count());
