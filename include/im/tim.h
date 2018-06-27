@@ -227,7 +227,17 @@ GenerateRRRSets(GraphTy &G, size_t theta, omp_parallel_tag &&tag) {
   return result;
 }
 
-
+//! \brief Select k seeds starting from the a list of Random Reverse
+//! Reachability Sets.
+//!
+//! \tparam GraphTy The graph type.
+//!
+//! \param G The original graph.
+//! \param k The size of the seed set.
+//! \param RRRsets A vector storing the Random Reverse Reachability sets.
+//!
+//! \return a pair where the size_t is the number of RRRset covered and
+//! the set of vertices selected as seeds.
 template <typename GraphTy>
 std::pair<size_t, std::unordered_set<typename GraphTy::vertex_type>>
 FindMostInfluentialSet(
