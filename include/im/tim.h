@@ -379,6 +379,8 @@ double KptEstimation(GraphTy &G, size_t k, double epsilon, omp_parallel_tag &&) 
       size_t size = omp_get_num_threads();
       size_t rank = omp_get_thread_num();
 
+      spdlog::get("console")->info("num threads = {}, rank = {}", size, rank);
+
       trng::yarn2 generator;
       generator.split(size, rank);
 
@@ -411,9 +413,9 @@ double KptEstimation(GraphTy &G, size_t k, double epsilon, omp_parallel_tag &&) 
 }
 
 
-template <typename GraphTy, typename execution_tag>
+template <typename GraphTy>
 std::vector<std::unordered_set<typename GraphTy::vertex_type>>
-GenerateRRRSets(GraphTy &G, size_t theta, execution_tag &&tag) {
+GenerateRRRSets(GraphTy &G, size_t theta, sequential_tag &&tag) {
   std::vector<std::unordered_set<typename GraphTy::vertex_type>> result (theta);
 
   trng::yarn2 generator;
@@ -425,6 +427,31 @@ GenerateRRRSets(GraphTy &G, size_t theta, execution_tag &&tag) {
   }
   return result;
 }
+
+
+template <typename GraphTy>
+std::vector<std::unordered_set<typename GraphTy::vertex_type>>
+GenerateRRRSets(GraphTy &G, size_t theta, omp_parallel_tag &&tag) {
+  std::vector<std::unordered_set<typename GraphTy::vertex_type>> result (theta);
+
+#pragma omp parallel
+  {
+      size_t size = omp_get_num_threads();
+      size_t rank = omp_get_thread_num();
+
+      trng::yarn2 generator;
+      generator.split(size, rank);
+
+      trng::uniform_int_dist start(0, G.num_nodes());
+
+      for (size_t i = rank * theta/size; i < (rank + 1) * theta / size; ++i) {
+        typename GraphTy::vertex_type r = start(generator);
+        result[i] = std::move(BFSOnRandomGraph(G, r, generator));
+      }
+  }
+  return result;
+}
+
 
 template <typename GraphTy>
 std::pair<size_t, std::unordered_set<typename GraphTy::vertex_type>>
@@ -505,38 +532,57 @@ FindMostInfluentialSet(
   }
 #endif
 
-  return std::make_pair(RRR.size() - uncovered, result);
+  return std::make_pair(RRRsets.size() - uncovered, result);
 }
 
-
 template <typename GraphTy, typename execution_tag>
-double ThetaEstimation(GraphTy &G, size_t k, double epsilon, execution_tag &&tag) {
+size_t ThetaEstimation(GraphTy &G, size_t k, double epsilon, execution_tag &&tag) {
   double kpt = KptEstimation(G, k, epsilon, std::forward<execution_tag>(tag));
 
   double epsPrime = 5 * cbrt((epsilon * epsilon) / (k + 1));
   size_t thetaPrime = (2 + epsPrime) * G.num_nodes() * log(G.num_nodes()) / (epsPrime * epsPrime * kpt);
 
-  auto start = std::chrono::high_resolution_clock::now();
   auto RR = GenerateRRRSets(G, thetaPrime, std::forward<execution_tag>(tag));
-  auto end = std::chrono::high_resolution_clock::now();
-  std::chrono::duration<double, std::milli> exTime = end - start;
-  spdlog::get("console")->info("RRsize : {} {}ms", RR.size(), exTime.count());
 
   auto seeds = FindMostInfluentialSet(G, k, RR);
   double f = double(seeds.first) / RR.size();
   double kptPrime = (f * G.num_nodes()) / (1 + epsPrime);
 
   kpt = std::max(kpt, kptPrime);
-  return kpt;
+  spdlog::get("console")->info("kpt = {}", kpt);
+
+  // Compute lambda from equation (4)
+  auto logBinomial = [](size_t n, size_t k) -> double {
+    return n * log(n) - k * log(k) - (n - k) * log (n - k);
+  };
+  double lambda =
+      ((8 + 2 * epsilon) * G.num_nodes() *
+      (log(G.num_nodes()) +
+       logBinomial(G.num_nodes(), k)) +
+       log(2.0)) / (epsilon * epsilon);
+  spdlog::get("console")->info("lambda = {}", lambda);
+
+  return ceil(lambda / kpt);
 }
 
-template <typename GraphTy>
+template <typename GraphTy, typename execution_tag>
 std::unordered_set<typename GraphTy::vertex_type>
-TIM(const GraphTy &G, size_t k, double epsilon) {
+TIM(const GraphTy &G, size_t k, double epsilon, execution_tag&& tag) {
   using vertex_type = typename GraphTy::vertex_type;
   std::unordered_set<vertex_type> seedSet;
 
-  return seedSet;
+  auto theta =
+      ThetaEstimation(G, k, epsilon, std::forward<execution_tag>(tag));
+
+  spdlog::get("console")->info("theta = {}", theta);
+
+  auto RR = GenerateRRRSets(G, theta, std::forward<execution_tag>(tag));
+
+  spdlog::get("console")->info("RRSize = {}", RR.size());
+
+  auto seeds = FindMostInfluentialSet(G, k, RR);
+
+  return seeds.second;
 }
 
 }  // namespace im

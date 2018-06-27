@@ -13,7 +13,7 @@ def configure(conf):
 
   conf.env.CXXFLAGS += ['-std=c++11', '-fopenmp',
                         '-O2', '-march=native', '-pipe', '-fomit-frame-pointer']
-  conf.env.LDFLAGS += ['-fopenmp']
+  conf.env.LDFLAGS += ['-fopenmp', '-L/usr/local/opt/llvm/lib' ]
 
   conf.check_cfg(
     package='spdlog', args=['--cflags'], uselib_store='SPDLOG')
