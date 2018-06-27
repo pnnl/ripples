@@ -18,7 +18,12 @@ namespace im {
 //! \brief Execute a randomize BFS to generate a Random RR Set.
 //!
 //! \tparam GraphTy The type of the graph.
+//! \tparam PRNGGeneratorTy The type of pseudo the random number generator.
+//!
 //! \param G The graph instance.
+//! \param r The starting point for the exploration.
+//! \param generator The pseudo random number generator.
+//!
 //! \return A random RR set.
 template <
   typename GraphTy,
