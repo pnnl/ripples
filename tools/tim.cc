@@ -32,7 +32,9 @@ Configuration ParseCmdOptions(int argc, char **argv) {
       ->required();
   app.add_option("-e,--epsilon", CFG.epsilon, "The size of the seed set.")
       ->required();
-
+  app.add_flag("-p,--parallel", CFG.parallel, "Trigger the parallel implementation");
+  app.add_option("-l,--log", CFG.LogFile, "The file name of the log.");
+  
   try {
     app.parse(argc, argv);
   } catch (const CLI::ParseError &e) {
@@ -50,8 +52,8 @@ int main(int argc, char **argv) {
   spdlog::set_level(spdlog::level::info);
 
   auto console = spdlog::stdout_color_st("console");
-  auto perf = spdlog::basic_logger_mt("perf", "perf.log");
   spdlog::set_async_mode(8192);
+  auto perf = spdlog::basic_logger_mt("perf", CFG.LogFile);
   perf->set_level(spdlog::level::trace);
 
   console->info("Loading...");
@@ -62,21 +64,19 @@ int main(int argc, char **argv) {
   im::Graph<uint32_t, float> G(edgeList.begin(), edgeList.end());
   console->info("Number of Nodes : {}", G.num_nodes());
   console->info("Number of Edges : {}", G.num_edges());
-  {
+
+  if (CFG.parallel) {
     auto start = std::chrono::high_resolution_clock::now();
     auto seeds = TIM(G, CFG.k, CFG.epsilon, im::omp_parallel_tag());
     auto end = std::chrono::high_resolution_clock::now();
     std::chrono::duration<double, std::milli> exTime = end - start;
     console->info("TIM parallel : {}ms", exTime.count());
-  }
-
-  {
+  } else {
     auto start = std::chrono::high_resolution_clock::now();
-    auto kpt_parallel =
-        ThetaEstimation(G, CFG.k, CFG.epsilon, im::omp_parallel_tag());
+    auto seeds = TIM(G, CFG.k, CFG.epsilon, im::sequential_tag());
     auto end = std::chrono::high_resolution_clock::now();
     std::chrono::duration<double, std::milli> exTime = end - start;
-    console->info("kpt : {} {}ms", kpt_parallel, exTime.count());
+    console->info("TIM parallel : {}ms", exTime.count());
   }
 
   return EXIT_SUCCESS;

@@ -8,6 +8,7 @@
 #define IM_TIM_H
 
 #include <algorithm>
+#include <chrono>
 #include <cmath>
 #include <cstddef>
 #include <iterator>
@@ -103,11 +104,9 @@ double KptEstimation(GraphTy &G, size_t k, sequential_tag &&tag) {
 
     sum /= c_i;
 
-    spdlog::get("perf")->debug("c_i = {}, sum = {} < {}", c_i, sum,
-                               (1.0 / (1ul << i)));
     if (sum > (1.0 / (1ul << i))) {
       KPTStar = G.num_nodes() * sum / 2;
-      spdlog::get("perf")->debug("KPTStar = {}, sum = {}, c_i = {}", KPTStar,
+      spdlog::get("perf")->trace("i = {}, KPTStar = {}, sum = {}, c_i = {}", i, KPTStar,
                                  sum, c_i);
       break;
     }
@@ -138,8 +137,6 @@ double KptEstimation(GraphTy &G, size_t k, omp_parallel_tag &&tag) {
       size_t size = omp_get_num_threads();
       size_t rank = omp_get_thread_num();
 
-      spdlog::get("console")->info("num threads = {}, rank = {}", size, rank);
-
       trng::yarn2 generator;
       generator.split(size, rank);
 
@@ -160,10 +157,9 @@ double KptEstimation(GraphTy &G, size_t k, omp_parallel_tag &&tag) {
 
     sum /= c_i;
 
-    spdlog::get("perf")->debug("c_i = {}, sum = {} < {}", c_i, sum, (1.0 / i));
     if (sum > (1.0 / i)) {
       KPTStar = G.num_nodes() * sum / 2;
-      spdlog::get("perf")->debug("KPTStar = {}, sum = {}, c_i = {}", KPTStar,
+      spdlog::get("perf")->trace("i = {}, KPTStar = {}, sum = {}, c_i = {}", i, KPTStar,
                                  sum, c_i);
       break;
     }
@@ -313,8 +309,13 @@ FindMostInfluentialSet(
 template <typename GraphTy, typename execution_tag>
 size_t ThetaEstimation(GraphTy &G, size_t k, double epsilon,
                        execution_tag &&tag) {
+  auto start = std::chrono::high_resolution_clock::now();
   double kpt = KptEstimation(G, k, std::forward<execution_tag>(tag));
+  auto end = std::chrono::high_resolution_clock::now();
+  std::chrono::duration<double, std::milli> exTime = end - start;
+  spdlog::get("perf")->info("KptEstimation : {}ms", exTime.count());
 
+  start = std::chrono::high_resolution_clock::now();
   // epsPrime is set according to the equation at the bottom of Section 4.1
   double epsPrime = 5 * cbrt((epsilon * epsilon) / (k + 1));
 
@@ -330,7 +331,9 @@ size_t ThetaEstimation(GraphTy &G, size_t k, double epsilon,
 
   // kpt now contains the best bound we were able to find after refinment.
   kpt = std::max(kpt, kptPrime);
-  spdlog::get("console")->info("kpt = {}", kpt);
+  end = std::chrono::high_resolution_clock::now();
+  exTime = end - start;
+  spdlog::get("perf")->info("KptRefinement : {}ms", exTime.count());
 
   auto logBinomial = [](size_t n, size_t k) -> double {
     return n * log(n) - k * log(k) - (n - k) * log(n - k);
@@ -341,8 +344,8 @@ size_t ThetaEstimation(GraphTy &G, size_t k, double epsilon,
                        (log(G.num_nodes()) + logBinomial(G.num_nodes(), k)) +
                    log(2.0)) /
                   (epsilon * epsilon);
-  spdlog::get("console")->info("lambda = {}", lambda);
 
+  spdlog::get("perf")->trace("Kpt = {}, lambda = {}", kpt, lambda);
   // return theta according to equation (5)
   return ceil(lambda / kpt);
 }
@@ -366,14 +369,19 @@ std::unordered_set<typename GraphTy::vertex_type> TIM(const GraphTy &G,
   std::unordered_set<vertex_type> seedSet;
 
   auto theta = ThetaEstimation(G, k, epsilon, std::forward<execution_tag>(tag));
+  spdlog::get("perf")->trace("theta = {}", theta);
 
-  spdlog::get("console")->info("theta = {}", theta);
-
+  auto start = std::chrono::high_resolution_clock::now();
   auto RR = GenerateRRRSets(G, theta, std::forward<execution_tag>(tag));
+  auto end = std::chrono::high_resolution_clock::now();
+  std::chrono::duration<double, std::milli> exTime = end - start;
+  spdlog::get("perf")->info("Generate RRR : {}ms", exTime.count());
 
-  spdlog::get("console")->info("RRSize = {}", RR.size());
-
+  start = std::chrono::high_resolution_clock::now();
   auto seeds = FindMostInfluentialSet(G, k, RR);
+  end = std::chrono::high_resolution_clock::now();
+  exTime = end - start;
+  spdlog::get("perf")->info("FindMostInfluentialSet : {}ms", exTime.count());
 
   return seeds.second;
 }

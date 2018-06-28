@@ -36,6 +36,7 @@ std::vector<EdgeTy> load(std::string &inputFile, const edge_list_tsv &&) {
     SS >> source >> destination;
 
     if (!(SS >> weight)) weight = 0.10;
+    weight = 0.10f;
     EdgeTy e = {source, destination, weight};
     result.emplace_back(e);
   }

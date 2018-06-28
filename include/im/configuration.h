@@ -13,15 +13,13 @@
 
 namespace im {
 
-enum class Algorithm { TIM };
-
 //! \brief The command line configuration
 struct Configuration {
   std::string IFileName{""};                //!< The input file name
+  std::string LogFile{"log.log"};           //!< The file name of the log
   size_t k{10};                             //!< The size of the seedset
   double epsilon{0.15};                     //!< The epsilon of the IM algorithm
-  Algorithm algo{Algorithm::TIM};           //!< The algorithm to be used.
-  std::default_random_engine generator{0};  //!< The random number generator.
+  bool parallel{false};
 };
 
 };  // namespace im
