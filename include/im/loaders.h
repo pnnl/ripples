@@ -8,10 +8,10 @@
 #define IM_LOADERS_H
 
 #include <fstream>
-#include <unordered_map>
 #include <iostream>
 #include <sstream>
 #include <string>
+#include <unordered_map>
 
 #include "im/graph.h"
 
@@ -20,8 +20,7 @@ namespace im {
 struct edge_list_tsv {};
 
 template <typename EdgeTy>
-std::vector<EdgeTy>
-load(std::string &inputFile, const edge_list_tsv &&) {
+std::vector<EdgeTy> load(std::string &inputFile, const edge_list_tsv &&) {
   std::ifstream GFS(inputFile);
   size_t lineNumber = 0;
 

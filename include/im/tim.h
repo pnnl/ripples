@@ -10,10 +10,10 @@
 #include <algorithm>
 #include <cmath>
 #include <cstddef>
-#include <unordered_set>
-#include <random>
 #include <iterator>
 #include <queue>
+#include <random>
+#include <unordered_set>
 #include <utility>
 
 #include <omp.h>
@@ -22,10 +22,9 @@
 #include "im/utility.h"
 
 #include "spdlog/spdlog.h"
-#include "trng/yarn2.hpp"
 #include "trng/uniform01_dist.hpp"
 #include "trng/uniform_int_dist.hpp"
-
+#include "trng/yarn2.hpp"
 
 namespace im {
 
@@ -59,8 +58,7 @@ size_t WR(GraphTy &G, typename GraphTy::vertex_type r, PRNG &generator) {
     wr += G.in_degree(v);
 
     for (auto u : G.in_neighbors(v)) {
-      if (!visited[u.vertex] &&
-          value(generator) < u.weight) {
+      if (!visited[u.vertex] && value(generator) < u.weight) {
         visited[u.vertex] = true;
         queue.push(u.vertex);
       }
@@ -80,7 +78,7 @@ size_t WR(GraphTy &G, typename GraphTy::vertex_type r, PRNG &generator) {
 //!
 //! \return a lower bond of OPT computed with Algoirthm 2 of the original paper.
 template <typename GraphTy>
-double KptEstimation(GraphTy &G, size_t k, sequential_tag&& tag) {
+double KptEstimation(GraphTy &G, size_t k, sequential_tag &&tag) {
   // Compute KPT* according to Algorithm 2
   double KPTStar = 1;
 
@@ -90,7 +88,8 @@ double KptEstimation(GraphTy &G, size_t k, sequential_tag&& tag) {
 
   for (size_t i = 1; i < log2(G.num_nodes()); ++i) {
     double sum = 0;
-    size_t c_i = (6 * log(G.num_nodes()) + 6 * log(log2(G.num_nodes()))) * (1ul << i);
+    size_t c_i =
+        (6 * log(G.num_nodes()) + 6 * log(log2(G.num_nodes()))) * (1ul << i);
 
     for (size_t j = 0; j < c_i; ++j) {
       // Pick a random vertex
@@ -104,10 +103,12 @@ double KptEstimation(GraphTy &G, size_t k, sequential_tag&& tag) {
 
     sum /= c_i;
 
-    spdlog::get("perf")->debug("c_i = {}, sum = {} < {}", c_i, sum, (1.0 / (1ul << i)));
+    spdlog::get("perf")->debug("c_i = {}, sum = {} < {}", c_i, sum,
+                               (1.0 / (1ul << i)));
     if (sum > (1.0 / (1ul << i))) {
       KPTStar = G.num_nodes() * sum / 2;
-      spdlog::get("perf")->debug("KPTStar = {}, sum = {}, c_i = {}", KPTStar, sum, c_i);
+      spdlog::get("perf")->debug("KPTStar = {}, sum = {}, c_i = {}", KPTStar,
+                                 sum, c_i);
       break;
     }
   }
@@ -125,14 +126,14 @@ double KptEstimation(GraphTy &G, size_t k, sequential_tag&& tag) {
 //!
 //! \return a lower bond of OPT computed with Algoirthm 2 of the original paper.
 template <typename GraphTy>
-double KptEstimation(GraphTy &G, size_t k, omp_parallel_tag && tag) {
+double KptEstimation(GraphTy &G, size_t k, omp_parallel_tag &&tag) {
   double KPTStar = 1.0;
 
   for (size_t i = 2; i < G.num_nodes(); i <<= 1) {
     size_t c_i = (6 * log(G.num_nodes()) + 6 * log(log2(G.num_nodes()))) * i;
     double sum = 0;
 
-#pragma omp parallel reduction(+:sum)
+#pragma omp parallel reduction(+ : sum)
     {
       size_t size = omp_get_num_threads();
       size_t rank = omp_get_thread_num();
@@ -146,7 +147,7 @@ double KptEstimation(GraphTy &G, size_t k, omp_parallel_tag && tag) {
 
       size_t chunk = c_i;
 
-      for (size_t j = rank * chunk/size; j < (rank + 1) * chunk/size; ++j) {
+      for (size_t j = rank * chunk / size; j < (rank + 1) * chunk / size; ++j) {
         // Pick a random vertex
         typename GraphTy::vertex_type v = root(generator);
 
@@ -162,7 +163,8 @@ double KptEstimation(GraphTy &G, size_t k, omp_parallel_tag && tag) {
     spdlog::get("perf")->debug("c_i = {}, sum = {} < {}", c_i, sum, (1.0 / i));
     if (sum > (1.0 / i)) {
       KPTStar = G.num_nodes() * sum / 2;
-      spdlog::get("perf")->debug("KPTStar = {}, sum = {}, c_i = {}", KPTStar, sum, c_i);
+      spdlog::get("perf")->debug("KPTStar = {}, sum = {}, c_i = {}", KPTStar,
+                                 sum, c_i);
       break;
     }
   }
@@ -180,9 +182,9 @@ double KptEstimation(GraphTy &G, size_t k, omp_parallel_tag && tag) {
 //!
 //! \return A list of theta Random Reverse Rachability Sets.
 template <typename GraphTy>
-std::vector<std::unordered_set<typename GraphTy::vertex_type>>
-GenerateRRRSets(GraphTy &G, size_t theta, sequential_tag &&tag) {
-  std::vector<std::unordered_set<typename GraphTy::vertex_type>> result (theta);
+std::vector<std::unordered_set<typename GraphTy::vertex_type>> GenerateRRRSets(
+    GraphTy &G, size_t theta, sequential_tag &&tag) {
+  std::vector<std::unordered_set<typename GraphTy::vertex_type>> result(theta);
 
   trng::yarn2 generator;
   trng::uniform_int_dist start(0, G.num_nodes());
@@ -194,7 +196,6 @@ GenerateRRRSets(GraphTy &G, size_t theta, sequential_tag &&tag) {
   return result;
 }
 
-
 //! \brief Generate Random Reverse Reachability Sets.
 //!
 //! \tparam GraphTy The type of the garph.
@@ -205,24 +206,24 @@ GenerateRRRSets(GraphTy &G, size_t theta, sequential_tag &&tag) {
 //!
 //! \return A list of theta Random Reverse Rachability Sets.
 template <typename GraphTy>
-std::vector<std::unordered_set<typename GraphTy::vertex_type>>
-GenerateRRRSets(GraphTy &G, size_t theta, omp_parallel_tag &&tag) {
-  std::vector<std::unordered_set<typename GraphTy::vertex_type>> result (theta);
+std::vector<std::unordered_set<typename GraphTy::vertex_type>> GenerateRRRSets(
+    GraphTy &G, size_t theta, omp_parallel_tag &&tag) {
+  std::vector<std::unordered_set<typename GraphTy::vertex_type>> result(theta);
 
 #pragma omp parallel
   {
-      size_t size = omp_get_num_threads();
-      size_t rank = omp_get_thread_num();
+    size_t size = omp_get_num_threads();
+    size_t rank = omp_get_thread_num();
 
-      trng::yarn2 generator;
-      generator.split(size, rank);
+    trng::yarn2 generator;
+    generator.split(size, rank);
 
-      trng::uniform_int_dist start(0, G.num_nodes());
+    trng::uniform_int_dist start(0, G.num_nodes());
 
-      for (size_t i = rank * theta/size; i < (rank + 1) * theta / size; ++i) {
-        typename GraphTy::vertex_type r = start(generator);
-        result[i] = std::move(BFSOnRandomGraph(G, r, generator));
-      }
+    for (size_t i = rank * theta / size; i < (rank + 1) * theta / size; ++i) {
+      typename GraphTy::vertex_type r = start(generator);
+      result[i] = std::move(BFSOnRandomGraph(G, r, generator));
+    }
   }
   return result;
 }
@@ -248,21 +249,23 @@ FindMostInfluentialSet(
   std::vector<RRRMap> hyperGraph(G.num_nodes());
   std::vector<size_t> vertexCoverage(G.num_nodes());
 
-  for (auto & r : RRRsets) {
+  for (auto &r : RRRsets) {
     for (auto v : r) {
       hyperGraph[v].push_back(&r);
     }
   }
 
-  auto cmp = [](std::pair<vertex_type, size_t> &a, std::pair<vertex_type, size_t>& b) {
-               return a.second < b.second;
-             };
-  using priorityQueue = std::priority_queue<
-    std::pair<vertex_type, size_t>,
-    std::vector<std::pair<vertex_type, size_t>>,
-    decltype(cmp)>;
+  auto cmp = [](std::pair<vertex_type, size_t> &a,
+                std::pair<vertex_type, size_t> &b) {
+    return a.second < b.second;
+  };
+  using priorityQueue =
+      std::priority_queue<std::pair<vertex_type, size_t>,
+                          std::vector<std::pair<vertex_type, size_t>>,
+                          decltype(cmp)>;
 
-  priorityQueue queue(cmp, std::vector<std::pair<vertex_type, size_t>>(G.num_nodes()));
+  priorityQueue queue(
+      cmp, std::vector<std::pair<vertex_type, size_t>>(G.num_nodes()));
   for (vertex_type i = 0; i < G.num_nodes(); ++i) {
     vertexCoverage[i] = hyperGraph[i].size();
     queue.push(std::make_pair(i, vertexCoverage[i]));
@@ -295,7 +298,8 @@ FindMostInfluentialSet(
   return std::make_pair(RRRsets.size() - uncovered, result);
 }
 
-//! \brief Estimate the number of Random Reverse Reachability Sets to be computed.
+//! \brief Estimate the number of Random Reverse Reachability Sets to be
+//! computed.
 //!
 //! \tparam GraphTy The graph type.
 //! \tparam execution_tag Type tag to selecte the execution policy.
@@ -307,14 +311,16 @@ FindMostInfluentialSet(
 //!
 //! \return The number of Random Reverse Reachability sets to be computed.
 template <typename GraphTy, typename execution_tag>
-size_t ThetaEstimation(GraphTy &G, size_t k, double epsilon, execution_tag &&tag) {
-  double kpt = KptEstimation(G, k, epsilon, std::forward<execution_tag>(tag));
+size_t ThetaEstimation(GraphTy &G, size_t k, double epsilon,
+                       execution_tag &&tag) {
+  double kpt = KptEstimation(G, k, std::forward<execution_tag>(tag));
 
   // epsPrime is set according to the equation at the bottom of Section 4.1
   double epsPrime = 5 * cbrt((epsilon * epsilon) / (k + 1));
 
   // The following block implements the refinement algorithm (Algorithm 3)
-  size_t thetaPrime = (2 + epsPrime) * G.num_nodes() * log(G.num_nodes()) / (epsPrime * epsPrime * kpt);
+  size_t thetaPrime = (2 + epsPrime) * G.num_nodes() * log(G.num_nodes()) /
+                      (epsPrime * epsPrime * kpt);
 
   auto RR = GenerateRRRSets(G, thetaPrime, std::forward<execution_tag>(tag));
 
@@ -327,15 +333,14 @@ size_t ThetaEstimation(GraphTy &G, size_t k, double epsilon, execution_tag &&tag
   spdlog::get("console")->info("kpt = {}", kpt);
 
   auto logBinomial = [](size_t n, size_t k) -> double {
-    return n * log(n) - k * log(k) - (n - k) * log (n - k);
+    return n * log(n) - k * log(k) - (n - k) * log(n - k);
   };
 
   // Compute lambda from equation (4)
-  double lambda =
-      ((8 + 2 * epsilon) * G.num_nodes() *
-      (log(G.num_nodes()) +
-       logBinomial(G.num_nodes(), k)) +
-       log(2.0)) / (epsilon * epsilon);
+  double lambda = ((8 + 2 * epsilon) * G.num_nodes() *
+                       (log(G.num_nodes()) + logBinomial(G.num_nodes(), k)) +
+                   log(2.0)) /
+                  (epsilon * epsilon);
   spdlog::get("console")->info("lambda = {}", lambda);
 
   // return theta according to equation (5)
@@ -354,13 +359,13 @@ size_t ThetaEstimation(GraphTy &G, size_t k, double epsilon, execution_tag &&tag
 //!
 //! \return A set of vertices in the graph.
 template <typename GraphTy, typename execution_tag>
-std::unordered_set<typename GraphTy::vertex_type>
-TIM(const GraphTy &G, size_t k, double epsilon, execution_tag&& tag) {
+std::unordered_set<typename GraphTy::vertex_type> TIM(const GraphTy &G,
+                                                      size_t k, double epsilon,
+                                                      execution_tag &&tag) {
   using vertex_type = typename GraphTy::vertex_type;
   std::unordered_set<vertex_type> seedSet;
 
-  auto theta =
-      ThetaEstimation(G, k, epsilon, std::forward<execution_tag>(tag));
+  auto theta = ThetaEstimation(G, k, epsilon, std::forward<execution_tag>(tag));
 
   spdlog::get("console")->info("theta = {}", theta);
 

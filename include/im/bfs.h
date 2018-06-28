@@ -12,7 +12,6 @@
 
 #include "trng/uniform01_dist.hpp"
 
-
 namespace im {
 
 //! \brief Execute a randomize BFS to generate a Random RR Set.
@@ -25,11 +24,9 @@ namespace im {
 //! \param generator The pseudo random number generator.
 //!
 //! \return A random RR set.
-template <
-  typename GraphTy,
-  typename PRNGeneratorTy>
-std::unordered_set<typename GraphTy::vertex_type>
-BFSOnRandomGraph(GraphTy &G, typename GraphTy::vertex_type r, PRNGeneratorTy &generator) {
+template <typename GraphTy, typename PRNGeneratorTy>
+std::unordered_set<typename GraphTy::vertex_type> BFSOnRandomGraph(
+    GraphTy &G, typename GraphTy::vertex_type r, PRNGeneratorTy &generator) {
   using vertex_type = typename GraphTy::vertex_type;
 
   trng::uniform01_dist<float> value;
@@ -46,8 +43,7 @@ BFSOnRandomGraph(GraphTy &G, typename GraphTy::vertex_type r, PRNGeneratorTy &ge
     queue.pop();
 
     for (auto u : G.in_neighbors(v)) {
-      if (!visited[u.vertex] &&
-          value(generator) < u.weight) {
+      if (!visited[u.vertex] && value(generator) < u.weight) {
         visited[u.vertex] = true;
         result.insert(u.vertex);
         queue.push(u.vertex);
@@ -58,6 +54,6 @@ BFSOnRandomGraph(GraphTy &G, typename GraphTy::vertex_type r, PRNGeneratorTy &ge
   return result;
 }
 
-} // namespace im
+}  // namespace im
 
 #endif  // IM_BFS_H

@@ -23,13 +23,12 @@ namespace im {
 //! \param G The social network.
 //! \param k The size of the seed set for the influence maximization.
 template <typename GraphTy, typename method_tag>
-std::set<typename GraphTy::vertex_type>
-influence_maximization(
+std::set<typename GraphTy::vertex_type> influence_maximization(
     const GraphTy &G, size_t k, double epsilon, const method_tag &);
 
-}  // namespae im
+}  // namespace im
 
-#include "im/tim.h"
 #include "im/bart.h"
+#include "im/tim.h"
 
 #endif /* IM_INFLUENCE_MAXIMIZATION_H */

@@ -9,8 +9,8 @@
 
 #include "im/configuration.h"
 #include "im/graph.h"
-#include "im/tim.h"
 #include "im/loaders.h"
+#include "im/tim.h"
 
 #include "CLI11/CLI11.hpp"
 #include "spdlog/spdlog.h"
@@ -28,16 +28,14 @@ Configuration ParseCmdOptions(int argc, char **argv) {
   app.add_option("-i,--input-graph", CFG.IFileName,
                  "The input file with the edge-list.")
       ->required();
-  app.add_option("-k,--seed-set-size", CFG.k,
-                 "The size of the seed set.")
+  app.add_option("-k,--seed-set-size", CFG.k, "The size of the seed set.")
       ->required();
-  app.add_option("-e,--epsilon", CFG.epsilon,
-                 "The size of the seed set.")
+  app.add_option("-e,--epsilon", CFG.epsilon, "The size of the seed set.")
       ->required();
 
   try {
     app.parse(argc, argv);
-  } catch (const CLI::ParseError & e) {
+  } catch (const CLI::ParseError &e) {
     exit(app.exit(e));
   }
 
@@ -57,7 +55,8 @@ int main(int argc, char **argv) {
   perf->set_level(spdlog::level::trace);
 
   console->info("Loading...");
-  auto edgeList = im::load<im::Edge<uint32_t, float>>(CFG.IFileName, im::edge_list_tsv());
+  auto edgeList =
+      im::load<im::Edge<uint32_t, float>>(CFG.IFileName, im::edge_list_tsv());
   console->info("Loading Done!");
 
   im::Graph<uint32_t, float> G(edgeList.begin(), edgeList.end());
@@ -73,7 +72,8 @@ int main(int argc, char **argv) {
 
   {
     auto start = std::chrono::high_resolution_clock::now();
-    auto kpt_parallel = ThetaEstimation(G, CFG.k, CFG.epsilon, im::omp_parallel_tag());
+    auto kpt_parallel =
+        ThetaEstimation(G, CFG.k, CFG.epsilon, im::omp_parallel_tag());
     auto end = std::chrono::high_resolution_clock::now();
     std::chrono::duration<double, std::milli> exTime = end - start;
     console->info("kpt : {} {}ms", kpt_parallel, exTime.count());

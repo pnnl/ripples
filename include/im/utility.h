@@ -9,10 +9,10 @@
 
 namespace im {
 
-struct sequential_tag{};
-struct omp_parallel_tag{};
-struct cxx_parallel_tag{};
+struct sequential_tag {};
+struct omp_parallel_tag {};
+struct cxx_parallel_tag {};
 
-}
+}  // namespace im
 
 #endif  // IM_UTILITY_H
