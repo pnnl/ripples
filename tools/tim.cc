@@ -14,8 +14,17 @@
 
 #include "CLI11/CLI11.hpp"
 #include "spdlog/spdlog.h"
+#include "spdlog/fmt/ostr.h"
 
 #include "omp.h"
+
+template <typename OStream, typename vertex_type>
+OStream &operator<<(OStream &OS, const std::unordered_set<vertex_type> &S) {
+  OS << "{ ";
+  for (auto v : S)
+    OS << v << ", ";
+  OS << "}";
+}
 
 namespace im {
 
@@ -71,12 +80,14 @@ int main(int argc, char **argv) {
     auto end = std::chrono::high_resolution_clock::now();
     std::chrono::duration<double, std::milli> exTime = end - start;
     console->info("TIM parallel : {}ms", exTime.count());
+    console->info("Seeds : {}", seeds);
   } else {
     auto start = std::chrono::high_resolution_clock::now();
     auto seeds = TIM(G, CFG.k, CFG.epsilon, im::sequential_tag());
     auto end = std::chrono::high_resolution_clock::now();
     std::chrono::duration<double, std::milli> exTime = end - start;
-    console->info("TIM parallel : {}ms", exTime.count());
+    console->info("TIM squential : {}ms", exTime.count());
+    console->info("Seeds : {}", seeds);
   }
 
   return EXIT_SUCCESS;
