@@ -74,18 +74,18 @@ size_t WR(GraphTy &G, typename GraphTy::vertex_type r, PRNG &generator) {
 //! \brief Estimate KPT.  Algorithm 2 in the original paper.
 //!
 //! \tparam GraphTy The type of the graph.
+//! \tparam PRNGeneratorty The type of the random number generator.
 //!
 //! \param G The original graph.
 //! \param k The size of the desired seed set.
+//! \param generator The random numeber generator.
 //! \param tag The execution policy tag.
 //!
 //! \return a lower bond of OPT computed with Algoirthm 2 of the original paper.
-template <typename GraphTy>
-double KptEstimation(GraphTy &G, size_t k, sequential_tag &&tag) {
+template <typename GraphTy, typename PRNGeneratorTy>
+double KptEstimation(GraphTy &G, size_t k, PRNGeneratorTy &generator, sequential_tag &&tag) {
   // Compute KPT* according to Algorithm 2
   double KPTStar = 1;
-
-  trng::yarn2 generator;
 
   trng::uniform_int_dist root(0, G.num_nodes());
 
@@ -96,9 +96,9 @@ double KptEstimation(GraphTy &G, size_t k, sequential_tag &&tag) {
 
     for (size_t j = 0; j < c_i; ++j) {
       // Pick a random vertex
-      typename GraphTy::vertex_type v = root(generator);
+      typename GraphTy::vertex_type v = root(generator[0]);
 
-      double wr = WR(G, v, generator);
+      double wr = WR(G, v, generator[0]);
       wr /= G.num_edges();
       // Equation (8) of the paper.
       sum += 1 - pow(1.0 - wr, k);
@@ -120,14 +120,16 @@ double KptEstimation(GraphTy &G, size_t k, sequential_tag &&tag) {
 //! \brief Estimate KPT.  Parallelization of Algorithm 2 in the original paper.
 //!
 //! \tparam GraphTy The type of the graph.
+//! \tparam PRNGeneratorty The type of the random number generator.
 //!
 //! \param G The original graph.
 //! \param k The size of the desired seed set.
+//! \param generator The random numeber generator.
 //! \param tag The execution policy tag.
 //!
 //! \return a lower bond of OPT computed with Algoirthm 2 of the original paper.
-template <typename GraphTy>
-double KptEstimation(GraphTy &G, size_t k, omp_parallel_tag &&tag) {
+template <typename GraphTy, typename PRNGeneratorTy>
+double KptEstimation(GraphTy &G, size_t k, PRNGeneratorTy &generator, omp_parallel_tag &&tag) {
   double KPTStar = 1.0;
 
   for (size_t i = 2; i < G.num_nodes(); i <<= 1) {
@@ -139,18 +141,15 @@ double KptEstimation(GraphTy &G, size_t k, omp_parallel_tag &&tag) {
       size_t size = omp_get_num_threads();
       size_t rank = omp_get_thread_num();
 
-      trng::yarn2 generator;
-      generator.split(size, rank);
-
       trng::uniform_int_dist root(0, G.num_nodes());
 
       size_t chunk = c_i;
 
       for (size_t j = rank * chunk / size; j < (rank + 1) * chunk / size; ++j) {
         // Pick a random vertex
-        typename GraphTy::vertex_type v = root(generator);
+        typename GraphTy::vertex_type v = root(generator[rank]);
 
-        double wr = WR(G, v, generator);
+        double wr = WR(G, v, generator[rank]);
         wr /= G.num_edges();
         // Equation (8) of the paper.
         sum += 1 - pow(1.0 - wr, k);
@@ -221,28 +220,29 @@ void AddRRRSet(
 //! \brief Generate Random Reverse Reachability Sets.
 //!
 //! \tparam GraphTy The type of the garph.
+//! \tparam PRNGeneratorty The type of the random number generator.
 //!
 //! \param G The original graph.
 //! \param theta The number of RRR sets to be generated.
+//! \param generator The random numeber generator.
 //! \param tag The execution policy tag.
 //!
 //! \return A list of theta Random Reverse Rachability Sets.
-template <typename GraphTy>
+template <typename GraphTy, typename PRNGeneratorTy>
 std::pair<
   std::vector<std::vector<typename GraphTy::vertex_type>>,
   std::vector<std::deque<size_t>>>
 GenerateRRRSets(
-    GraphTy &G, size_t theta, sequential_tag &&tag) {
+    GraphTy &G, size_t theta, PRNGeneratorTy &generator, sequential_tag &&tag) {
   using vertex_type = typename GraphTy::vertex_type;
   std::vector<std::vector<vertex_type>> rrrSets(theta);
   std::vector<std::deque<size_t>> HyperG(G.num_nodes());
 
-  trng::yarn2 generator;
   trng::uniform_int_dist start(0, G.num_nodes());
 
   for (size_t i = 0; i < theta; ++i) {
-    typename GraphTy::vertex_type r = start(generator);
-    AddRRRSet(G, r, generator, rrrSets[i], i, HyperG, std::forward<sequential_tag>(tag));
+    typename GraphTy::vertex_type r = start(generator[0]);
+    AddRRRSet(G, r, generator[0], rrrSets[i], i, HyperG, std::forward<sequential_tag>(tag));
   }
   return std::make_pair(std::forward<decltype(rrrSets)>(rrrSets),
                         std::forward<decltype(HyperG)>(HyperG));
@@ -256,18 +256,20 @@ for (size_t i = 0; i < in.size(); ++i)
 //! \brief Generate Random Reverse Reachability Sets.
 //!
 //! \tparam GraphTy The type of the garph.
+//! \tparam PRNGeneratorty The type of the random number generator.
 //!
 //! \param G The original graph.
 //! \param theta The number of RRR sets to be generated.
+//! \param generator The random numeber generator.
 //! \param tag The execution policy tag.
 //!
 //! \return A list of theta Random Reverse Rachability Sets.
-template <typename GraphTy>
+template <typename GraphTy, typename PRNGeneratorTy>
 std::pair<
   std::vector<std::vector<typename GraphTy::vertex_type>>,
   std::vector<std::deque<size_t>>>
 GenerateRRRSets(
-    GraphTy &G, size_t theta, omp_parallel_tag &&tag) {
+    GraphTy &G, size_t theta, PRNGeneratorTy &generator, omp_parallel_tag &&tag) {
   std::vector<std::vector<typename GraphTy::vertex_type>> rrrSets(theta);
   std::vector<std::deque<size_t>> HyperG(G.num_nodes());
 
@@ -278,14 +280,11 @@ GenerateRRRSets(
     size_t size = omp_get_num_threads();
     size_t rank = omp_get_thread_num();
 
-    trng::yarn2 generator;
-    generator.split(size, rank);
-
     trng::uniform_int_dist start(0, G.num_nodes());
 
     for (size_t i = rank * theta / size; i < (rank + 1) * theta / size; ++i) {
-      typename GraphTy::vertex_type r = start(generator);
-      AddRRRSet(G, r, generator, rrrSets[i], i, HyperG, std::forward<omp_parallel_tag>(tag));
+      typename GraphTy::vertex_type r = start(generator[rank]);
+      AddRRRSet(G, r, generator[rank], rrrSets[i], i, HyperG, std::forward<omp_parallel_tag>(tag));
     }
   }
   return std::make_pair(std::forward<decltype(rrrSets)>(rrrSets),
@@ -365,21 +364,23 @@ FindMostInfluentialSet(
 //! computed.
 //!
 //! \tparam GraphTy The graph type.
+//! \tparam PRNGeneratorty The type of the Random Number Generator.
 //! \tparam execution_tag Type tag to selecte the execution policy.
 //!
 //! \param G The original graph.
 //! \param k The size of the seed set to be selected.
 //! \param epsilon The approximation factor.
+//! \param generator The random number generator.
 //! \param tag The execution policy tag.
 //!
 //! \return The number of Random Reverse Reachability sets to be computed.
-template <typename GraphTy, typename execution_tag>
-size_t ThetaEstimation(GraphTy &G, size_t k, double epsilon,
+template <typename GraphTy, typename PRNGeneratorTy, typename execution_tag>
+size_t ThetaEstimation(GraphTy &G, size_t k, double epsilon, PRNGeneratorTy &generator,
                        execution_tag &&tag) {
   using vertex_type = typename GraphTy::vertex_type;
 
   auto start = std::chrono::high_resolution_clock::now();
-  double kpt = KptEstimation(G, k, std::forward<execution_tag>(tag));
+  double kpt = KptEstimation(G, k, generator, std::forward<execution_tag>(tag));
   auto end = std::chrono::high_resolution_clock::now();
   std::chrono::duration<double, std::milli> exTime = end - start;
   spdlog::get("perf")->info("KptEstimation : {}ms, kpt = {}", exTime.count(), kpt);
@@ -394,7 +395,7 @@ size_t ThetaEstimation(GraphTy &G, size_t k, double epsilon,
 
   std::vector<std::vector<vertex_type>> RR;
   std::vector<std::deque<size_t>> HyperG;
-  std::tie(RR, HyperG) = std::move(GenerateRRRSets(G, thetaPrime, std::forward<execution_tag>(tag)));
+  std::tie(RR, HyperG) = std::move(GenerateRRRSets(G, thetaPrime, generator, std::forward<execution_tag>(tag)));
 
   auto seeds = FindMostInfluentialSet(G, k, RR, HyperG);
   double f = double(seeds.first) / RR.size();
@@ -440,13 +441,28 @@ std::unordered_set<typename GraphTy::vertex_type> TIM(const GraphTy &G,
   using vertex_type = typename GraphTy::vertex_type;
   std::unordered_set<vertex_type> seedSet;
 
-  auto theta = ThetaEstimation(G, k, epsilon, std::forward<execution_tag>(tag));
+  size_t max_num_threads(1);
+  if (std::is_same<execution_tag, omp_parallel_tag>::value) {
+    max_num_threads = omp_get_max_threads();
+  }
+
+  std::vector<trng::yarn2> generator(max_num_threads);
+
+  if (std::is_same<execution_tag, omp_parallel_tag>::value) {
+    #pragma omp parallel
+    {
+      generator[omp_get_thread_num()].split(omp_get_num_threads(), omp_get_thread_num());
+    }
+  }
+
+
+  auto theta = ThetaEstimation(G, k, epsilon, generator, std::forward<execution_tag>(tag));
   spdlog::get("perf")->trace("theta = {}", theta);
 
   auto start = std::chrono::high_resolution_clock::now();
   std::vector<std::vector<vertex_type>> RR;
   std::vector<std::deque<size_t>> HyperG;
-  std::tie(RR, HyperG) = std::move(GenerateRRRSets(G, theta, std::forward<execution_tag>(tag)));
+  std::tie(RR, HyperG) = std::move(GenerateRRRSets(G, theta, generator, std::forward<execution_tag>(tag)));
   auto end = std::chrono::high_resolution_clock::now();
   std::chrono::duration<double, std::milli> exTime = end - start;
   spdlog::get("perf")->info("Generate RRR : {}ms", exTime.count());
