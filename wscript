@@ -11,15 +11,16 @@ def options(opt):
 def configure(conf):
   conf.load('compiler_cxx')
 
-  conf.env.CXXFLAGS += ['-std=c++11', '-fopenmp',
-                        '-O2', '-march=native', '-pipe', '-fomit-frame-pointer']
-  conf.env.LDFLAGS += ['-fopenmp', '-L/usr/local/opt/llvm/lib' ]
+  conf.env.CXXFLAGS += ['-std=c++17',
+                        '-Ofast', '-march=native', '-pipe', '-fomit-frame-pointer']
 
   conf.check_cfg(
     package='spdlog', args=['--cflags'], uselib_store='SPDLOG')
 
-  conf.check_cfg(
-    package='libtrng', args=['--cflags', '--libs'], uselib_store='TRNG')
+  conf.check_cxx(lib='trng4', uselib_store='TRNG')
+
+  conf.check_cxx(cxxflags=['-fopenmp' ], ldflags=[ '-fopenmp' ], libpath=['/usr/local/opt/llvm/lib/'], uselib_store='OpenMP')
+
 
 def build(bld):
   directories = ['3rd-party', 'include', 'tools']

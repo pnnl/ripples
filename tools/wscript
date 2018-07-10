@@ -5,4 +5,4 @@ def build(bld):
   bld(features = 'cxx cxxprogram',
       source   = 'tim.cc',
       target   = 'tim',
-      use = [ 'project-headers', '3rd-party', 'SPDLOG', 'TRNG' ])
+      use = [ 'project-headers', '3rd-party', 'SPDLOG', 'TRNG', 'OpenMP' ])
