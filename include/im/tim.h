@@ -442,7 +442,9 @@ std::unordered_set<typename GraphTy::vertex_type> TIM(const GraphTy &G,
   std::unordered_set<vertex_type> seedSet;
 
   size_t max_num_threads(1);
+
   if (std::is_same<execution_tag, omp_parallel_tag>::value) {
+    #pragma omp single
     max_num_threads = omp_get_max_threads();
   }
 
@@ -450,9 +452,7 @@ std::unordered_set<typename GraphTy::vertex_type> TIM(const GraphTy &G,
 
   if (std::is_same<execution_tag, omp_parallel_tag>::value) {
     #pragma omp parallel
-    {
-      generator[omp_get_thread_num()].split(omp_get_num_threads(), omp_get_thread_num());
-    }
+    generator[omp_get_thread_num()].split(omp_get_num_threads(), omp_get_thread_num());
   }
 
 

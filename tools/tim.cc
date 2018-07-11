@@ -12,11 +12,10 @@
 #include "im/loaders.h"
 #include "im/tim.h"
 
-#include "CLI11/CLI11.hpp"
-#include "spdlog/spdlog.h"
-#include "spdlog/fmt/ostr.h"
-
 #include "omp.h"
+
+#include "CLI11/CLI11.hpp"
+
 
 template <typename OStream, typename vertex_type>
 OStream &operator<<(OStream &OS, const std::unordered_set<vertex_type> &S) {
@@ -24,7 +23,13 @@ OStream &operator<<(OStream &OS, const std::unordered_set<vertex_type> &S) {
   for (auto v : S)
     OS << v << ", ";
   OS << "}";
+
+  return OS;
 }
+
+
+#include "spdlog/spdlog.h"
+#include "spdlog/fmt/ostr.h"
 
 namespace im {
 
@@ -43,6 +48,7 @@ Configuration ParseCmdOptions(int argc, char **argv) {
       ->required();
   app.add_flag("-p,--parallel", CFG.parallel, "Trigger the parallel implementation");
   app.add_option("-l,--log", CFG.LogFile, "The file name of the log.");
+  app.add_flag("--omp_strong_scaling", CFG.OMPStrongScaling, "Trigger strong scaling experiments");
   
   try {
     app.parse(argc, argv);
@@ -73,8 +79,31 @@ int main(int argc, char **argv) {
   im::Graph<uint32_t, float> G(edgeList.begin(), edgeList.end());
   console->info("Number of Nodes : {}", G.num_nodes());
   console->info("Number of Edges : {}", G.num_edges());
+  if (CFG.OMPStrongScaling) {
+    size_t max_threads = 1;
+#pragma omp single
+    max_threads = omp_get_max_threads();
 
-  if (CFG.parallel) {
+    for (size_t num_threads = 1; num_threads <= max_threads; ++num_threads) {
+      if (num_threads != 1) {
+        omp_set_num_threads(num_threads);
+
+        auto start = std::chrono::high_resolution_clock::now();
+        auto seeds = TIM(G, CFG.k, CFG.epsilon, im::omp_parallel_tag());
+        auto end = std::chrono::high_resolution_clock::now();
+        std::chrono::duration<double, std::milli> exTime = end - start;
+        console->info("TIM parallel : {}ms, T={}/{}", exTime.count(), num_threads, max_threads);
+        console->info("Seeds : {}", seeds);
+      } else {
+        auto start = std::chrono::high_resolution_clock::now();
+        auto seeds = TIM(G, CFG.k, CFG.epsilon, im::sequential_tag());
+        auto end = std::chrono::high_resolution_clock::now();
+        std::chrono::duration<double, std::milli> exTime = end - start;
+        console->info("TIM squential : {}ms, T={}/{}", exTime.count(), num_threads, max_threads);
+        console->info("Seeds : {}", seeds);
+      }
+    }
+  } else if (CFG.parallel) {
     auto start = std::chrono::high_resolution_clock::now();
     auto seeds = TIM(G, CFG.k, CFG.epsilon, im::omp_parallel_tag());
     auto end = std::chrono::high_resolution_clock::now();
