@@ -24,10 +24,9 @@
 #include "im/bfs.h"
 #include "im/utility.h"
 
-#include "spdlog/spdlog.h"
 #include "trng/uniform01_dist.hpp"
 #include "trng/uniform_int_dist.hpp"
-#include "trng/yarn2.hpp"
+#include "trng/lcg64.hpp"
 
 namespace im {
 
@@ -108,8 +107,6 @@ double KptEstimation(GraphTy &G, size_t k, PRNGeneratorTy &generator, sequential
 
     if (sum > (1.0 / (1ul << i))) {
       KPTStar = G.num_nodes() * sum / 2;
-      spdlog::get("perf")->trace("i = {}, KPTStar = {}, sum = {}, c_i = {}", i, KPTStar,
-                                 sum, c_i);
       break;
     }
   }
@@ -160,8 +157,6 @@ double KptEstimation(GraphTy &G, size_t k, PRNGeneratorTy &generator, omp_parall
 
     if (sum > (1.0 / i)) {
       KPTStar = G.num_nodes() * sum / 2;
-      spdlog::get("perf")->trace("i = {}, KPTStar = {}, sum = {}, c_i = {}", i, KPTStar,
-                                 sum, c_i);
       break;
     }
   }
@@ -303,7 +298,7 @@ GenerateRRRSets(
 //! \return a pair where the size_t is the number of RRRset covered and
 //! the set of vertices selected as seeds.
 template <typename GraphTy>
-std::pair<size_t, std::unordered_set<typename GraphTy::vertex_type>>
+auto
 FindMostInfluentialSet(
     GraphTy &G, size_t k,
     std::vector<std::vector<typename GraphTy::vertex_type>> &RRRsets,
@@ -328,7 +323,9 @@ FindMostInfluentialSet(
     queue.push(std::make_pair(i, vertexCoverage[i]));
   }
 
-  std::unordered_set<typename GraphTy::vertex_type> result;
+  std::vector<typename GraphTy::vertex_type> result;
+  result.reserve(k);
+
   std::vector<bool> removed(RRRsets.size(), false);
   size_t uncovered = RRRsets.size();
 
@@ -354,7 +351,7 @@ FindMostInfluentialSet(
       removed[rrrSetId] = true;
     }
 
-    result.insert(element.first);
+    result.push_back(element.first);
   }
 
   return std::make_pair(RRRsets.size() - uncovered, result);
@@ -376,14 +373,13 @@ FindMostInfluentialSet(
 //! \return The number of Random Reverse Reachability sets to be computed.
 template <typename GraphTy, typename PRNGeneratorTy, typename execution_tag>
 size_t ThetaEstimation(GraphTy &G, size_t k, double epsilon, PRNGeneratorTy &generator,
-                       execution_tag &&tag) {
+                       ExecutionRecord &R, execution_tag &&tag) {
   using vertex_type = typename GraphTy::vertex_type;
 
   auto start = std::chrono::high_resolution_clock::now();
   double kpt = KptEstimation(G, k, generator, std::forward<execution_tag>(tag));
   auto end = std::chrono::high_resolution_clock::now();
-  std::chrono::duration<double, std::milli> exTime = end - start;
-  spdlog::get("perf")->info("KptEstimation : {}ms, kpt = {}", exTime.count(), kpt);
+  R.KptEstimation = end - start;
 
   start = std::chrono::high_resolution_clock::now();
   // epsPrime is set according to the equation at the bottom of Section 4.1
@@ -400,13 +396,11 @@ size_t ThetaEstimation(GraphTy &G, size_t k, double epsilon, PRNGeneratorTy &gen
   auto seeds = FindMostInfluentialSet(G, k, RR, HyperG);
   double f = double(seeds.first) / RR.size();
   double kptPrime = (f * G.num_nodes()) / (1 + epsPrime);
-  spdlog::get("perf")->info("f = {}, seed.first {} RR {}, epsPrime {}", f, seeds.first, RR.size(), epsPrime);
 
   // kpt now contains the best bound we were able to find after refinment.
   kpt = std::max(kpt, kptPrime);
   end = std::chrono::high_resolution_clock::now();
-  exTime = end - start;
-  spdlog::get("perf")->info("KptRefinement : {}ms, kpt = {}, kptPrime = {}", exTime.count(), kpt, kptPrime);
+  R.KptRefinement = end - start;
 
   auto logBinomial = [](size_t n, size_t k) -> double {
     return n * log(n) - k * log(k) - (n - k) * log(n - k);
@@ -418,7 +412,6 @@ size_t ThetaEstimation(GraphTy &G, size_t k, double epsilon, PRNGeneratorTy &gen
                    log(2.0)) /
                   (epsilon * epsilon);
 
-  spdlog::get("perf")->trace("Kpt = {}, lambda = {}", kpt, lambda);
   // return theta according to equation (5)
   return ceil(lambda / kpt);
 }
@@ -435,11 +428,9 @@ size_t ThetaEstimation(GraphTy &G, size_t k, double epsilon, PRNGeneratorTy &gen
 //!
 //! \return A set of vertices in the graph.
 template <typename GraphTy, typename execution_tag>
-std::unordered_set<typename GraphTy::vertex_type> TIM(const GraphTy &G,
-                                                      size_t k, double epsilon,
-                                                      execution_tag &&tag) {
+auto TIM(const GraphTy &G, size_t k, double epsilon, execution_tag &&tag) {
   using vertex_type = typename GraphTy::vertex_type;
-  std::unordered_set<vertex_type> seedSet;
+  ExecutionRecord Record;
 
   size_t max_num_threads(1);
 
@@ -448,7 +439,7 @@ std::unordered_set<typename GraphTy::vertex_type> TIM(const GraphTy &G,
     max_num_threads = omp_get_max_threads();
   }
 
-  std::vector<trng::yarn2> generator(max_num_threads);
+  std::vector<trng::lcg64> generator(max_num_threads);
 
   if (std::is_same<execution_tag, omp_parallel_tag>::value) {
     #pragma omp parallel
@@ -456,24 +447,21 @@ std::unordered_set<typename GraphTy::vertex_type> TIM(const GraphTy &G,
   }
 
 
-  auto theta = ThetaEstimation(G, k, epsilon, generator, std::forward<execution_tag>(tag));
-  spdlog::get("perf")->trace("theta = {}", theta);
+  auto theta = ThetaEstimation(G, k, epsilon, generator, Record, std::forward<execution_tag>(tag));
 
   auto start = std::chrono::high_resolution_clock::now();
   std::vector<std::vector<vertex_type>> RR;
   std::vector<std::deque<size_t>> HyperG;
   std::tie(RR, HyperG) = std::move(GenerateRRRSets(G, theta, generator, std::forward<execution_tag>(tag)));
   auto end = std::chrono::high_resolution_clock::now();
-  std::chrono::duration<double, std::milli> exTime = end - start;
-  spdlog::get("perf")->info("Generate RRR : {}ms", exTime.count());
+  Record.GenerateRRRSets = end - start;
 
   start = std::chrono::high_resolution_clock::now();
   auto seeds = FindMostInfluentialSet(G, k, RR, HyperG);
   end = std::chrono::high_resolution_clock::now();
-  exTime = end - start;
-  spdlog::get("perf")->info("FindMostInfluentialSet : {}ms", exTime.count());
+  Record.FindMostInfluentialSet = end - start;
 
-  return seeds.second;
+  return std::make_pair(seeds.second, Record);
 }
 
 }  // namespace im
