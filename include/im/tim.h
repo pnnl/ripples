@@ -197,11 +197,7 @@ void AddRRRSet(
     vertex_type v = queue.front();
     queue.pop();
 
-    if (std::is_same<execution_tag, omp_parallel_tag>::value) {
-      HG[v].push_back(i);
-    } else {
-      HG[v].push_back(i);
-    }
+    HG[v].push_back(i);
     for (auto u : G.in_neighbors(v)) {
       if (!visited[u.vertex] && value(generator) < u.weight) {
         queue.push(u.vertex);
@@ -443,7 +439,10 @@ auto TIM(const GraphTy &G, size_t k, double epsilon, execution_tag &&tag) {
 
   if (std::is_same<execution_tag, omp_parallel_tag>::value) {
     #pragma omp parallel
-    generator[omp_get_thread_num()].split(omp_get_num_threads(), omp_get_thread_num());
+    {
+      generator[omp_get_thread_num()].seed(0UL);
+      generator[omp_get_thread_num()].split(omp_get_num_threads(), omp_get_thread_num());
+    }
   }
 
 
