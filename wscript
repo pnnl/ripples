@@ -12,7 +12,7 @@ def configure(conf):
   conf.load('compiler_cxx')
 
   conf.env.CXXFLAGS += ['-std=c++17',
-                        '-Ofast', '-march=native', '-pipe', '-fomit-frame-pointer']
+                        '-O2', '-march=native', '-pipe', '-fomit-frame-pointer']
 
   conf.check_cfg(
     package='spdlog', args=['--cflags'], uselib_store='SPDLOG')
