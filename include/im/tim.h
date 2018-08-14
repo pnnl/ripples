@@ -30,6 +30,28 @@
 
 namespace im {
 
+struct TIMExecutionRecord {
+  size_t NumThreads;
+  std::chrono::duration<double, std::milli> KptEstimation;
+  std::chrono::duration<double, std::milli> KptRefinement;
+  std::chrono::duration<double, std::milli> GenerateRRRSets;
+  std::chrono::duration<double, std::milli> FindMostInfluentialSet;
+  std::chrono::duration<double, std::milli> Total;
+
+  template <typename Ostream>
+  friend Ostream & operator<<(Ostream &O, const TIMExecutionRecord &R) {
+    O << "{ "
+      << "\"NumThreads\" : " << R.NumThreads << ", "
+      << "\"KptEstimation\" : " << R.KptEstimation.count() << ", "
+      << "\"KptRefinement\" : " << R.KptRefinement.count() << ", "
+      << "\"GenerateRRRSets\" : " << R.GenerateRRRSets.count() << ", "
+      << "\"FindMostInfluentialSet\" : " << R.FindMostInfluentialSet.count() << ", "
+      << "\"Total\" : " << R.Total.count()
+      << " }";
+    return O;
+  }
+};
+
 //! \brief Compute the number of elements in the RRR set starting at r.
 //!
 //! \tparam GraphTy The type of the Graph.
@@ -369,7 +391,7 @@ FindMostInfluentialSet(
 //! \return The number of Random Reverse Reachability sets to be computed.
 template <typename GraphTy, typename PRNGeneratorTy, typename execution_tag>
 size_t ThetaEstimation(GraphTy &G, size_t k, double epsilon, PRNGeneratorTy &generator,
-                       ExecutionRecord &R, execution_tag &&tag) {
+                       TIMExecutionRecord &R, execution_tag &&tag) {
   using vertex_type = typename GraphTy::vertex_type;
 
   auto start = std::chrono::high_resolution_clock::now();
@@ -426,7 +448,7 @@ size_t ThetaEstimation(GraphTy &G, size_t k, double epsilon, PRNGeneratorTy &gen
 template <typename GraphTy, typename execution_tag>
 auto TIM(const GraphTy &G, size_t k, double epsilon, execution_tag &&tag) {
   using vertex_type = typename GraphTy::vertex_type;
-  ExecutionRecord Record;
+  TIMExecutionRecord Record;
 
   size_t max_num_threads(1);
 

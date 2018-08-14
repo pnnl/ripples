@@ -10,7 +10,7 @@
 #include "im/configuration.h"
 #include "im/graph.h"
 #include "im/loaders.h"
-#include "im/tim.h"
+#include "im/imm.h"
 #include "im/utility.h"
 
 #include "omp.h"
@@ -19,7 +19,7 @@
 
 
 template <typename OStream>
-OStream &operator<<(OStream &OS, const std::vector<im::TIMExecutionRecord> &E) {
+OStream &operator<<(OStream &OS, const std::vector<im::IMMExecutionRecord> &E) {
   OS << "[\n";
   for (auto & v : E) {
     OS << v;
@@ -47,9 +47,9 @@ OStream &operator<<(OStream &OS, const std::vector<vertex_type> &S) {
   return OS;
 }
 
-
 #include "spdlog/spdlog.h"
 #include "spdlog/fmt/ostr.h"
+
 
 namespace im {
 
@@ -104,26 +104,26 @@ int main(int argc, char **argv) {
 #pragma omp single
     max_threads = omp_get_max_threads();
 
-    std::vector<im::TIMExecutionRecord> RecordList(max_threads);
+    std::vector<im::IMMExecutionRecord> RecordList(max_threads);
     for (size_t num_threads = 1; num_threads <= max_threads; ++num_threads) {
       if (num_threads != 1) {
         omp_set_num_threads(num_threads);
 
         auto start = std::chrono::high_resolution_clock::now();
-        auto [seeds, R] = TIM(G, CFG.k, CFG.epsilon, im::omp_parallel_tag());
+        auto [seeds, R] = IMM(G, CFG.k, CFG.epsilon, 1, im::omp_parallel_tag());
         auto end = std::chrono::high_resolution_clock::now();
         R.Total = end - start;
-        console->info("TIM parallel : {}ms, T={}/{}", R.Total.count(), num_threads, max_threads);
+        console->info("IMM parallel : {}ms, T={}/{}", R.Total.count(), num_threads, max_threads);
         console->info("Seeds : {}", seeds);
 
         R.NumThreads = num_threads;
         RecordList[num_threads - 1] = R;
       } else {
         auto start = std::chrono::high_resolution_clock::now();
-        auto [seeds, R] = TIM(G, CFG.k, CFG.epsilon, im::sequential_tag());
+        auto [seeds, R] = IMM(G, CFG.k, CFG.epsilon, 1, im::sequential_tag());
         auto end = std::chrono::high_resolution_clock::now();
         R.Total = end - start;
-        console->info("TIM squential : {}ms, T={}/{}", R.Total.count(), num_threads, max_threads);
+        console->info("IMM squential : {}ms, T={}/{}", R.Total.count(), num_threads, max_threads);
         console->info("Seeds : {}", seeds);
 
         R.NumThreads = num_threads;
@@ -131,14 +131,14 @@ int main(int argc, char **argv) {
       }
     }
 
-    console->info("TIMExecutionRecord : {}", RecordList);
+    console->info("IMMExecutionRecord : {}", RecordList);
     perf->info("{}", RecordList);
   } else if (CFG.parallel) {
     auto start = std::chrono::high_resolution_clock::now();
-    auto [seeds, R] = TIM(G, CFG.k, CFG.epsilon, im::omp_parallel_tag());
+    auto [seeds, R] = IMM(G, CFG.k, CFG.epsilon, 1, im::omp_parallel_tag());
     auto end = std::chrono::high_resolution_clock::now();
     R.Total = end - start;
-    console->info("TIM parallel : {}ms", R.Total.count());
+    console->info("IMM parallel : {}ms", R.Total.count());
     console->info("Seeds : {}", seeds);
 
     size_t max_num_threads;
@@ -146,18 +146,18 @@ int main(int argc, char **argv) {
     max_num_threads = omp_get_max_threads();
 
     R.NumThreads = max_num_threads;
-    console->info("TIMExecutionRecord : {}", R);
+    console->info("IMMExecutionRecord : {}", R);
     perf->info("{}", R);
   } else {
     auto start = std::chrono::high_resolution_clock::now();
-    auto [seeds, R] = TIM(G, CFG.k, CFG.epsilon, im::sequential_tag());
+    auto [seeds, R] = IMM(G, CFG.k, CFG.epsilon, 1, im::sequential_tag());
     auto end = std::chrono::high_resolution_clock::now();
     R.Total = end - start;
-    console->info("TIM squential : {}ms", R.Total.count());
+    console->info("IMM squential : {}ms", R.Total.count());
     console->info("Seeds : {}", seeds);
 
     R.NumThreads = 1;
-    console->info("TIMExecutionRecord : {}", R);
+    console->info("IMMExecutionRecord : {}", R);
     perf->info("{}", R);
   }
 

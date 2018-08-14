@@ -6,3 +6,8 @@ def build(bld):
       source   = 'tim.cc',
       target   = 'tim',
       use = [ 'project-headers', '3rd-party', 'SPDLOG', 'TRNG', 'OpenMP' ])
+
+  bld(features = 'cxx cxxprogram',
+      source   = 'imm.cc',
+      target   = 'imm',
+      use = [ 'project-headers', '3rd-party', 'SPDLOG', 'TRNG', 'OpenMP' ])
