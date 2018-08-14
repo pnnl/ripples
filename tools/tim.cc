@@ -19,7 +19,7 @@
 
 
 template <typename OStream>
-OStream &operator<<(OStream &OS, const std::vector<im::ExecutionRecord> &E) {
+OStream &operator<<(OStream &OS, const std::vector<im::TIMExecutionRecord> &E) {
   OS << "[\n";
   for (auto & v : E) {
     OS << v;
@@ -104,7 +104,7 @@ int main(int argc, char **argv) {
 #pragma omp single
     max_threads = omp_get_max_threads();
 
-    std::vector<im::ExecutionRecord> RecordList(max_threads);
+    std::vector<im::TIMExecutionRecord> RecordList(max_threads);
     for (size_t num_threads = 1; num_threads <= max_threads; ++num_threads) {
       if (num_threads != 1) {
         omp_set_num_threads(num_threads);
@@ -131,7 +131,7 @@ int main(int argc, char **argv) {
       }
     }
 
-    console->info("ExecutionRecord : {}", RecordList);
+    console->info("TIMExecutionRecord : {}", RecordList);
     perf->info("{}", RecordList);
   } else if (CFG.parallel) {
     auto start = std::chrono::high_resolution_clock::now();
@@ -146,7 +146,7 @@ int main(int argc, char **argv) {
     max_num_threads = omp_get_max_threads();
 
     R.NumThreads = max_num_threads;
-    console->info("ExecutionRecord : {}", R);
+    console->info("TIMExecutionRecord : {}", R);
     perf->info("{}", R);
   } else {
     auto start = std::chrono::high_resolution_clock::now();
@@ -157,7 +157,7 @@ int main(int argc, char **argv) {
     console->info("Seeds : {}", seeds);
 
     R.NumThreads = 1;
-    console->info("ExecutionRecord : {}", R);
+    console->info("TIMExecutionRecord : {}", R);
     perf->info("{}", R);
   }
 
