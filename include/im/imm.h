@@ -40,6 +40,15 @@ struct IMMExecutionRecord {
   }
 };
 
+void FuseHG(std::vector<std::deque<size_t>> &out, std::vector<std::deque<size_t>> &in, size_t firstID) {
+  for (auto & e : in)
+    for (auto & v : e)
+      v += firstID;
+
+  for (size_t i = 0; i < in.size(); ++i)
+    out[i].insert(out[i].end(), in[i].begin(), in[i].end());
+}
+
 template <typename GraphTy, typename PRNGeneratorTy, typename execution_tag>
 auto Sampling(const GraphTy &G, std::size_t k, double epsilon, double l, PRNGeneratorTy &generator, IMMExecutionRecord & record, execution_tag&& tag) {
   using vertex_type = typename GraphTy::vertex_type;
@@ -60,22 +69,21 @@ auto Sampling(const GraphTy &G, std::size_t k, double epsilon, double l, PRNGene
 
   auto start = std::chrono::high_resolution_clock::now();
   size_t thetaPrime = 0;
-  for (size_t i = 1; i  < std::log2(G.num_nodes()); ++i) {
-    size_t x = G.num_nodes() >> i;
+  for (ssize_t x = 1; x < std::log2(G.num_nodes()); ++x) {
     // Equation 9
-    float lambdaPrime = std::pow(epsilonPrime, -2) * (2 + 2./3. * epsilonPrime) *
-                        (logBinomial(G.num_nodes(), k) + l * std::log(G.num_nodes()) + std::log(std::log2(G.num_nodes()))) * G.num_nodes();
-    thetaPrime = lambdaPrime / x;
+    float thetaPrime = (2 + 2./3. * epsilonPrime) *
+                       (l * std::log(G.num_nodes()) + logBinomial(G.num_nodes(), k) + std::log(std::log2(G.num_nodes()))) * std::pow(2.0, x) / (epsilonPrime * epsilonPrime);
 
     std::tie(deltaRR, deltaHyperG) = std::move(GenerateRRRSets(G, thetaPrime - RR.size(), generator, std::forward<execution_tag>(tag)));
+
+    size_t firstID = RR.size();
     std::move(deltaRR.begin(), deltaRR.end(), std::back_inserter(RR));
-    mergeHG(HyperG, deltaHyperG);
+    FuseHG(HyperG, deltaHyperG, firstID);
 
     auto S = std::move(FindMostInfluentialSet(G, k, RR, HyperG));
     double f = double(S.first) / RR.size();
 
-    if ((G.num_nodes() * f) >= (1 + epsilonPrime) * x) {
-
+    if (f >= std::pow(2, -x)) {
       LB = (G.num_nodes() * f) / (1 + epsilonPrime);
       break;
     }
@@ -92,8 +100,9 @@ auto Sampling(const GraphTy &G, std::size_t k, double epsilon, double l, PRNGene
 
   start = std::chrono::high_resolution_clock::now();
   std::tie(deltaRR, deltaHyperG) = std::move(GenerateRRRSets(G, delta - RR.size(), generator, std::forward<execution_tag>(tag)));
+  size_t firstID = RR.size();
   std::move(deltaRR.begin(), deltaRR.end(), std::back_inserter(RR));
-  mergeHG(HyperG, deltaHyperG);
+  FuseHG(HyperG, deltaHyperG, firstID);
   end = std::chrono::high_resolution_clock::now();
 
   record.GenerateRRRSets = end - start;
