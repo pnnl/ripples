@@ -82,7 +82,7 @@ size_t WR(GraphTy &G, typename GraphTy::vertex_type r, PRNG &generator) {
     wr += G.in_degree(v);
 
     for (auto u : G.in_neighbors(v)) {
-      if (!visited[u.vertex] && value(generator) < u.weight) {
+      if (!visited[u.vertex] && value(generator) <= u.weight) {
         visited[u.vertex] = true;
         queue.push(u.vertex);
       }
@@ -221,7 +221,7 @@ void AddRRRSet(
 
     HG[v].push_back(i);
     for (auto u : G.in_neighbors(v)) {
-      if (!visited[u.vertex] && value(generator) < u.weight) {
+      if (!visited[u.vertex] && value(generator) <= u.weight) {
         queue.push(u.vertex);
         visited[u.vertex] = true;
         result.push_back(u.vertex);
