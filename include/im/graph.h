@@ -52,8 +52,10 @@ class Graph {
     numEdges = edges;
 
     VertexTy currentID{0};
+    reverseMap.resize(numNodes);
     for (auto itr = std::begin(idMap), end = std::end(idMap); itr != end;
          ++itr) {
+      reverseMap[currentID] = itr->first;
       itr->second = currentID++;
     }
 
@@ -124,12 +126,21 @@ class Graph {
   size_t num_nodes() const { return numNodes; }
   size_t num_edges() const { return numEdges; }
 
+  template <typename Itr, typename OutputItr>
+  void convertID(Itr b, Itr e, OutputItr o) const {
+    using value_type = typename Itr::value_type;
+    std::transform(b, e, o, [&](const value_type &v) -> value_type {
+        return reverseMap[v];
+      });
+  }
+
  private:
   DestinationTy **inIndex;
   DestinationTy *inEdges;
 
   DestinationTy **outIndex;
   DestinationTy *outEdges;
+  std::vector<VertexTy> reverseMap;
 
   size_t numNodes;
   size_t numEdges;
