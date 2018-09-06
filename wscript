@@ -7,6 +7,15 @@ APPNAME='influence-maximization'
 
 def options(opt):
   opt.load('compiler_cxx')
+  cfg_options = opt.get_option_group('Configuration options')
+  cfg_options.add_option('--spdlog-root', action='store', default='/usr',
+                         help='root directory of the installation of spdlog')
+
+  cfg_options.add_option('--trng4-root', action='store', default='/usr',
+                         help='root directory of the installation of trng4')
+
+  cfg_options.add_option('--openmp-root', action='store', default='/usr',
+                         help='root directory of the installation of openmp')
 
 def configure(conf):
   conf.load('compiler_cxx')
@@ -14,12 +23,19 @@ def configure(conf):
   conf.env.CXXFLAGS += ['-std=c++17',
                         '-O2', '-march=native', '-pipe', '-fomit-frame-pointer']
 
-  conf.check_cfg(
-    package='spdlog', args=['--cflags'], uselib_store='SPDLOG')
+  conf.check_cxx(
+    includes=['{0}/include'.format(conf.options.spdlog_root)],
+    header_name='spdlog/spdlog.h',
+    uselib_store='SPDLOG',
+    msg = "Checking for library spdlog")
 
-  conf.check_cxx(lib='trng4', uselib_store='TRNG')
+  conf.check_cxx(lib='trng4', uselib_store='TRNG',
+                 includes=[ '{0}/include/'.format(conf.options.trng4_root) ],
+                 libpath=[ '{0}/lib/'.format(conf.options.trng4_root) ])
 
-  conf.check_cxx(cxxflags=['-fopenmp' ], ldflags=[ '-fopenmp' ], libpath=['/usr/local/opt/llvm/lib/'], uselib_store='OpenMP')
+  conf.check_cxx(cxxflags=['-fopenmp' ], ldflags=[ '-fopenmp' ],
+                 libpath=['{0}/lib/'.format(conf.options.openmp_root)],
+                 uselib_store='OpenMP')
 
 
 def build(bld):
