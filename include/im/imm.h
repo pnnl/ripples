@@ -99,10 +99,12 @@ auto Sampling(const GraphTy &G, std::size_t k, double epsilon, double l, PRNGene
   record.ThetaEstimation = end - start;
 
   start = std::chrono::high_resolution_clock::now();
-  std::tie(deltaRR, deltaHyperG) = std::move(GenerateRRRSets(G, delta - RR.size(), generator, std::forward<execution_tag>(tag)));
-  size_t firstID = RR.size();
-  std::move(deltaRR.begin(), deltaRR.end(), std::back_inserter(RR));
-  FuseHG(HyperG, deltaHyperG, firstID);
+  if (delta > RR.size()) {
+    std::tie(deltaRR, deltaHyperG) = std::move(GenerateRRRSets(G, delta - RR.size(), generator, std::forward<execution_tag>(tag)));
+    size_t firstID = RR.size();
+    std::move(deltaRR.begin(), deltaRR.end(), std::back_inserter(RR));
+    FuseHG(HyperG, deltaHyperG, firstID);
+  }
   end = std::chrono::high_resolution_clock::now();
 
   record.GenerateRRRSets = end - start;
