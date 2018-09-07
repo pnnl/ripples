@@ -11,3 +11,8 @@ def build(bld):
       source   = 'imm.cc',
       target   = 'imm',
       use = [ 'project-headers', '3rd-party', 'SPDLOG', 'TRNG', 'OpenMP' ])
+
+  bld(features = 'cxx cxxprogram',
+      source   = 'simulator.cc',
+      target   = 'simulator',
+      use = [ 'project-headers', '3rd-party', 'SPDLOG', 'TRNG' ])
