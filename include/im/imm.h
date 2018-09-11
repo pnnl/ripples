@@ -49,8 +49,9 @@ void FuseHG(std::vector<std::deque<size_t>> &out, std::vector<std::deque<size_t>
     out[i].insert(out[i].end(), in[i].begin(), in[i].end());
 }
 
-template <typename GraphTy, typename PRNGeneratorTy, typename execution_tag>
-auto Sampling(const GraphTy &G, std::size_t k, double epsilon, double l, PRNGeneratorTy &generator, IMMExecutionRecord & record, execution_tag&& tag) {
+template <typename GraphTy, typename PRNGeneratorTy,
+          typename diff_model_tag, typename execution_tag>
+auto Sampling(const GraphTy &G, std::size_t k, double epsilon, double l, PRNGeneratorTy &generator, IMMExecutionRecord & record, diff_model_tag&& model_tag, execution_tag&& ex_tag) {
   using vertex_type = typename GraphTy::vertex_type;
 
   // sqrt(2) * epsilon
@@ -74,7 +75,10 @@ auto Sampling(const GraphTy &G, std::size_t k, double epsilon, double l, PRNGene
     float thetaPrime = (2 + 2./3. * epsilonPrime) *
                        (l * std::log(G.num_nodes()) + logBinomial(G.num_nodes(), k) + std::log(std::log2(G.num_nodes()))) * std::pow(2.0, x) / (epsilonPrime * epsilonPrime);
 
-    std::tie(deltaRR, deltaHyperG) = std::move(GenerateRRRSets(G, thetaPrime - RR.size(), generator, std::forward<execution_tag>(tag)));
+    std::tie(deltaRR, deltaHyperG) =
+        std::move(GenerateRRRSets(G, thetaPrime - RR.size(), generator,
+                                  std::forward<diff_model_tag>(model_tag),
+                                  std::forward<execution_tag>(ex_tag)));
 
     size_t firstID = RR.size();
     std::move(deltaRR.begin(), deltaRR.end(), std::back_inserter(RR));
@@ -100,7 +104,10 @@ auto Sampling(const GraphTy &G, std::size_t k, double epsilon, double l, PRNGene
 
   start = std::chrono::high_resolution_clock::now();
   if (delta > RR.size()) {
-    std::tie(deltaRR, deltaHyperG) = std::move(GenerateRRRSets(G, delta - RR.size(), generator, std::forward<execution_tag>(tag)));
+    std::tie(deltaRR, deltaHyperG) =
+        std::move(GenerateRRRSets(G, delta - RR.size(), generator,
+                                  std::forward<diff_model_tag>(model_tag),
+                                  std::forward<execution_tag>(ex_tag)));
     size_t firstID = RR.size();
     std::move(deltaRR.begin(), deltaRR.end(), std::back_inserter(RR));
     FuseHG(HyperG, deltaHyperG, firstID);
@@ -113,8 +120,9 @@ auto Sampling(const GraphTy &G, std::size_t k, double epsilon, double l, PRNGene
 }
 
 
-template <typename GraphTy, typename execution_tag>
-auto IMM(const GraphTy &G, std::size_t k, double epsilon, double l, execution_tag &&tag) {
+template <typename GraphTy, typename diff_model_tag, typename execution_tag>
+auto IMM(const GraphTy &G, std::size_t k, double epsilon, double l,
+         diff_model_tag&& model_tag, execution_tag &&ex_tag) {
   using vertex_type = typename GraphTy::vertex_type;
   IMMExecutionRecord record;
 
@@ -137,7 +145,9 @@ auto IMM(const GraphTy &G, std::size_t k, double epsilon, double l, execution_ta
 
   l = l * (1 + 1 / std::log2(G.num_nodes()));
 
-  auto R = std::move(Sampling(G, k, epsilon, l, generator, record, std::forward<execution_tag>(tag)));
+  auto R = std::move(Sampling(G, k, epsilon, l, generator, record,
+                              std::forward<diff_model_tag>(model_tag),
+                              std::forward<execution_tag>(ex_tag)));
 
   auto start = std::chrono::high_resolution_clock::now();
   auto S = std::move(FindMostInfluentialSet(G, k, R.first, R.second));

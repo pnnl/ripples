@@ -28,6 +28,8 @@
 #include "trng/uniform_int_dist.hpp"
 #include "trng/lcg64.hpp"
 
+#include "im/diffusion_simulation.h"
+
 namespace im {
 
 struct TIMExecutionRecord {
@@ -63,7 +65,8 @@ struct TIMExecutionRecord {
 //!
 //! \return The number of elements in the RRR set computed starting from r.
 template <typename GraphTy, typename PRNG>
-size_t WR(GraphTy &G, typename GraphTy::vertex_type r, PRNG &generator) {
+size_t WR(GraphTy &G, typename GraphTy::vertex_type r, PRNG &generator,
+          independent_cascade_tag&&) {
   using vertex_type = typename GraphTy::vertex_type;
 
   trng::uniform01_dist<float> value;
@@ -73,7 +76,7 @@ size_t WR(GraphTy &G, typename GraphTy::vertex_type r, PRNG &generator) {
 
   queue.push(r);
   visited[r] = true;
-  size_t wr = 1;
+  size_t wr = 0;
 
   while (!queue.empty()) {
     vertex_type v = queue.front();
@@ -103,8 +106,9 @@ size_t WR(GraphTy &G, typename GraphTy::vertex_type r, PRNG &generator) {
 //! \param tag The execution policy tag.
 //!
 //! \return a lower bond of OPT computed with Algoirthm 2 of the original paper.
-template <typename GraphTy, typename PRNGeneratorTy>
-double KptEstimation(GraphTy &G, size_t k, PRNGeneratorTy &generator, sequential_tag &&tag) {
+template <typename GraphTy, typename PRNGeneratorTy, typename diff_model_tag>
+double KptEstimation(GraphTy &G, size_t k, PRNGeneratorTy &generator,
+                     diff_model_tag &&model_tag, sequential_tag &&) {
   // Compute KPT* according to Algorithm 2
   double KPTStar = 1;
 
@@ -119,7 +123,7 @@ double KptEstimation(GraphTy &G, size_t k, PRNGeneratorTy &generator, sequential
       // Pick a random vertex
       typename GraphTy::vertex_type v = root(generator[0]);
 
-      double wr = WR(G, v, generator[0]);
+      double wr = WR(G, v, generator[0], std::forward<diff_model_tag>(model_tag));
       wr /= G.num_edges();
       // Equation (8) of the paper.
       sum += 1 - pow(1.0 - wr, k);
@@ -147,8 +151,9 @@ double KptEstimation(GraphTy &G, size_t k, PRNGeneratorTy &generator, sequential
 //! \param tag The execution policy tag.
 //!
 //! \return a lower bond of OPT computed with Algoirthm 2 of the original paper.
-template <typename GraphTy, typename PRNGeneratorTy>
-double KptEstimation(GraphTy &G, size_t k, PRNGeneratorTy &generator, omp_parallel_tag &&tag) {
+template <typename GraphTy, typename PRNGeneratorTy, typename diff_model_tag>
+double KptEstimation(GraphTy &G, size_t k, PRNGeneratorTy &generator,
+                     diff_model_tag && model_tag, omp_parallel_tag &&) {
   double KPTStar = 1.0;
 
   for (size_t i = 2; i < G.num_nodes(); i <<= 1) {
@@ -168,7 +173,8 @@ double KptEstimation(GraphTy &G, size_t k, PRNGeneratorTy &generator, omp_parall
         // Pick a random vertex
         typename GraphTy::vertex_type v = root(generator[rank]);
 
-        double wr = WR(G, v, generator[rank]);
+        double wr = WR(G, v, generator[rank],
+                       std::forward<diff_model_tag>(model_tag));
         wr /= G.num_edges();
         // Equation (8) of the paper.
         sum += 1 - pow(1.0 - wr, k);
@@ -198,12 +204,12 @@ double KptEstimation(GraphTy &G, size_t k, PRNGeneratorTy &generator, omp_parall
 //! \param result The RRR set
 //! \param i The simulation number
 //! \param HG The Hyper-Graph to build
-template <typename GraphTy, typename PRNGeneratorTy, typename execution_tag>
+template <typename GraphTy, typename PRNGeneratorTy, typename diff_model_tag>
 void AddRRRSet(
     GraphTy &G, typename GraphTy::vertex_type r, PRNGeneratorTy &generator,
     std::vector<typename GraphTy::vertex_type> &result, size_t i,
     std::vector<std::deque<size_t>>& HG,
-    execution_tag && tag) {
+    diff_model_tag && tag) {
   using vertex_type = typename GraphTy::vertex_type;
 
   trng::uniform01_dist<float> value;
@@ -241,12 +247,13 @@ void AddRRRSet(
 //! \param tag The execution policy tag.
 //!
 //! \return A list of theta Random Reverse Rachability Sets.
-template <typename GraphTy, typename PRNGeneratorTy>
+template <typename GraphTy, typename PRNGeneratorTy, typename diff_model_tag>
 std::pair<
   std::vector<std::vector<typename GraphTy::vertex_type>>,
   std::vector<std::deque<size_t>>>
 GenerateRRRSets(
-    GraphTy &G, size_t theta, PRNGeneratorTy &generator, sequential_tag &&tag) {
+    GraphTy &G, size_t theta, PRNGeneratorTy &generator,
+    diff_model_tag && model_tag, sequential_tag &&) {
   using vertex_type = typename GraphTy::vertex_type;
   std::vector<std::vector<vertex_type>> rrrSets(theta);
   std::vector<std::deque<size_t>> HyperG(G.num_nodes());
@@ -255,7 +262,8 @@ GenerateRRRSets(
 
   for (size_t i = 0; i < theta; ++i) {
     typename GraphTy::vertex_type r = start(generator[0]);
-    AddRRRSet(G, r, generator[0], rrrSets[i], i, HyperG, std::forward<sequential_tag>(tag));
+    AddRRRSet(G, r, generator[0], rrrSets[i], i, HyperG,
+              std::forward<diff_model_tag>(model_tag));
   }
   return std::make_pair(std::forward<decltype(rrrSets)>(rrrSets),
                         std::forward<decltype(HyperG)>(HyperG));
@@ -277,12 +285,13 @@ for (size_t i = 0; i < in.size(); ++i)
 //! \param tag The execution policy tag.
 //!
 //! \return A list of theta Random Reverse Rachability Sets.
-template <typename GraphTy, typename PRNGeneratorTy>
+template <typename GraphTy, typename PRNGeneratorTy, typename diff_model_tag>
 std::pair<
   std::vector<std::vector<typename GraphTy::vertex_type>>,
   std::vector<std::deque<size_t>>>
 GenerateRRRSets(
-    GraphTy &G, size_t theta, PRNGeneratorTy &generator, omp_parallel_tag &&tag) {
+    GraphTy &G, size_t theta, PRNGeneratorTy &generator, diff_model_tag && model_tag,
+    omp_parallel_tag &&) {
   std::vector<std::vector<typename GraphTy::vertex_type>> rrrSets(theta);
   std::vector<std::deque<size_t>> HyperG(G.num_nodes());
 
@@ -297,7 +306,8 @@ GenerateRRRSets(
 
     for (size_t i = rank * theta / size; i < (rank + 1) * theta / size; ++i) {
       typename GraphTy::vertex_type r = start(generator[rank]);
-      AddRRRSet(G, r, generator[rank], rrrSets[i], i, HyperG, std::forward<omp_parallel_tag>(tag));
+      AddRRRSet(G, r, generator[rank], rrrSets[i], i, HyperG,
+                std::forward<diff_model_tag>(model_tag));
     }
   }
   return std::make_pair(std::forward<decltype(rrrSets)>(rrrSets),
@@ -389,13 +399,17 @@ FindMostInfluentialSet(
 //! \param tag The execution policy tag.
 //!
 //! \return The number of Random Reverse Reachability sets to be computed.
-template <typename GraphTy, typename PRNGeneratorTy, typename execution_tag>
+template <typename GraphTy, typename PRNGeneratorTy,
+          typename diff_model_tag, typename execution_tag>
 size_t ThetaEstimation(GraphTy &G, size_t k, double epsilon, PRNGeneratorTy &generator,
-                       TIMExecutionRecord &R, execution_tag &&tag) {
+                       TIMExecutionRecord &R,
+                       diff_model_tag && model_tag, execution_tag &&ex_tag) {
   using vertex_type = typename GraphTy::vertex_type;
 
   auto start = std::chrono::high_resolution_clock::now();
-  double kpt = KptEstimation(G, k, generator, std::forward<execution_tag>(tag));
+  double kpt = KptEstimation(G, k, generator,
+                             std::forward<diff_model_tag>(model_tag),
+                             std::forward<execution_tag>(ex_tag));
   auto end = std::chrono::high_resolution_clock::now();
   R.KptEstimation = end - start;
 
@@ -409,7 +423,10 @@ size_t ThetaEstimation(GraphTy &G, size_t k, double epsilon, PRNGeneratorTy &gen
 
   std::vector<std::vector<vertex_type>> RR;
   std::vector<std::deque<size_t>> HyperG;
-  std::tie(RR, HyperG) = std::move(GenerateRRRSets(G, thetaPrime, generator, std::forward<execution_tag>(tag)));
+  std::tie(RR, HyperG) =
+      std::move(GenerateRRRSets(G, thetaPrime, generator,
+                                std::forward<diff_model_tag>(model_tag),
+                                std::forward<execution_tag>(ex_tag)));
 
   auto seeds = FindMostInfluentialSet(G, k, RR, HyperG);
   double f = double(seeds.first) / RR.size();
@@ -445,8 +462,9 @@ size_t ThetaEstimation(GraphTy &G, size_t k, double epsilon, PRNGeneratorTy &gen
 //! \param tag The execution policy tag.
 //!
 //! \return A set of vertices in the graph.
-template <typename GraphTy, typename execution_tag>
-auto TIM(const GraphTy &G, size_t k, double epsilon, execution_tag &&tag) {
+template <typename GraphTy, typename diff_model_tag, typename execution_tag>
+auto TIM(const GraphTy &G, size_t k, double epsilon, diff_model_tag&& model_tag,
+         execution_tag &&ex_tag) {
   using vertex_type = typename GraphTy::vertex_type;
   TIMExecutionRecord Record;
 
@@ -468,12 +486,16 @@ auto TIM(const GraphTy &G, size_t k, double epsilon, execution_tag &&tag) {
   }
 
 
-  auto theta = ThetaEstimation(G, k, epsilon, generator, Record, std::forward<execution_tag>(tag));
+  auto theta = ThetaEstimation(G, k, epsilon, generator, Record,
+                               std::forward<diff_model_tag>(model_tag),
+                               std::forward<execution_tag>(ex_tag));
 
   auto start = std::chrono::high_resolution_clock::now();
   std::vector<std::vector<vertex_type>> RR;
   std::vector<std::deque<size_t>> HyperG;
-  std::tie(RR, HyperG) = std::move(GenerateRRRSets(G, theta, generator, std::forward<execution_tag>(tag)));
+  std::tie(RR, HyperG) = std::move(GenerateRRRSets(G, theta, generator,
+                                                   std::forward<diff_model_tag>(model_tag),
+                                                   std::forward<execution_tag>(ex_tag)));
   auto end = std::chrono::high_resolution_clock::now();
   Record.GenerateRRRSets = end - start;
 

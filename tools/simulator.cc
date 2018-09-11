@@ -88,7 +88,7 @@ int main(int argc, char **argv) {
   for (auto & record : experimentRecord) {
     using vertex_type = typename im::Graph<uint32_t, float>::vertex_type;
 
-    std::vector<std::vector<size_t>> experiments(CFG.Replicas, std::vector<size_t>(CFG.Tries));
+    std::vector<std::vector<std::pair<size_t, size_t>>> experiments(CFG.Replicas, std::vector<std::pair<size_t, size_t>>(CFG.Tries));
 
     std::vector<vertex_type> seeds = record["Seeds"];
 

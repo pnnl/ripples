@@ -81,14 +81,16 @@ int main(int argc, char **argv) {
         omp_set_num_threads(num_threads);
 
         auto start = std::chrono::high_resolution_clock::now();
-        auto [seeds, R] = TIM(G, CFG.k, CFG.epsilon, im::omp_parallel_tag());
+        auto [seeds, R] = TIM(G, CFG.k, CFG.epsilon,
+                              im::independent_cascade_tag{},
+                              im::omp_parallel_tag());
         auto end = std::chrono::high_resolution_clock::now();
         R.Total = end - start;
         console->info("TIM parallel : {}ms, T={}/{}", R.Total.count(), num_threads, max_threads);
 
         R.NumThreads = num_threads;
         nlohmann::json experiment{
-          { "Algorithm", "IMM" },
+          { "Algorithm", "TIM" },
           { "Epsilon", CFG.epsilon },
           { "K", CFG.k },
           { "L", 1 },
@@ -104,14 +106,16 @@ int main(int argc, char **argv) {
         executionLog.push_back(experiment);
       } else {
         auto start = std::chrono::high_resolution_clock::now();
-        auto [seeds, R] = TIM(G, CFG.k, CFG.epsilon, im::sequential_tag());
+        auto [seeds, R] = TIM(G, CFG.k, CFG.epsilon,
+                              im::independent_cascade_tag{},
+                              im::sequential_tag());
         auto end = std::chrono::high_resolution_clock::now();
         R.Total = end - start;
         console->info("TIM squential : {}ms, T={}/{}", R.Total.count(), num_threads, max_threads);
 
         R.NumThreads = num_threads;
         nlohmann::json experiment{
-          { "Algorithm", "IMM" },
+          { "Algorithm", "TIM" },
           { "Epsilon", CFG.epsilon },
           { "K", CFG.k },
           { "L", 1 },
@@ -129,7 +133,9 @@ int main(int argc, char **argv) {
     }
   } else if (CFG.parallel) {
     auto start = std::chrono::high_resolution_clock::now();
-    auto [seeds, R] = TIM(G, CFG.k, CFG.epsilon, im::omp_parallel_tag());
+    auto [seeds, R] = TIM(G, CFG.k, CFG.epsilon,
+                          im::independent_cascade_tag{},
+                          im::omp_parallel_tag());
     auto end = std::chrono::high_resolution_clock::now();
     R.Total = end - start;
     console->info("TIM parallel : {}ms", R.Total.count());
@@ -141,7 +147,7 @@ int main(int argc, char **argv) {
     R.NumThreads = max_num_threads;
 
     nlohmann::json experiment{
-      { "Algorithm", "IMM" },
+      { "Algorithm", "TIM" },
       { "Epsilon", CFG.epsilon },
       { "K", CFG.k },
       { "L", 1 },
@@ -157,7 +163,9 @@ int main(int argc, char **argv) {
     executionLog.push_back(experiment);
   } else {
     auto start = std::chrono::high_resolution_clock::now();
-    auto [seeds, R] = TIM(G, CFG.k, CFG.epsilon, im::sequential_tag());
+    auto [seeds, R] = TIM(G, CFG.k, CFG.epsilon,
+                          im::independent_cascade_tag{},
+                          im::sequential_tag());
     auto end = std::chrono::high_resolution_clock::now();
     R.Total = end - start;
     console->info("TIM squential : {}ms", R.Total.count());
@@ -165,7 +173,7 @@ int main(int argc, char **argv) {
     R.NumThreads = 1;
     console->info("TIMExecutionRecord : {}", R);
     nlohmann::json experiment{
-      { "Algorithm", "IMM" },
+      { "Algorithm", "TIM" },
       { "Epsilon", CFG.epsilon },
       { "K", CFG.k },
       { "L", 1 },

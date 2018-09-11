@@ -4,6 +4,8 @@
 //
 //===----------------------------------------------------------------------===//
 
+#pragma once
+
 #include <algorithm>
 
 #include "trng/uniform01_dist.hpp"
@@ -19,41 +21,51 @@ struct linear_threshold_tag {};
 namespace impl {
 
 template <typename GraphTy, typename Iterator, typename PRNG>
-size_t run_simulation(const GraphTy &G, Iterator begin, Iterator end,
+auto run_simulation(const GraphTy &G, Iterator begin, Iterator end,
                       PRNG &generator, const independent_cascade_tag &) {
   using vertex_type = typename GraphTy::vertex_type;
   using edge_weight_type = typename GraphTy::edge_weight_type;
 
   trng::uniform01_dist<edge_weight_type> value;
 
-  std::queue<vertex_type> queue;
+  std::vector<vertex_type> queue;
+  queue.reserve(G.num_nodes());
+
   std::vector<bool> visited(G.num_nodes(), false);
 
   std::for_each(begin, end,
                 [&](const vertex_type & v) {
-                  queue.push(v);
+                  queue.push_back(v);
                   visited[v] = true;
                 });
 
-  while (!queue.empty()) {
-    vertex_type v = queue.front();
-    queue.pop();
-    visited[v] = true;
+  auto itr = queue.begin();
+  auto level_end = queue.end();
+  size_t level = 0;
 
-    for (auto u : G.in_neighbors(v)) {
+  while (itr != queue.end()) {
+    vertex_type v = *itr;
+
+    for (auto u : G.out_neighbors(v)) {
       if (!visited[u.vertex] && value(generator) <= u.weight) {
-        queue.push(u.vertex);
+        visited[u.vertex] = true;
+        queue.push_back(u.vertex);
       }
+    }
+
+    if (++itr == level_end) {
+      level_end = queue.end();
+      ++level;
     }
   }
 
-  return std::count(visited.begin(), visited.end(), true);
+  return std::make_pair(std::count(visited.begin(), visited.end(), true), level);
 }
 
 }  // namespace impl
 
 template <typename GraphTy, typename Iterator, typename PRNG, typename Model>
-size_t simulate(const GraphTy &G, Iterator begin, Iterator end, PRNG &generator, const Model & M) {
+auto simulate(const GraphTy &G, Iterator begin, Iterator end, PRNG &generator, const Model & M) {
   return impl::run_simulation(G, begin, end, generator, M);
 }
 

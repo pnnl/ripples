@@ -12,6 +12,7 @@
 #include "im/loaders.h"
 #include "im/imm.h"
 #include "im/utility.h"
+#include "im/diffusion_simulation.h"
 
 #include "omp.h"
 
@@ -82,7 +83,9 @@ int main(int argc, char **argv) {
         omp_set_num_threads(num_threads);
 
         auto start = std::chrono::high_resolution_clock::now();
-        auto [seeds, R] = IMM(G, CFG.k, CFG.epsilon, 1, im::omp_parallel_tag());
+        auto [seeds, R] = IMM(G, CFG.k, CFG.epsilon, 1,
+                              im::independent_cascade_tag{},
+                              im::omp_parallel_tag());
         auto end = std::chrono::high_resolution_clock::now();
         R.Total = end - start;
         R.NumThreads = num_threads;
@@ -105,7 +108,9 @@ int main(int argc, char **argv) {
         executionLog.push_back(experiment);
       } else {
         auto start = std::chrono::high_resolution_clock::now();
-        auto [seeds, R] = IMM(G, CFG.k, CFG.epsilon, 1, im::sequential_tag());
+        auto [seeds, R] = IMM(G, CFG.k, CFG.epsilon, 1,
+                              im::independent_cascade_tag{},
+                              im::sequential_tag());
         auto end = std::chrono::high_resolution_clock::now();
         R.Total = end - start;
         console->info("IMM squential : {}ms, T={}/{}", R.Total.count(), num_threads, max_threads);
@@ -132,7 +137,9 @@ int main(int argc, char **argv) {
     perf->info("{}", executionLog.dump(2));
   } else if (CFG.parallel) {
     auto start = std::chrono::high_resolution_clock::now();
-    auto [seeds, R] = IMM(G, CFG.k, CFG.epsilon, 1, im::omp_parallel_tag());
+    auto [seeds, R] = IMM(G, CFG.k, CFG.epsilon, 1,
+                          im::independent_cascade_tag{},
+                          im::omp_parallel_tag());
     auto end = std::chrono::high_resolution_clock::now();
     R.Total = end - start;
     console->info("IMM parallel : {}ms", R.Total.count());
@@ -160,7 +167,9 @@ int main(int argc, char **argv) {
     perf->info("{}", executionLog.dump(2));
   } else {
     auto start = std::chrono::high_resolution_clock::now();
-    auto [seeds, R] = IMM(G, CFG.k, CFG.epsilon, 1, im::sequential_tag());
+    auto [seeds, R] = IMM(G, CFG.k, CFG.epsilon, 1,
+                          im::independent_cascade_tag{},
+                          im::sequential_tag());
     auto end = std::chrono::high_resolution_clock::now();
     R.Total = end - start;
     console->info("IMM squential : {}ms", R.Total.count());
