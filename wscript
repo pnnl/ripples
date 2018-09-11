@@ -17,6 +17,9 @@ def options(opt):
   cfg_options.add_option('--openmp-root', action='store', default='/usr',
                          help='root directory of the installation of openmp')
 
+  cfg_options.add_option('--nlohmann-json-root', action='store', default='/usr',
+                         help='root directory of the installation of nlohmann/json')
+
 def configure(conf):
   conf.load('compiler_cxx')
 
@@ -28,6 +31,12 @@ def configure(conf):
     header_name='spdlog/spdlog.h',
     uselib_store='SPDLOG',
     msg = "Checking for library spdlog")
+
+  conf.check_cxx(
+    includes=['{0}/include'.format(conf.options.nlohmann_json_root)],
+    header_name='nlohmann/json.hpp',
+    uselib_store='JSON',
+    msg = "Checking for library nlohmann/json")
 
   conf.check_cxx(lib='trng4', uselib_store='TRNG',
                  includes=[ '{0}/include/'.format(conf.options.trng4_root) ],

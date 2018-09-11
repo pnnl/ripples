@@ -31,6 +31,7 @@ class Graph {
   using size_type = size_t;
   using edge_type = Edge<VertexTy, WeightTy>;
   using vertex_type = VertexTy;
+  using edge_weight_type = WeightTy;
 
   template <typename EdgeIterator>
   Graph(EdgeIterator begin, EdgeIterator end) {

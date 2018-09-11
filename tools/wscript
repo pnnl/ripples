@@ -15,4 +15,4 @@ def build(bld):
   bld(features = 'cxx cxxprogram',
       source   = 'simulator.cc',
       target   = 'simulator',
-      use = [ 'project-headers', '3rd-party', 'SPDLOG', 'TRNG' ])
+      use = [ 'project-headers', '3rd-party', 'SPDLOG', 'TRNG', 'OpenMP', 'JSON' ])
