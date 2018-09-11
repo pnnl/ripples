@@ -42,11 +42,14 @@ auto ParseCmdOptions(int argc, char **argv) {
                  "The diffusion process to simulate on the input network.")
       ->required();
   app.add_option("-o,--output", CFG.OFileName,
-                 "The file where to store the results of the simulations");
+                 "The file where to store the results of the simulations")
+      ->required();
   app.add_option("--replicas", CFG.Replicas,
-                 "The number of experimental replicas.");
+                 "The number of experimental replicas.")
+      ->required();
   app.add_option("--tries", CFG.Tries,
-                 "The number of tries for each replica.");
+                 "The number of tries for each replica.")
+      ->required();
 
   try {
     app.parse(argc, argv);
@@ -65,6 +68,9 @@ int main(int argc, char **argv) {
   auto console = spdlog::stdout_color_st("console");
   console->info("Loading...");
 
+  auto simRecord = spdlog::basic_logger_st("simRecord", CFG.OFileName);
+  simRecord->set_pattern("%v");
+
   auto edgeList =
       im::load<im::Edge<uint32_t, float>>(CFG.IFileName, im::edge_list_tsv());
   console->info("Loading Done!");
@@ -73,43 +79,43 @@ int main(int argc, char **argv) {
   console->info("Number of Nodes : {}", G.num_nodes());
   console->info("Number of Edges : {}", G.num_edges());
 
-  using vertex_type = typename im::Graph<uint32_t, float>::vertex_type;
+  nlohmann::json experimentRecord;
 
-  std::vector<std::vector<size_t>> experiments(CFG.Replicas, std::vector<size_t>(CFG.Tries));
+  std::ifstream experimentRecordIS(CFG.EFileName);
 
-  std::vector<trng::lcg64> generator;
-  #pragma omp single
-  generator.resize(omp_get_max_threads());
+  experimentRecordIS >> experimentRecord;
 
-  #pragma omp parallel
-  {
-    generator[omp_get_thread_num()].seed(0UL);
-    generator[omp_get_thread_num()].split(omp_get_num_threads(), omp_get_thread_num());
-  }
+  for (auto & record : experimentRecord) {
+    using vertex_type = typename im::Graph<uint32_t, float>::vertex_type;
 
-  #pragma omp parallel for
-  for (size_t i = 0; i < experiments.size(); ++i) {
-    trng::uniform_int_dist seed(0, G.num_nodes() - 1);
-    std::vector<vertex_type> seeds(10);
+    std::vector<std::vector<size_t>> experiments(CFG.Replicas, std::vector<size_t>(CFG.Tries));
 
-    for (auto & v : experiments[i]) {
-      std::generate(seeds.begin(), seeds.end(),
-                    [&]() -> auto { return seed(generator[omp_get_thread_num()]);});
-      v = simulate(G, seeds.begin(), seeds.end(),
-                   generator[omp_get_thread_num()],
-                   im::independent_cascade_tag{});
+    std::vector<vertex_type> seeds = record["Seeds"];
+
+    std::vector<trng::lcg64> generator;
+#pragma omp single
+    generator.resize(omp_get_max_threads());
+
+#pragma omp parallel
+    {
+      generator[omp_get_thread_num()].seed(0UL);
+      generator[omp_get_thread_num()].split(omp_get_num_threads(), omp_get_thread_num());
+    }
+
+#pragma omp parallel for schedule(dynamic)
+    for (size_t i = 0; i < experiments.size(); ++i) {
+      for (auto & v : experiments[i]) {
+        v = simulate(G, seeds.begin(), seeds.end(),
+                     generator[omp_get_thread_num()],
+                     im::independent_cascade_tag{});
+      }
+    }
+
+    for (auto & replica : experiments) {
+      record["simulations"].push_back(replica);
     }
   }
-
-  nlohmann::json experiments_log;
-
-  for (auto & replica : experiments) {
-    experiments_log["simulations"].push_back(replica);
-    for (auto & v : replica)
-      console->info("Spread : {}", v);
-  }
-
-  console->info("{}", experiments_log.dump(2));
+  simRecord->info("{}", experimentRecord.dump(2));
 
   return EXIT_SUCCESS;
 }
