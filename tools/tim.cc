@@ -36,6 +36,9 @@ Configuration ParseCmdOptions(int argc, char **argv) {
   app.add_option("-e,--epsilon", CFG.epsilon, "The size of the seed set.")
       ->required();
   app.add_flag("-p,--parallel", CFG.parallel, "Trigger the parallel implementation");
+  app.add_option("-d,--diffusion-model", CFG.diffusionModel,
+                 "The diffusion model to be used (LT|IC)")
+      ->required();
   app.add_option("-l,--log", CFG.LogFile, "The file name of the log.");
   app.add_flag("--omp_strong_scaling", CFG.OMPStrongScaling, "Trigger strong scaling experiments");
   
@@ -71,6 +74,9 @@ int main(int argc, char **argv) {
 
   nlohmann::json executionLog;
 
+  std::vector<typename im::Graph<uint32_t, float>::vertex_type> seeds;
+  im::TIMExecutionRecord R;
+
   if (CFG.OMPStrongScaling) {
     size_t max_threads = 1;
 #pragma omp single
@@ -80,12 +86,21 @@ int main(int argc, char **argv) {
       if (num_threads != 1) {
         omp_set_num_threads(num_threads);
 
-        auto start = std::chrono::high_resolution_clock::now();
-        auto [seeds, R] = TIM(G, CFG.k, CFG.epsilon,
-                              im::independent_cascade_tag{},
-                              im::omp_parallel_tag());
-        auto end = std::chrono::high_resolution_clock::now();
-        R.Total = end - start;
+        if (CFG.diffusionModel == "IC") {
+          auto start = std::chrono::high_resolution_clock::now();
+          std::tie(seeds, R) = TIM(G, CFG.k, CFG.epsilon,
+                                   im::independent_cascade_tag{},
+                                   im::omp_parallel_tag{});
+          auto end = std::chrono::high_resolution_clock::now();
+          R.Total = end - start;
+        } else if (CFG.diffusionModel == "LT") {
+          auto start = std::chrono::high_resolution_clock::now();
+          std::tie(seeds, R) = TIM(G, CFG.k, CFG.epsilon,
+                                   im::linear_threshold_tag{},
+                                   im::omp_parallel_tag{});
+          auto end = std::chrono::high_resolution_clock::now();
+          R.Total = end - start;
+        }
         console->info("TIM parallel : {}ms, T={}/{}", R.Total.count(), num_threads, max_threads);
 
         R.NumThreads = num_threads;
@@ -105,12 +120,21 @@ int main(int argc, char **argv) {
 
         executionLog.push_back(experiment);
       } else {
-        auto start = std::chrono::high_resolution_clock::now();
-        auto [seeds, R] = TIM(G, CFG.k, CFG.epsilon,
-                              im::independent_cascade_tag{},
-                              im::sequential_tag());
-        auto end = std::chrono::high_resolution_clock::now();
-        R.Total = end - start;
+        if (CFG.diffusionModel == "IC") {
+          auto start = std::chrono::high_resolution_clock::now();
+          std::tie(seeds, R) = TIM(G, CFG.k, CFG.epsilon,
+                                   im::independent_cascade_tag{},
+                                   im::sequential_tag{});
+          auto end = std::chrono::high_resolution_clock::now();
+          R.Total = end - start;
+        } else if (CFG.diffusionModel == "LT") {
+          auto start = std::chrono::high_resolution_clock::now();
+          std::tie(seeds, R) = TIM(G, CFG.k, CFG.epsilon,
+                                   im::linear_threshold_tag{},
+                                   im::sequential_tag{});
+          auto end = std::chrono::high_resolution_clock::now();
+          R.Total = end - start;
+        }
         console->info("TIM squential : {}ms, T={}/{}", R.Total.count(), num_threads, max_threads);
 
         R.NumThreads = num_threads;
@@ -132,12 +156,21 @@ int main(int argc, char **argv) {
       }
     }
   } else if (CFG.parallel) {
-    auto start = std::chrono::high_resolution_clock::now();
-    auto [seeds, R] = TIM(G, CFG.k, CFG.epsilon,
-                          im::independent_cascade_tag{},
-                          im::omp_parallel_tag());
-    auto end = std::chrono::high_resolution_clock::now();
-    R.Total = end - start;
+    if (CFG.diffusionModel == "IC") {
+      auto start = std::chrono::high_resolution_clock::now();
+      std::tie(seeds, R) = TIM(G, CFG.k, CFG.epsilon,
+                               im::independent_cascade_tag{},
+                               im::omp_parallel_tag{});
+      auto end = std::chrono::high_resolution_clock::now();
+      R.Total = end - start;
+    } else if (CFG.diffusionModel == "LT") {
+      auto start = std::chrono::high_resolution_clock::now();
+      std::tie(seeds, R) = TIM(G, CFG.k, CFG.epsilon,
+                               im::linear_threshold_tag{},
+                               im::omp_parallel_tag{});
+      auto end = std::chrono::high_resolution_clock::now();
+      R.Total = end - start;
+    }
     console->info("TIM parallel : {}ms", R.Total.count());
 
     size_t max_num_threads;
@@ -162,12 +195,22 @@ int main(int argc, char **argv) {
 
     executionLog.push_back(experiment);
   } else {
-    auto start = std::chrono::high_resolution_clock::now();
-    auto [seeds, R] = TIM(G, CFG.k, CFG.epsilon,
-                          im::independent_cascade_tag{},
-                          im::sequential_tag());
-    auto end = std::chrono::high_resolution_clock::now();
-    R.Total = end - start;
+    if (CFG.diffusionModel == "IC") {
+      auto start = std::chrono::high_resolution_clock::now();
+      std::tie(seeds, R) = TIM(G, CFG.k, CFG.epsilon,
+                               im::independent_cascade_tag{},
+                               im::sequential_tag{});
+      auto end = std::chrono::high_resolution_clock::now();
+      R.Total = end - start;
+    } else if (CFG.diffusionModel == "LT") {
+      auto start = std::chrono::high_resolution_clock::now();
+      std::tie(seeds, R) = TIM(G, CFG.k, CFG.epsilon,
+                               im::linear_threshold_tag{},
+                               im::sequential_tag{});
+      auto end = std::chrono::high_resolution_clock::now();
+      R.Total = end - start;
+    }
+
     console->info("TIM squential : {}ms", R.Total.count());
 
     R.NumThreads = 1;

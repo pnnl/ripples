@@ -64,9 +64,9 @@ struct TIMExecutionRecord {
 //! \param generator The random number generator used to sample G.
 //!
 //! \return The number of elements in the RRR set computed starting from r.
-template <typename GraphTy, typename PRNG>
+template <typename GraphTy, typename PRNG, typename diff_model_tag>
 size_t WR(GraphTy &G, typename GraphTy::vertex_type r, PRNG &generator,
-          independent_cascade_tag&&) {
+          diff_model_tag&&) {
   using vertex_type = typename GraphTy::vertex_type;
 
   trng::uniform01_dist<float> value;
@@ -84,11 +84,27 @@ size_t WR(GraphTy &G, typename GraphTy::vertex_type r, PRNG &generator,
 
     wr += G.in_degree(v);
 
-    for (auto u : G.in_neighbors(v)) {
-      if (!visited[u.vertex] && value(generator) <= u.weight) {
-        visited[u.vertex] = true;
-        queue.push(u.vertex);
+    if (std::is_same<diff_model_tag, im::independent_cascade_tag>::value) {
+      for (auto u : G.in_neighbors(v)) {
+        if (!visited[u.vertex] && value(generator) <= u.weight) {
+          queue.push(u.vertex);
+          visited[u.vertex] = true;
+        }
       }
+    } else if (std::is_same<diff_model_tag, im::linear_threshold_tag>::value) {
+      float threshold = value(generator);
+      for (auto u : G.in_neighbors(v)) {
+        threshold -= u.weight;
+
+        if (threshold > 0) continue;
+
+        if (visited[u.vertex]) break;
+
+        queue.push(u.vertex);
+        visited[u.vertex] = true;
+      }
+    } else {
+      throw;
     }
   }
 
@@ -226,12 +242,29 @@ void AddRRRSet(
     queue.pop();
 
     HG[v].push_back(i);
-    for (auto u : G.in_neighbors(v)) {
-      if (!visited[u.vertex] && value(generator) <= u.weight) {
+    if (std::is_same<diff_model_tag, im::independent_cascade_tag>::value) {
+      for (auto u : G.in_neighbors(v)) {
+        if (!visited[u.vertex] && value(generator) <= u.weight) {
+          queue.push(u.vertex);
+          visited[u.vertex] = true;
+          result.push_back(u.vertex);
+        }
+      }
+    } else if (std::is_same<diff_model_tag, im::linear_threshold_tag>::value) {
+      float threshold = value(generator);
+      for (auto u : G.in_neighbors(v)) {
+        threshold -= u.weight;
+
+        if (threshold > 0) continue;
+
+        if (visited[u.vertex]) break;
+
         queue.push(u.vertex);
         visited[u.vertex] = true;
         result.push_back(u.vertex);
       }
+    } else {
+      throw;
     }
   }
 }

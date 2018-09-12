@@ -21,6 +21,7 @@ struct Configuration {
   double epsilon{0.15};                     //!< The epsilon of the IM algorithm
   bool parallel{false};
   bool OMPStrongScaling{false};
+  std::string diffusionModel{"IC"};
 };
 
 };  // namespace im
