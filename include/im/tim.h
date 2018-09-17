@@ -361,9 +361,9 @@ GenerateRRRSets(
 template <typename GraphTy>
 auto
 FindMostInfluentialSet(
-    GraphTy &G, size_t k,
-    std::vector<std::vector<typename GraphTy::vertex_type>> &RRRsets,
-    std::vector<std::deque<size_t>> &hyperGraph) {
+    const GraphTy &G, size_t k,
+    const std::vector<std::vector<typename GraphTy::vertex_type>> &RRRsets,
+    const std::vector<std::deque<size_t>> &hyperGraph) {
   using vertex_type = typename GraphTy::vertex_type;
 
   std::vector<size_t> vertexCoverage(G.num_nodes());
