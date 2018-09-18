@@ -41,13 +41,10 @@ struct IMMExecutionRecord {
 };
 
 void FuseHG(std::vector<std::deque<size_t>> &out, std::vector<std::deque<size_t>> &in, size_t firstID) {
-  for (auto & e : in)
-    for (auto & v : e)
-      v += firstID;
-
+  #pragma omp parallel for
   for (size_t i = 0; i < in.size(); ++i)
-    std::copy(std::make_move_iterator(in.begin()), std::make_move_iterator(in.end()),
-              std::back_inserter(out));
+    std::transform(in[i].begin(), in[i].end(), std::back_inserter(out[i]),
+                   [=](const size_t & a) -> size_t { return firstID + a; });
 }
 
 template <typename GraphTy, typename PRNGeneratorTy,
