@@ -303,7 +303,6 @@ GenerateRRRSets(
 }
 
 void mergeHG(std::vector<std::deque<size_t>> &out, std::vector<std::deque<size_t>> &in) {
-  #pragma omp parallel for
   for (size_t i = 0; i < in.size(); ++i)
     out[i].insert(out[i].end(), in[i].begin(), in[i].end());
 }

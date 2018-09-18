@@ -40,11 +40,18 @@ struct IMMExecutionRecord {
   }
 };
 
-void FuseHG(std::vector<std::deque<size_t>> &out, std::vector<std::deque<size_t>> &in, size_t firstID) {
-  #pragma omp parallel for
-  for (size_t i = 0; i < in.size(); ++i)
-    std::transform(in[i].begin(), in[i].end(), std::back_inserter(out[i]),
-                   [=](const size_t & a) -> size_t { return firstID + a; });
+template <typename execution_tag>
+void FuseHG(std::vector<std::deque<size_t>> &out, std::vector<std::deque<size_t>> &in, size_t firstID, execution_tag &&) {
+  if (std::is_same<execution_tag, omp_parallel_tag>::value) {
+    #pragma omp parallel for
+    for (size_t i = 0; i < in.size(); ++i)
+      std::transform(in[i].begin(), in[i].end(), std::back_inserter(out[i]),
+                     [=](const size_t & a) -> size_t { return firstID + a; });
+  } else {
+    for (size_t i = 0; i < in.size(); ++i)
+      std::transform(in[i].begin(), in[i].end(), std::back_inserter(out[i]),
+                     [=](const size_t & a) -> size_t { return firstID + a; });
+  }
 }
 
 template <typename GraphTy, typename PRNGeneratorTy,
@@ -77,7 +84,7 @@ auto Sampling(const GraphTy &G, std::size_t k, double epsilon, double l, PRNGene
 
     size_t firstID = RR.size();
     std::move(deltaRR.begin(), deltaRR.end(), std::back_inserter(RR));
-    FuseHG(HyperG, deltaHyperG, firstID);
+    FuseHG(HyperG, deltaHyperG, firstID, std::forward<execution_tag>(ex_tag));
 
     const auto & S = FindMostInfluentialSet(G, k, RR, HyperG);
     double f = double(S.first) / RR.size();
@@ -105,7 +112,7 @@ auto Sampling(const GraphTy &G, std::size_t k, double epsilon, double l, PRNGene
                         std::forward<execution_tag>(ex_tag));
     size_t firstID = RR.size();
     std::move(deltaRR.begin(), deltaRR.end(), std::back_inserter(RR));
-    FuseHG(HyperG, deltaHyperG, firstID);
+    FuseHG(HyperG, deltaHyperG, firstID, std::forward<execution_tag>(ex_tag));
   }
   end = std::chrono::high_resolution_clock::now();
 
