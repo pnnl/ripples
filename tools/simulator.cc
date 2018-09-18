@@ -28,6 +28,7 @@ struct SimulatorConfiguration {
   std::string DiffusionModel;
   std::size_t Replicas;
   std::size_t Tries;
+  bool undirected{false};
 };
 
 auto ParseCmdOptions(int argc, char **argv) {
@@ -35,6 +36,7 @@ auto ParseCmdOptions(int argc, char **argv) {
   CLI::App app("Yet Another tool to simulate spread in social networks");
   app.add_option("-i,--input-grah", CFG.IFileName,
                  "The input file storing the edge-list.")->required();
+  app.add_flag("-u,--undirected", CFG.undirected, "The input graph is undirected");
   app.add_option("-e,--experiment-file", CFG.EFileName,
                  "The file storing the experiments form a run of an inf-max algorithm.")
       ->required();
@@ -71,8 +73,12 @@ int main(int argc, char **argv) {
   auto simRecord = spdlog::basic_logger_st("simRecord", CFG.OFileName);
   simRecord->set_pattern("%v");
 
+  trng::lcg64 weightGen;
+  weightGen.seed(0UL);
+  weightGen.split(2, 0);
+
   auto edgeList =
-      im::load<im::Edge<uint32_t, float>>(CFG.IFileName, im::edge_list_tsv());
+      im::load<im::Edge<uint32_t, float>>(CFG.IFileName, CFG.undirected, weightGen, im::edge_list_tsv());
   console->info("Loading Done!");
 
   im::Graph<uint32_t, float> G(edgeList.begin(), edgeList.end());
@@ -99,6 +105,7 @@ int main(int argc, char **argv) {
 #pragma omp parallel
     {
       generator[omp_get_thread_num()].seed(0UL);
+      generator[omp_get_thread_num()].split(2, 1);
       generator[omp_get_thread_num()].split(omp_get_num_threads(), omp_get_thread_num());
     }
 

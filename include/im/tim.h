@@ -496,8 +496,8 @@ size_t ThetaEstimation(GraphTy &G, size_t k, double epsilon, PRNGeneratorTy &gen
 //! \param tag The execution policy tag.
 //!
 //! \return A set of vertices in the graph.
-template <typename GraphTy, typename diff_model_tag, typename execution_tag>
-auto TIM(const GraphTy &G, size_t k, double epsilon, diff_model_tag&& model_tag,
+template <typename GraphTy, typename PRNG, typename diff_model_tag, typename execution_tag>
+auto TIM(const GraphTy &G, size_t k, double epsilon, PRNG & gen, diff_model_tag&& model_tag,
          execution_tag &&ex_tag) {
   using vertex_type = typename GraphTy::vertex_type;
   TIMExecutionRecord Record;
@@ -509,12 +509,11 @@ auto TIM(const GraphTy &G, size_t k, double epsilon, diff_model_tag&& model_tag,
     max_num_threads = omp_get_max_threads();
   }
 
-  std::vector<trng::lcg64> generator(max_num_threads);
+  std::vector<trng::lcg64> generator(max_num_threads, gen);
 
   if (std::is_same<execution_tag, omp_parallel_tag>::value) {
     #pragma omp parallel
     {
-      generator[omp_get_thread_num()].seed(0UL);
       generator[omp_get_thread_num()].split(omp_get_num_threads(), omp_get_thread_num());
     }
   }

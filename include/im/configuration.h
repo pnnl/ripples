@@ -20,6 +20,7 @@ struct Configuration {
   size_t k{10};                             //!< The size of the seedset
   double epsilon{0.15};                     //!< The epsilon of the IM algorithm
   bool parallel{false};
+  bool undirected{false};
   bool OMPStrongScaling{false};
   std::string diffusionModel{"IC"};
 };

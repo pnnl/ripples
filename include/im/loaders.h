@@ -13,16 +13,20 @@
 #include <string>
 #include <unordered_map>
 
+#include "trng/uniform01_dist.hpp"
+
 #include "im/graph.h"
 
 namespace im {
 
 struct edge_list_tsv {};
 
-template <typename EdgeTy>
-std::vector<EdgeTy> load(std::string &inputFile, const edge_list_tsv &&) {
+template <typename EdgeTy, typename PRNG>
+std::vector<EdgeTy> load(std::string &inputFile, bool undirected, PRNG & rand, const edge_list_tsv &&) {
   std::ifstream GFS(inputFile);
   size_t lineNumber = 0;
+
+  trng::uniform01_dist<float> probability;
 
   std::vector<EdgeTy> result;
   for (std::string line; std::getline(GFS, line); ++lineNumber) {
@@ -35,10 +39,15 @@ std::vector<EdgeTy> load(std::string &inputFile, const edge_list_tsv &&) {
     typename EdgeTy::weight_type weight;
     SS >> source >> destination;
 
-    if (!(SS >> weight)) weight = 0.10;
-    weight = 0.10f;
+    weight = probability(rand);
     EdgeTy e = {source, destination, weight};
     result.emplace_back(e);
+
+    if (undirected) {
+      weight = probability(rand);
+      EdgeTy e = {destination, source, weight};
+      result.emplace_back(e);
+    }
   }
   return result;
 }

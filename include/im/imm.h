@@ -115,8 +115,8 @@ auto Sampling(const GraphTy &G, std::size_t k, double epsilon, double l, PRNGene
 }
 
 
-template <typename GraphTy, typename diff_model_tag, typename execution_tag>
-auto IMM(const GraphTy &G, std::size_t k, double epsilon, double l,
+template <typename GraphTy, typename diff_model_tag, typename PRNG, typename execution_tag>
+auto IMM(const GraphTy &G, std::size_t k, double epsilon, double l, PRNG & gen,
          diff_model_tag&& model_tag, execution_tag &&ex_tag) {
   using vertex_type = typename GraphTy::vertex_type;
   IMMExecutionRecord record;
@@ -128,12 +128,11 @@ auto IMM(const GraphTy &G, std::size_t k, double epsilon, double l,
     max_num_threads = omp_get_max_threads();
   }
 
-  std::vector<trng::lcg64> generator(max_num_threads);
+  std::vector<trng::lcg64> generator(max_num_threads, gen);
 
   if (std::is_same<execution_tag, omp_parallel_tag>::value) {
     #pragma omp parallel
     {
-      generator[omp_get_thread_num()].seed(0UL);
       generator[omp_get_thread_num()].split(omp_get_num_threads(), omp_get_thread_num());
     }
   }

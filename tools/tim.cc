@@ -36,6 +36,9 @@ Configuration ParseCmdOptions(int argc, char **argv) {
   app.add_option("-e,--epsilon", CFG.epsilon, "The size of the seed set.")
       ->required();
   app.add_flag("-p,--parallel", CFG.parallel, "Trigger the parallel implementation");
+
+  app.add_flag("-u,--undirected", CFG.undirected, "The input graph is undirected");
+
   app.add_option("-d,--diffusion-model", CFG.diffusionModel,
                  "The diffusion model to be used (LT|IC)")
       ->required();
@@ -64,8 +67,12 @@ int main(int argc, char **argv) {
   perf->set_pattern("%v");
 
   console->info("Loading...");
+  trng::lcg64 weightGen;
+  weightGen.seed(0UL);
+  weightGen.split(2, 0);
+
   auto edgeList =
-      im::load<im::Edge<uint32_t, float>>(CFG.IFileName, im::edge_list_tsv());
+      im::load<im::Edge<uint32_t, float>>(CFG.IFileName, CFG.undirected, weightGen, im::edge_list_tsv());
   console->info("Loading Done!");
 
   im::Graph<uint32_t, float> G(edgeList.begin(), edgeList.end());
@@ -76,6 +83,10 @@ int main(int argc, char **argv) {
 
   std::vector<typename im::Graph<uint32_t, float>::vertex_type> seeds;
   im::TIMExecutionRecord R;
+
+  trng::lcg64 generator;
+  generator.seed(0UL);
+  generator.split(2, 1);
 
   if (CFG.OMPStrongScaling) {
     size_t max_threads = 1;
@@ -88,14 +99,14 @@ int main(int argc, char **argv) {
 
         if (CFG.diffusionModel == "IC") {
           auto start = std::chrono::high_resolution_clock::now();
-          std::tie(seeds, R) = TIM(G, CFG.k, CFG.epsilon,
+          std::tie(seeds, R) = TIM(G, CFG.k, CFG.epsilon, generator,
                                    im::independent_cascade_tag{},
                                    im::omp_parallel_tag{});
           auto end = std::chrono::high_resolution_clock::now();
           R.Total = end - start;
         } else if (CFG.diffusionModel == "LT") {
           auto start = std::chrono::high_resolution_clock::now();
-          std::tie(seeds, R) = TIM(G, CFG.k, CFG.epsilon,
+          std::tie(seeds, R) = TIM(G, CFG.k, CFG.epsilon, generator,
                                    im::linear_threshold_tag{},
                                    im::omp_parallel_tag{});
           auto end = std::chrono::high_resolution_clock::now();
@@ -106,6 +117,7 @@ int main(int argc, char **argv) {
         R.NumThreads = num_threads;
         nlohmann::json experiment{
           { "Algorithm", "TIM" },
+          { "DiffusionModel", CFG.diffusionModel },
           { "Epsilon", CFG.epsilon },
           { "K", CFG.k },
           { "L", 1 },
@@ -122,14 +134,14 @@ int main(int argc, char **argv) {
       } else {
         if (CFG.diffusionModel == "IC") {
           auto start = std::chrono::high_resolution_clock::now();
-          std::tie(seeds, R) = TIM(G, CFG.k, CFG.epsilon,
+          std::tie(seeds, R) = TIM(G, CFG.k, CFG.epsilon, generator,
                                    im::independent_cascade_tag{},
                                    im::sequential_tag{});
           auto end = std::chrono::high_resolution_clock::now();
           R.Total = end - start;
         } else if (CFG.diffusionModel == "LT") {
           auto start = std::chrono::high_resolution_clock::now();
-          std::tie(seeds, R) = TIM(G, CFG.k, CFG.epsilon,
+          std::tie(seeds, R) = TIM(G, CFG.k, CFG.epsilon, generator,
                                    im::linear_threshold_tag{},
                                    im::sequential_tag{});
           auto end = std::chrono::high_resolution_clock::now();
@@ -140,6 +152,7 @@ int main(int argc, char **argv) {
         R.NumThreads = num_threads;
         nlohmann::json experiment{
           { "Algorithm", "TIM" },
+          { "DiffusionModel", CFG.diffusionModel },
           { "Epsilon", CFG.epsilon },
           { "K", CFG.k },
           { "L", 1 },
@@ -158,14 +171,14 @@ int main(int argc, char **argv) {
   } else if (CFG.parallel) {
     if (CFG.diffusionModel == "IC") {
       auto start = std::chrono::high_resolution_clock::now();
-      std::tie(seeds, R) = TIM(G, CFG.k, CFG.epsilon,
+      std::tie(seeds, R) = TIM(G, CFG.k, CFG.epsilon, generator,
                                im::independent_cascade_tag{},
                                im::omp_parallel_tag{});
       auto end = std::chrono::high_resolution_clock::now();
       R.Total = end - start;
     } else if (CFG.diffusionModel == "LT") {
       auto start = std::chrono::high_resolution_clock::now();
-      std::tie(seeds, R) = TIM(G, CFG.k, CFG.epsilon,
+      std::tie(seeds, R) = TIM(G, CFG.k, CFG.epsilon, generator,
                                im::linear_threshold_tag{},
                                im::omp_parallel_tag{});
       auto end = std::chrono::high_resolution_clock::now();
@@ -181,6 +194,7 @@ int main(int argc, char **argv) {
 
     nlohmann::json experiment{
       { "Algorithm", "TIM" },
+      { "DiffusionModel", CFG.diffusionModel },
       { "Epsilon", CFG.epsilon },
       { "K", CFG.k },
       { "L", 1 },
@@ -197,14 +211,14 @@ int main(int argc, char **argv) {
   } else {
     if (CFG.diffusionModel == "IC") {
       auto start = std::chrono::high_resolution_clock::now();
-      std::tie(seeds, R) = TIM(G, CFG.k, CFG.epsilon,
+      std::tie(seeds, R) = TIM(G, CFG.k, CFG.epsilon, generator,
                                im::independent_cascade_tag{},
                                im::sequential_tag{});
       auto end = std::chrono::high_resolution_clock::now();
       R.Total = end - start;
     } else if (CFG.diffusionModel == "LT") {
       auto start = std::chrono::high_resolution_clock::now();
-      std::tie(seeds, R) = TIM(G, CFG.k, CFG.epsilon,
+      std::tie(seeds, R) = TIM(G, CFG.k, CFG.epsilon, generator,
                                im::linear_threshold_tag{},
                                im::sequential_tag{});
       auto end = std::chrono::high_resolution_clock::now();
@@ -217,6 +231,7 @@ int main(int argc, char **argv) {
     console->info("TIMExecutionRecord : {}", R);
     nlohmann::json experiment{
       { "Algorithm", "TIM" },
+      { "DiffusionModel", CFG.diffusionModel },
       { "Epsilon", CFG.epsilon },
       { "K", CFG.k },
       { "L", 1 },
