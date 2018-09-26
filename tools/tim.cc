@@ -40,7 +40,7 @@ Configuration ParseCmdOptions(int argc, char **argv) {
 
   app.add_flag("-u,--undirected", CFG.undirected,
                "The input graph is undirected");
-
+  app.add_flag("-w,--weighted", CFG.weighted, "The input graph is weighted");
   app.add_option("-d,--diffusion-model", CFG.diffusionModel,
                  "The diffusion model to be used (LT|IC)")
       ->required();
@@ -65,20 +65,26 @@ int main(int argc, char **argv) {
   spdlog::set_level(spdlog::level::info);
 
   auto console = spdlog::stdout_color_st("console");
-  auto perf = spdlog::basic_logger_st("perf", CFG.LogFile);
-
-  perf->set_pattern("%v");
-
   console->info("Loading...");
+
   trng::lcg64 weightGen;
   weightGen.seed(0UL);
   weightGen.split(2, 0);
 
-  auto edgeList = im::load<im::Edge<uint32_t, float>>(
-      CFG.IFileName, CFG.undirected, weightGen, im::edge_list_tsv());
+  std::vector<im::Edge<uint32_t, float>> edgeList;
+  if (CFG.weighted) {
+    console->info("Loading with input weights");
+    edgeList = im::load<im::Edge<uint32_t, float>>(
+        CFG.IFileName, CFG.undirected, weightGen, im::weighted_edge_list_tsv());
+  } else {
+    console->info("Loading with random weights");
+    edgeList = im::load<im::Edge<uint32_t, float>>(
+        CFG.IFileName, CFG.undirected, weightGen, im::edge_list_tsv());
+  }
   console->info("Loading Done!");
 
   im::Graph<uint32_t, float> G(edgeList.begin(), edgeList.end());
+  edgeList.clear();
   console->info("Number of Nodes : {}", G.num_nodes());
   console->info("Number of Edges : {}", G.num_edges());
 
@@ -93,10 +99,11 @@ int main(int argc, char **argv) {
 
   if (CFG.OMPStrongScaling) {
     size_t max_threads = 1;
+    std::ofstream perf(CFG.LogFile);
 #pragma omp single
     max_threads = omp_get_max_threads();
 
-    for (size_t num_threads = 1; num_threads <= max_threads; ++num_threads) {
+    for (size_t num_threads = max_threads; num_threads >= 1; --num_threads) {
       if (num_threads != 1) {
         omp_set_num_threads(num_threads);
 
@@ -115,10 +122,13 @@ int main(int argc, char **argv) {
           auto end = std::chrono::high_resolution_clock::now();
           R.Total = end - start;
         }
+
+        R.NumThreads = num_threads;
+
         console->info("TIM parallel : {}ms, T={}/{}", R.Total.count(),
                       num_threads, max_threads);
 
-        R.NumThreads = num_threads;
+        G.convertID(seeds.begin(), seeds.end(), seeds.begin());
         nlohmann::json experiment{
             {"Algorithm", "TIM"},
             {"DiffusionModel", CFG.diffusionModel},
@@ -154,6 +164,8 @@ int main(int argc, char **argv) {
                       num_threads, max_threads);
 
         R.NumThreads = num_threads;
+
+        G.convertID(seeds.begin(), seeds.end(), seeds.begin());
         nlohmann::json experiment{
             {"Algorithm", "TIM"},
             {"DiffusionModel", CFG.diffusionModel},
@@ -170,8 +182,12 @@ int main(int argc, char **argv) {
 
         executionLog.push_back(experiment);
       }
+
+      perf.seekp(0);
+      perf << executionLog.dump(2);
     }
   } else if (CFG.parallel) {
+    std::ofstream perf(CFG.LogFile);
     if (CFG.diffusionModel == "IC") {
       auto start = std::chrono::high_resolution_clock::now();
       std::tie(seeds, R) =
@@ -195,6 +211,7 @@ int main(int argc, char **argv) {
 
     R.NumThreads = max_num_threads;
 
+    G.convertID(seeds.begin(), seeds.end(), seeds.begin());
     nlohmann::json experiment{
         {"Algorithm", "TIM"},
         {"DiffusionModel", CFG.diffusionModel},
@@ -210,7 +227,10 @@ int main(int argc, char **argv) {
         {"Seeds", seeds}};
 
     executionLog.push_back(experiment);
+
+    perf << executionLog.dump(2);
   } else {
+    std::ofstream perf(CFG.LogFile);
     if (CFG.diffusionModel == "IC") {
       auto start = std::chrono::high_resolution_clock::now();
       std::tie(seeds, R) =
@@ -230,7 +250,8 @@ int main(int argc, char **argv) {
     console->info("TIM squential : {}ms", R.Total.count());
 
     R.NumThreads = 1;
-    console->info("TIMExecutionRecord : {}", R);
+
+    G.convertID(seeds.begin(), seeds.end(), seeds.begin());
     nlohmann::json experiment{
         {"Algorithm", "TIM"},
         {"DiffusionModel", CFG.diffusionModel},
@@ -246,8 +267,9 @@ int main(int argc, char **argv) {
         {"Seeds", seeds}};
 
     executionLog.push_back(experiment);
+
+    perf << executionLog.dump(2);
   }
 
-  perf->info("{}", executionLog.dump(2));
   return EXIT_SUCCESS;
 }
