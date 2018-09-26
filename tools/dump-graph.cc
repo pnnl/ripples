@@ -4,15 +4,15 @@
 //
 //===----------------------------------------------------------------------===//
 
+#include <experimental/filesystem>
 #include <iostream>
 #include <string>
-#include <experimental/filesystem>
 
 #include "im/graph.h"
 #include "im/loaders.h"
 
-#include "spdlog/spdlog.h"
 #include "CLI11/CLI11.hpp"
+#include "spdlog/spdlog.h"
 #include "trng/lcg64.hpp"
 #include "trng/uniform01_dist.hpp"
 
@@ -32,7 +32,8 @@ Configuration ParseCmdOptions(int argc, char **argv) {
   app.add_option("-i,--input-graph", CFG.IFileName,
                  "The input file with the edge-list.")
       ->required();
-  app.add_flag("-u,--undirected", CFG.undirected, "The input graph is undirected");
+  app.add_flag("-u,--undirected", CFG.undirected,
+               "The input graph is undirected");
   app.add_option("-o,--output-dir", CFG.ODirName,
                  "The name of the output directory")
       ->required();
@@ -46,7 +47,7 @@ Configuration ParseCmdOptions(int argc, char **argv) {
   return CFG;
 }
 
-}
+}  // namespace im
 
 int main(int argc, char **argv) {
   Configuration CFG = im::ParseCmdOptions(argc, argv);
@@ -62,8 +63,8 @@ int main(int argc, char **argv) {
   auto console = spdlog::stdout_color_st("console");
   console->info("Loading...");
 
-  auto edgeList =
-      im::load<im::Edge<uint32_t, float>>(CFG.IFileName, CFG.undirected, weightGen, im::edge_list_tsv());
+  auto edgeList = im::load<im::Edge<uint32_t, float>>(
+      CFG.IFileName, CFG.undirected, weightGen, im::edge_list_tsv());
 
   console->info("Loading Done!");
 
@@ -79,10 +80,8 @@ int main(int argc, char **argv) {
   {
     std::ofstream graph_ic(CFG.ODirName + "/graph_ic.inf");
     for (uint32_t v = 0; v < G.num_nodes(); ++v)
-      for (auto & e : G.out_neighbors(v))
-        graph_ic << v << " "
-                 << e.vertex << " "
-                 << e.weight << std::endl;
+      for (auto &e : G.out_neighbors(v))
+        graph_ic << v << " " << e.vertex << " " << e.weight << std::endl;
   }
   return EXIT_SUCCESS;
 }

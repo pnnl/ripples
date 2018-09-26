@@ -23,7 +23,8 @@ struct edge_list_tsv {};
 struct weighted_edge_list_tsv {};
 
 template <typename EdgeTy, typename PRNG>
-std::vector<EdgeTy> load(std::string &inputFile, bool undirected, PRNG & rand, const edge_list_tsv &&) {
+std::vector<EdgeTy> load(std::string &inputFile, bool undirected, PRNG &rand,
+                         const edge_list_tsv &&) {
   std::ifstream GFS(inputFile);
   size_t lineNumber = 0;
 
@@ -55,7 +56,8 @@ std::vector<EdgeTy> load(std::string &inputFile, bool undirected, PRNG & rand, c
 }
 
 template <typename EdgeTy, typename PRNG>
-std::vector<EdgeTy> load(std::string &inputFile, bool undirected, PRNG & rand, const weighted_edge_list_tsv &&) {
+std::vector<EdgeTy> load(std::string &inputFile, bool undirected, PRNG &rand,
+                         const weighted_edge_list_tsv &&) {
   std::ifstream GFS(inputFile);
   size_t lineNumber = 0;
 

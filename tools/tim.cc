@@ -17,8 +17,8 @@
 
 #include "CLI11/CLI11.hpp"
 #include "nlohmann/json.hpp"
-#include "spdlog/spdlog.h"
 #include "spdlog/fmt/ostr.h"
+#include "spdlog/spdlog.h"
 
 namespace im {
 
@@ -35,16 +35,19 @@ Configuration ParseCmdOptions(int argc, char **argv) {
       ->required();
   app.add_option("-e,--epsilon", CFG.epsilon, "The size of the seed set.")
       ->required();
-  app.add_flag("-p,--parallel", CFG.parallel, "Trigger the parallel implementation");
+  app.add_flag("-p,--parallel", CFG.parallel,
+               "Trigger the parallel implementation");
 
-  app.add_flag("-u,--undirected", CFG.undirected, "The input graph is undirected");
+  app.add_flag("-u,--undirected", CFG.undirected,
+               "The input graph is undirected");
 
   app.add_option("-d,--diffusion-model", CFG.diffusionModel,
                  "The diffusion model to be used (LT|IC)")
       ->required();
   app.add_option("-l,--log", CFG.LogFile, "The file name of the log.");
-  app.add_flag("--omp_strong_scaling", CFG.OMPStrongScaling, "Trigger strong scaling experiments");
-  
+  app.add_flag("--omp_strong_scaling", CFG.OMPStrongScaling,
+               "Trigger strong scaling experiments");
+
   try {
     app.parse(argc, argv);
   } catch (const CLI::ParseError &e) {
@@ -71,8 +74,8 @@ int main(int argc, char **argv) {
   weightGen.seed(0UL);
   weightGen.split(2, 0);
 
-  auto edgeList =
-      im::load<im::Edge<uint32_t, float>>(CFG.IFileName, CFG.undirected, weightGen, im::edge_list_tsv());
+  auto edgeList = im::load<im::Edge<uint32_t, float>>(
+      CFG.IFileName, CFG.undirected, weightGen, im::edge_list_tsv());
   console->info("Loading Done!");
 
   im::Graph<uint32_t, float> G(edgeList.begin(), edgeList.end());
@@ -99,71 +102,71 @@ int main(int argc, char **argv) {
 
         if (CFG.diffusionModel == "IC") {
           auto start = std::chrono::high_resolution_clock::now();
-          std::tie(seeds, R) = TIM(G, CFG.k, CFG.epsilon, generator,
-                                   im::independent_cascade_tag{},
-                                   im::omp_parallel_tag{});
+          std::tie(seeds, R) =
+              TIM(G, CFG.k, CFG.epsilon, generator,
+                  im::independent_cascade_tag{}, im::omp_parallel_tag{});
           auto end = std::chrono::high_resolution_clock::now();
           R.Total = end - start;
         } else if (CFG.diffusionModel == "LT") {
           auto start = std::chrono::high_resolution_clock::now();
-          std::tie(seeds, R) = TIM(G, CFG.k, CFG.epsilon, generator,
-                                   im::linear_threshold_tag{},
-                                   im::omp_parallel_tag{});
+          std::tie(seeds, R) =
+              TIM(G, CFG.k, CFG.epsilon, generator, im::linear_threshold_tag{},
+                  im::omp_parallel_tag{});
           auto end = std::chrono::high_resolution_clock::now();
           R.Total = end - start;
         }
-        console->info("TIM parallel : {}ms, T={}/{}", R.Total.count(), num_threads, max_threads);
+        console->info("TIM parallel : {}ms, T={}/{}", R.Total.count(),
+                      num_threads, max_threads);
 
         R.NumThreads = num_threads;
         nlohmann::json experiment{
-          { "Algorithm", "TIM" },
-          { "DiffusionModel", CFG.diffusionModel },
-          { "Epsilon", CFG.epsilon },
-          { "K", CFG.k },
-          { "L", 1 },
-          { "NumThreads", R.NumThreads },
-          { "Total", R.Total.count() },
-          { "KptEstimation", R.KptEstimation.count() },
-          { "KptRefinement", R.KptRefinement.count() },
-          { "GenerateRRRSets", R.GenerateRRRSets.count() },
-          { "FindMostInfluentialSet", R.FindMostInfluentialSet.count() },
-          { "Seeds", seeds }
-        };
+            {"Algorithm", "TIM"},
+            {"DiffusionModel", CFG.diffusionModel},
+            {"Epsilon", CFG.epsilon},
+            {"K", CFG.k},
+            {"L", 1},
+            {"NumThreads", R.NumThreads},
+            {"Total", R.Total.count()},
+            {"KptEstimation", R.KptEstimation.count()},
+            {"KptRefinement", R.KptRefinement.count()},
+            {"GenerateRRRSets", R.GenerateRRRSets.count()},
+            {"FindMostInfluentialSet", R.FindMostInfluentialSet.count()},
+            {"Seeds", seeds}};
 
         executionLog.push_back(experiment);
       } else {
         if (CFG.diffusionModel == "IC") {
           auto start = std::chrono::high_resolution_clock::now();
-          std::tie(seeds, R) = TIM(G, CFG.k, CFG.epsilon, generator,
-                                   im::independent_cascade_tag{},
-                                   im::sequential_tag{});
+          std::tie(seeds, R) =
+              TIM(G, CFG.k, CFG.epsilon, generator,
+                  im::independent_cascade_tag{}, im::sequential_tag{});
           auto end = std::chrono::high_resolution_clock::now();
           R.Total = end - start;
         } else if (CFG.diffusionModel == "LT") {
           auto start = std::chrono::high_resolution_clock::now();
-          std::tie(seeds, R) = TIM(G, CFG.k, CFG.epsilon, generator,
-                                   im::linear_threshold_tag{},
-                                   im::sequential_tag{});
+          std::tie(seeds, R) =
+              TIM(G, CFG.k, CFG.epsilon, generator, im::linear_threshold_tag{},
+                  im::sequential_tag{});
           auto end = std::chrono::high_resolution_clock::now();
           R.Total = end - start;
         }
-        console->info("TIM squential : {}ms, T={}/{}", R.Total.count(), num_threads, max_threads);
+        console->info("TIM squential : {}ms, T={}/{}", R.Total.count(),
+                      num_threads, max_threads);
 
         R.NumThreads = num_threads;
         nlohmann::json experiment{
-          { "Algorithm", "TIM" },
-          { "DiffusionModel", CFG.diffusionModel },
-          { "Epsilon", CFG.epsilon },
-          { "K", CFG.k },
-          { "L", 1 },
-          { "NumThreads", R.NumThreads },
-          { "Total", R.Total.count() },
-          { "KptEstimation", R.KptEstimation.count() },
-          { "KptRefinement", R.KptRefinement.count() },
-          { "GenerateRRRSets", R.GenerateRRRSets.count() },
-          { "FindMostInfluentialSet", R.FindMostInfluentialSet.count() },
-          { "Seeds", seeds }
-        };
+            {"Algorithm", "TIM"},
+            {"DiffusionModel", CFG.diffusionModel},
+            {"Epsilon", CFG.epsilon},
+            {"K", CFG.k},
+            {"L", 1},
+            {"NumThreads", R.NumThreads},
+            {"Total", R.Total.count()},
+            {"KptEstimation", R.KptEstimation.count()},
+            {"KptRefinement", R.KptRefinement.count()},
+            {"GenerateRRRSets", R.GenerateRRRSets.count()},
+            {"FindMostInfluentialSet", R.FindMostInfluentialSet.count()},
+            {"Seeds", seeds}};
 
         executionLog.push_back(experiment);
       }
@@ -171,16 +174,16 @@ int main(int argc, char **argv) {
   } else if (CFG.parallel) {
     if (CFG.diffusionModel == "IC") {
       auto start = std::chrono::high_resolution_clock::now();
-      std::tie(seeds, R) = TIM(G, CFG.k, CFG.epsilon, generator,
-                               im::independent_cascade_tag{},
-                               im::omp_parallel_tag{});
+      std::tie(seeds, R) =
+          TIM(G, CFG.k, CFG.epsilon, generator, im::independent_cascade_tag{},
+              im::omp_parallel_tag{});
       auto end = std::chrono::high_resolution_clock::now();
       R.Total = end - start;
     } else if (CFG.diffusionModel == "LT") {
       auto start = std::chrono::high_resolution_clock::now();
-      std::tie(seeds, R) = TIM(G, CFG.k, CFG.epsilon, generator,
-                               im::linear_threshold_tag{},
-                               im::omp_parallel_tag{});
+      std::tie(seeds, R) =
+          TIM(G, CFG.k, CFG.epsilon, generator, im::linear_threshold_tag{},
+              im::omp_parallel_tag{});
       auto end = std::chrono::high_resolution_clock::now();
       R.Total = end - start;
     }
@@ -193,34 +196,33 @@ int main(int argc, char **argv) {
     R.NumThreads = max_num_threads;
 
     nlohmann::json experiment{
-      { "Algorithm", "TIM" },
-      { "DiffusionModel", CFG.diffusionModel },
-      { "Epsilon", CFG.epsilon },
-      { "K", CFG.k },
-      { "L", 1 },
-      { "NumThreads", R.NumThreads },
-      { "Total", R.Total.count() },
-      { "KptEstimation", R.KptEstimation.count() },
-      { "KptRefinement", R.KptRefinement.count() },
-      { "GenerateRRRSets", R.GenerateRRRSets.count() },
-      { "FindMostInfluentialSet", R.FindMostInfluentialSet.count() },
-      { "Seeds", seeds }
-    };
+        {"Algorithm", "TIM"},
+        {"DiffusionModel", CFG.diffusionModel},
+        {"Epsilon", CFG.epsilon},
+        {"K", CFG.k},
+        {"L", 1},
+        {"NumThreads", R.NumThreads},
+        {"Total", R.Total.count()},
+        {"KptEstimation", R.KptEstimation.count()},
+        {"KptRefinement", R.KptRefinement.count()},
+        {"GenerateRRRSets", R.GenerateRRRSets.count()},
+        {"FindMostInfluentialSet", R.FindMostInfluentialSet.count()},
+        {"Seeds", seeds}};
 
     executionLog.push_back(experiment);
   } else {
     if (CFG.diffusionModel == "IC") {
       auto start = std::chrono::high_resolution_clock::now();
-      std::tie(seeds, R) = TIM(G, CFG.k, CFG.epsilon, generator,
-                               im::independent_cascade_tag{},
-                               im::sequential_tag{});
+      std::tie(seeds, R) =
+          TIM(G, CFG.k, CFG.epsilon, generator, im::independent_cascade_tag{},
+              im::sequential_tag{});
       auto end = std::chrono::high_resolution_clock::now();
       R.Total = end - start;
     } else if (CFG.diffusionModel == "LT") {
       auto start = std::chrono::high_resolution_clock::now();
-      std::tie(seeds, R) = TIM(G, CFG.k, CFG.epsilon, generator,
-                               im::linear_threshold_tag{},
-                               im::sequential_tag{});
+      std::tie(seeds, R) =
+          TIM(G, CFG.k, CFG.epsilon, generator, im::linear_threshold_tag{},
+              im::sequential_tag{});
       auto end = std::chrono::high_resolution_clock::now();
       R.Total = end - start;
     }
@@ -230,19 +232,18 @@ int main(int argc, char **argv) {
     R.NumThreads = 1;
     console->info("TIMExecutionRecord : {}", R);
     nlohmann::json experiment{
-      { "Algorithm", "TIM" },
-      { "DiffusionModel", CFG.diffusionModel },
-      { "Epsilon", CFG.epsilon },
-      { "K", CFG.k },
-      { "L", 1 },
-      { "NumThreads", R.NumThreads },
-      { "Total", R.Total.count() },
-      { "KptEstimation", R.KptEstimation.count() },
-      { "KptRefinement", R.KptRefinement.count() },
-      { "GenerateRRRSets", R.GenerateRRRSets.count() },
-      { "FindMostInfluentialSet", R.FindMostInfluentialSet.count() },
-      { "Seeds", seeds }
-    };
+        {"Algorithm", "TIM"},
+        {"DiffusionModel", CFG.diffusionModel},
+        {"Epsilon", CFG.epsilon},
+        {"K", CFG.k},
+        {"L", 1},
+        {"NumThreads", R.NumThreads},
+        {"Total", R.Total.count()},
+        {"KptEstimation", R.KptEstimation.count()},
+        {"KptRefinement", R.KptRefinement.count()},
+        {"GenerateRRRSets", R.GenerateRRRSets.count()},
+        {"FindMostInfluentialSet", R.FindMostInfluentialSet.count()},
+        {"Seeds", seeds}};
 
     executionLog.push_back(experiment);
   }

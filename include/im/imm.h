@@ -11,12 +11,12 @@
 #include <cstddef>
 #include <vector>
 
+#include "trng/lcg64.hpp"
 #include "trng/uniform01_dist.hpp"
 #include "trng/uniform_int_dist.hpp"
-#include "trng/lcg64.hpp"
 
-#include "im/utility.h"
 #include "im/tim.h"
+#include "im/utility.h"
 
 namespace im {
 
@@ -28,35 +28,39 @@ struct IMMExecutionRecord {
   std::chrono::duration<double, std::milli> Total;
 
   template <typename Ostream>
-  friend Ostream & operator<<(Ostream &O, const IMMExecutionRecord &R) {
+  friend Ostream &operator<<(Ostream &O, const IMMExecutionRecord &R) {
     O << "{ "
       << "\"NumThreads\" : " << R.NumThreads << ", "
       << "\"ThetaEstimation\" : " << R.ThetaEstimation.count() << ", "
       << "\"GenerateRRRSets\" : " << R.GenerateRRRSets.count() << ", "
-      << "\"FindMostInfluentialSet\" : " << R.FindMostInfluentialSet.count() << ", "
-      << "\"Total\" : " << R.Total.count()
-      << " }";
+      << "\"FindMostInfluentialSet\" : " << R.FindMostInfluentialSet.count()
+      << ", "
+      << "\"Total\" : " << R.Total.count() << " }";
     return O;
   }
 };
 
 template <typename execution_tag>
-void FuseHG(std::vector<std::deque<size_t>> &out, std::vector<std::deque<size_t>> &in, size_t firstID, execution_tag &&) {
+void FuseHG(std::vector<std::deque<size_t>> &out,
+            std::vector<std::deque<size_t>> &in, size_t firstID,
+            execution_tag &&) {
   if (std::is_same<execution_tag, omp_parallel_tag>::value) {
-    #pragma omp parallel for
+#pragma omp parallel for
     for (size_t i = 0; i < in.size(); ++i)
       std::transform(in[i].begin(), in[i].end(), std::back_inserter(out[i]),
-                     [=](const size_t & a) -> size_t { return firstID + a; });
+                     [=](const size_t &a) -> size_t { return firstID + a; });
   } else {
     for (size_t i = 0; i < in.size(); ++i)
       std::transform(in[i].begin(), in[i].end(), std::back_inserter(out[i]),
-                     [=](const size_t & a) -> size_t { return firstID + a; });
+                     [=](const size_t &a) -> size_t { return firstID + a; });
   }
 }
 
-template <typename GraphTy, typename PRNGeneratorTy,
-          typename diff_model_tag, typename execution_tag>
-auto Sampling(const GraphTy &G, std::size_t k, double epsilon, double l, PRNGeneratorTy &generator, IMMExecutionRecord & record, diff_model_tag&& model_tag, execution_tag&& ex_tag) {
+template <typename GraphTy, typename PRNGeneratorTy, typename diff_model_tag,
+          typename execution_tag>
+auto Sampling(const GraphTy &G, std::size_t k, double epsilon, double l,
+              PRNGeneratorTy &generator, IMMExecutionRecord &record,
+              diff_model_tag &&model_tag, execution_tag &&ex_tag) {
   using vertex_type = typename GraphTy::vertex_type;
 
   // sqrt(2) * epsilon
@@ -72,7 +76,7 @@ auto Sampling(const GraphTy &G, std::size_t k, double epsilon, double l, PRNGene
 
   ssize_t num_threads = 1;
   if (std::is_same<execution_tag, omp_parallel_tag>::value) {
-    #pragma omp single
+#pragma omp single
     num_threads = omp_get_max_threads();
   }
 
@@ -80,20 +84,23 @@ auto Sampling(const GraphTy &G, std::size_t k, double epsilon, double l, PRNGene
   size_t thetaPrime = 0;
   for (ssize_t x = 1; x < std::log2(G.num_nodes()); ++x) {
     // Equation 9
-    ssize_t thetaPrime = (2 + 2./3. * epsilonPrime) *
-                         (l * std::log(G.num_nodes()) + logBinomial(G.num_nodes(), k) +
-                          std::log(std::log2(G.num_nodes()))) * std::pow(2.0, x) / (epsilonPrime * epsilonPrime);
+    ssize_t thetaPrime =
+        (2 + 2. / 3. * epsilonPrime) *
+        (l * std::log(G.num_nodes()) + logBinomial(G.num_nodes(), k) +
+         std::log(std::log2(G.num_nodes()))) *
+        std::pow(2.0, x) / (epsilonPrime * epsilonPrime);
 
-    auto [deltaRR, deltaHyperG] =
+    auto[deltaRR, deltaHyperG] =
         GenerateRRRSets(G, thetaPrime - RR.size(), generator,
                         std::forward<diff_model_tag>(model_tag),
                         std::forward<execution_tag>(ex_tag));
 
     size_t firstID = RR.size();
-    RR.insert(RR.end(), std::make_move_iterator(deltaRR.begin()), std::make_move_iterator(deltaRR.end()));
+    RR.insert(RR.end(), std::make_move_iterator(deltaRR.begin()),
+              std::make_move_iterator(deltaRR.end()));
     FuseHG(HyperG, deltaHyperG, firstID, std::forward<execution_tag>(ex_tag));
 
-    const auto & S = FindMostInfluentialSet(G, k, RR, HyperG);
+    const auto &S = FindMostInfluentialSet(G, k, RR, HyperG);
     double f = double(S.first) / RR.size();
 
     if (f >= std::pow(2, -x)) {
@@ -102,10 +109,12 @@ auto Sampling(const GraphTy &G, std::size_t k, double epsilon, double l, PRNGene
     }
   }
 
-  double term1 = 0.6321205588285577;    // 1 - 1/e
+  double term1 = 0.6321205588285577;  // 1 - 1/e
   double alpha = sqrt(l * std::log(G.num_nodes()) + std::log(2));
-  double beta = sqrt(term1 * (logBinomial(G.num_nodes(), k) + l * std::log(G.num_nodes()) + std::log(2)));
-  double lamdaStar = 2 * G.num_nodes() * (term1 * alpha + beta) * (term1 * alpha + beta) * pow(epsilon, -2);
+  double beta = sqrt(term1 * (logBinomial(G.num_nodes(), k) +
+                              l * std::log(G.num_nodes()) + std::log(2)));
+  double lamdaStar = 2 * G.num_nodes() * (term1 * alpha + beta) *
+                     (term1 * alpha + beta) * pow(epsilon, -2);
   size_t delta = lamdaStar / LB;
   auto end = std::chrono::high_resolution_clock::now();
 
@@ -113,7 +122,7 @@ auto Sampling(const GraphTy &G, std::size_t k, double epsilon, double l, PRNGene
 
   start = std::chrono::high_resolution_clock::now();
   if (delta > RR.size()) {
-    auto [deltaRR, deltaHyperG] =
+    auto[deltaRR, deltaHyperG] =
         GenerateRRRSets(G, delta - RR.size(), generator,
                         std::forward<diff_model_tag>(model_tag),
                         std::forward<execution_tag>(ex_tag));
@@ -128,37 +137,38 @@ auto Sampling(const GraphTy &G, std::size_t k, double epsilon, double l, PRNGene
   return std::make_pair(std::move(RR), std::move(HyperG));
 }
 
-
-template <typename GraphTy, typename diff_model_tag, typename PRNG, typename execution_tag>
-auto IMM(const GraphTy &G, std::size_t k, double epsilon, double l, PRNG & gen,
-         diff_model_tag&& model_tag, execution_tag &&ex_tag) {
+template <typename GraphTy, typename diff_model_tag, typename PRNG,
+          typename execution_tag>
+auto IMM(const GraphTy &G, std::size_t k, double epsilon, double l, PRNG &gen,
+         diff_model_tag &&model_tag, execution_tag &&ex_tag) {
   using vertex_type = typename GraphTy::vertex_type;
   IMMExecutionRecord record;
 
   size_t max_num_threads(1);
 
   if (std::is_same<execution_tag, omp_parallel_tag>::value) {
-    #pragma omp single
+#pragma omp single
     max_num_threads = omp_get_max_threads();
   }
 
   std::vector<trng::lcg64> generator(max_num_threads, gen);
 
   if (std::is_same<execution_tag, omp_parallel_tag>::value) {
-    #pragma omp parallel
+#pragma omp parallel
     {
-      generator[omp_get_thread_num()].split(omp_get_num_threads(), omp_get_thread_num());
+      generator[omp_get_thread_num()].split(omp_get_num_threads(),
+                                            omp_get_thread_num());
     }
   }
 
   l = l * (1 + 1 / std::log2(G.num_nodes()));
 
-  const auto & R = Sampling(G, k, epsilon, l, generator, record,
-                            std::forward<diff_model_tag>(model_tag),
-                            std::forward<execution_tag>(ex_tag));
+  const auto &R = Sampling(G, k, epsilon, l, generator, record,
+                           std::forward<diff_model_tag>(model_tag),
+                           std::forward<execution_tag>(ex_tag));
 
   auto start = std::chrono::high_resolution_clock::now();
-  const auto & S = FindMostInfluentialSet(G, k, R.first, R.second);
+  const auto &S = FindMostInfluentialSet(G, k, R.first, R.second);
   auto end = std::chrono::high_resolution_clock::now();
 
   record.FindMostInfluentialSet = end - start;

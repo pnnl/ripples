@@ -12,7 +12,6 @@
 
 #include "im/graph.h"
 
-
 namespace im {
 
 struct independent_cascade_tag {};
@@ -22,7 +21,7 @@ namespace impl {
 
 template <typename GraphTy, typename Iterator, typename PRNG>
 auto run_simulation(const GraphTy &G, Iterator begin, Iterator end,
-                      PRNG &generator, const independent_cascade_tag &) {
+                    PRNG &generator, const independent_cascade_tag &) {
   using vertex_type = typename GraphTy::vertex_type;
   using edge_weight_type = typename GraphTy::edge_weight_type;
 
@@ -33,11 +32,10 @@ auto run_simulation(const GraphTy &G, Iterator begin, Iterator end,
 
   std::vector<bool> visited(G.num_nodes(), false);
 
-  std::for_each(begin, end,
-                [&](const vertex_type & v) {
-                  queue.push_back(v);
-                  visited[v] = true;
-                });
+  std::for_each(begin, end, [&](const vertex_type &v) {
+    queue.push_back(v);
+    visited[v] = true;
+  });
 
   auto itr = queue.begin();
   auto level_end = queue.end();
@@ -59,13 +57,15 @@ auto run_simulation(const GraphTy &G, Iterator begin, Iterator end,
     }
   }
 
-  return std::make_pair(std::count(visited.begin(), visited.end(), true), level);
+  return std::make_pair(std::count(visited.begin(), visited.end(), true),
+                        level);
 }
 
 }  // namespace impl
 
 template <typename GraphTy, typename Iterator, typename PRNG, typename Model>
-auto simulate(const GraphTy &G, Iterator begin, Iterator end, PRNG &generator, const Model & M) {
+auto simulate(const GraphTy &G, Iterator begin, Iterator end, PRNG &generator,
+              const Model &M) {
   return impl::run_simulation(G, begin, end, generator, M);
 }
 
