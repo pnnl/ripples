@@ -328,23 +328,22 @@ GenerateRRRSets(
   std::vector<std::vector<typename GraphTy::vertex_type>> rrrSets(theta);
   std::vector<std::deque<size_t>> HyperG(G.num_nodes());
 
-#pragma omp declare reduction(MergeHyperGraph : std::vector<std::deque<size_t>> : mergeHG(omp_out, omp_in)) initializer(omp_priv = std::vector<std::deque<size_t>>(omp_orig.size()))
+  #pragma omp declare reduction(MergeHyperGraph : std::vector<std::deque<size_t>> : mergeHG(omp_out, omp_in)) initializer(omp_priv = std::vector<std::deque<size_t>>(omp_orig.size()))
   
-#pragma omp parallel reduction(MergeHyperGraph:HyperG)
+  #pragma omp parallel reduction(MergeHyperGraph:HyperG)
   {
-    size_t size = omp_get_num_threads();
     size_t rank = omp_get_thread_num();
 
     trng::uniform_int_dist start(0, G.num_nodes());
 
-    for (size_t i = rank * theta / size; i < (rank + 1) * theta / size; ++i) {
+    #pragma omp for
+    for (size_t i = 0; i < theta; ++i) {
       typename GraphTy::vertex_type r = start(generator[rank]);
       AddRRRSet(G, r, generator[rank], rrrSets[i], i, HyperG,
                 std::forward<diff_model_tag>(model_tag));
     }
   }
-  return std::make_pair(std::forward<decltype(rrrSets)>(rrrSets),
-                        std::forward<decltype(HyperG)>(HyperG));
+  return {rrrSets, HyperG};
 }
 
 //! \brief Select k seeds starting from the a list of Random Reverse

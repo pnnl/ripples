@@ -70,12 +70,19 @@ auto Sampling(const GraphTy &G, std::size_t k, double epsilon, double l, PRNGene
   std::vector<std::vector<vertex_type>> RR;
   std::vector<std::deque<size_t>> HyperG(G.num_nodes());
 
+  ssize_t num_threads = 1;
+  if (std::is_same<execution_tag, omp_parallel_tag>::value) {
+    #pragma omp single
+    num_threads = omp_get_max_threads();
+  }
+
   auto start = std::chrono::high_resolution_clock::now();
   size_t thetaPrime = 0;
   for (ssize_t x = 1; x < std::log2(G.num_nodes()); ++x) {
     // Equation 9
-    float thetaPrime = (2 + 2./3. * epsilonPrime) *
-                       (l * std::log(G.num_nodes()) + logBinomial(G.num_nodes(), k) + std::log(std::log2(G.num_nodes()))) * std::pow(2.0, x) / (epsilonPrime * epsilonPrime);
+    ssize_t thetaPrime = (2 + 2./3. * epsilonPrime) *
+                         (l * std::log(G.num_nodes()) + logBinomial(G.num_nodes(), k) +
+                          std::log(std::log2(G.num_nodes()))) * std::pow(2.0, x) / (epsilonPrime * epsilonPrime);
 
     auto [deltaRR, deltaHyperG] =
         GenerateRRRSets(G, thetaPrime - RR.size(), generator,
@@ -83,7 +90,7 @@ auto Sampling(const GraphTy &G, std::size_t k, double epsilon, double l, PRNGene
                         std::forward<execution_tag>(ex_tag));
 
     size_t firstID = RR.size();
-    std::move(deltaRR.begin(), deltaRR.end(), std::back_inserter(RR));
+    RR.insert(RR.end(), std::make_move_iterator(deltaRR.begin()), std::make_move_iterator(deltaRR.end()));
     FuseHG(HyperG, deltaHyperG, firstID, std::forward<execution_tag>(ex_tag));
 
     const auto & S = FindMostInfluentialSet(G, k, RR, HyperG);
