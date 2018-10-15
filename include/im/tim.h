@@ -333,7 +333,7 @@ GenerateRRRSets(GraphTy &G, size_t theta, PRNGeneratorTy &generator,
 
     trng::uniform_int_dist start(0, G.num_nodes());
 
-#pragma omp for
+#pragma omp for schedule(dynamic)
     for (size_t i = 0; i < theta; ++i) {
       typename GraphTy::vertex_type r = start(generator[rank]);
       AddRRRSet(G, r, generator[rank], rrrSets[i], i, HyperG,
@@ -354,11 +354,12 @@ GenerateRRRSets(GraphTy &G, size_t theta, PRNGeneratorTy &generator,
 //!
 //! \return a pair where the size_t is the number of RRRset covered and
 //! the set of vertices selected as seeds.
-template <typename GraphTy>
+template <typename GraphTy, typename execution_tag>
 auto FindMostInfluentialSet(
     const GraphTy &G, size_t k,
     const std::vector<std::vector<typename GraphTy::vertex_type>> &RRRsets,
-    const std::vector<std::deque<size_t>> &hyperGraph) {
+    const std::vector<std::deque<size_t>> &hyperGraph,
+    execution_tag&&) {
   using vertex_type = typename GraphTy::vertex_type;
 
   std::vector<size_t> vertexCoverage(G.num_nodes());
@@ -374,15 +375,26 @@ auto FindMostInfluentialSet(
 
   priorityQueue queue(
       cmp, std::vector<std::pair<vertex_type, size_t>>(G.num_nodes()));
-  for (vertex_type i = 0; i < G.num_nodes(); ++i) {
-    vertexCoverage[i] = hyperGraph[i].size();
-    queue.push(std::make_pair(i, vertexCoverage[i]));
+
+  if (std::is_same<execution_tag, omp_parallel_tag>::value) {
+    #pragma omp parallel for
+    for (vertex_type i = 0; i < G.num_nodes(); ++i) {
+      vertexCoverage[i] = hyperGraph[i].size();
+    }
+    for (vertex_type i = 0; i < G.num_nodes(); ++i) {
+      queue.push(std::make_pair(i, vertexCoverage[i]));
+    }
+  } else {
+    for (vertex_type i = 0; i < G.num_nodes(); ++i) {
+      vertexCoverage[i] = hyperGraph[i].size();
+      queue.push(std::make_pair(i, vertexCoverage[i]));
+    }
   }
 
   std::vector<typename GraphTy::vertex_type> result;
   result.reserve(k);
 
-  std::vector<bool> removed(RRRsets.size(), false);
+  std::vector<char> removed(RRRsets.size(), 0);
   size_t uncovered = RRRsets.size();
 
   while (result.size() < k && uncovered != 0) {
@@ -397,14 +409,28 @@ auto FindMostInfluentialSet(
 
     uncovered -= element.second;
 
-    for (auto rrrSetId : hyperGraph[element.first]) {
-      if (removed[rrrSetId]) continue;
+    if (std::is_same<execution_tag, omp_parallel_tag>::value) {
+      #pragma omp parallel for
+      for (size_t i = 0; i < hyperGraph[element.first].size(); ++i) {
+        auto rrrSetId = hyperGraph[element.first][i];
+        if (removed[rrrSetId] != 0) continue;
 
-      for (auto v : RRRsets[rrrSetId]) {
-        vertexCoverage[v] -= 1;
+        for (auto v : RRRsets[rrrSetId]) {
+          vertexCoverage[v] -= 1;
+        }
+
+        removed[rrrSetId] = 1;
       }
+    } else {
+      for (auto rrrSetId : hyperGraph[element.first]) {
+        if (removed[rrrSetId] != 0) continue;
 
-      removed[rrrSetId] = true;
+        for (auto v : RRRsets[rrrSetId]) {
+          vertexCoverage[v] -= 1;
+        }
+
+        removed[rrrSetId] = 1;
+      }
     }
 
     result.push_back(element.first);
@@ -455,7 +481,7 @@ size_t ThetaEstimation(GraphTy &G, size_t k, double epsilon,
       G, thetaPrime, generator, std::forward<diff_model_tag>(model_tag),
       std::forward<execution_tag>(ex_tag)));
 
-  auto seeds = FindMostInfluentialSet(G, k, RR, HyperG);
+  auto seeds = FindMostInfluentialSet(G, k, RR, HyperG, std::forward<execution_tag>(ex_tag));
   double f = double(seeds.first) / RR.size();
   double kptPrime = (f * G.num_nodes()) / (1 + epsPrime);
 
@@ -527,7 +553,7 @@ auto TIM(const GraphTy &G, size_t k, double epsilon, PRNG &gen,
   Record.GenerateRRRSets = end - start;
 
   start = std::chrono::high_resolution_clock::now();
-  auto seeds = FindMostInfluentialSet(G, k, RR, HyperG);
+  auto seeds = FindMostInfluentialSet(G, k, RR, HyperG, std::forward<execution_tag>(ex_tag));
   end = std::chrono::high_resolution_clock::now();
   Record.FindMostInfluentialSet = end - start;
 

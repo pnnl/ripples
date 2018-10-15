@@ -98,9 +98,10 @@ auto Sampling(const GraphTy &G, std::size_t k, double epsilon, double l,
     size_t firstID = RR.size();
     RR.insert(RR.end(), std::make_move_iterator(deltaRR.begin()),
               std::make_move_iterator(deltaRR.end()));
+
     FuseHG(HyperG, deltaHyperG, firstID, std::forward<execution_tag>(ex_tag));
 
-    const auto &S = FindMostInfluentialSet(G, k, RR, HyperG);
+    const auto &S = FindMostInfluentialSet(G, k, RR, HyperG, std::forward<execution_tag>(ex_tag));
     double f = double(S.first) / RR.size();
 
     if (f >= std::pow(2, -x)) {
@@ -168,7 +169,7 @@ auto IMM(const GraphTy &G, std::size_t k, double epsilon, double l, PRNG &gen,
                            std::forward<execution_tag>(ex_tag));
 
   auto start = std::chrono::high_resolution_clock::now();
-  const auto &S = FindMostInfluentialSet(G, k, R.first, R.second);
+  const auto &S = FindMostInfluentialSet(G, k, R.first, R.second, std::forward<execution_tag>(ex_tag));
   auto end = std::chrono::high_resolution_clock::now();
 
   record.FindMostInfluentialSet = end - start;
