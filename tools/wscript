@@ -13,3 +13,6 @@ def build(bld):
 
     bld(features='cxx cxxprogram', source='simulator.cc', target='simulator',
         use=tools_deps)
+
+    bld(features='cxx cxxprogram', source='dump-graph.cc', target='dump-graph',
+        use=tools_deps)

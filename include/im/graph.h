@@ -44,10 +44,22 @@ class Graph {
     size_t nodes = idMap.size();
     size_t edges = std::distance(begin, end);
 
-    inIndex = new DestinationTy *[nodes + 1]{nullptr};
+    inIndex = new DestinationTy *[nodes + 1];
     inEdges = new DestinationTy[edges];
-    outIndex = new DestinationTy *[nodes + 1]{nullptr};
+    outIndex = new DestinationTy *[nodes + 1];
     outEdges = new DestinationTy[edges];
+
+#pragma omp parallel for
+    for (size_t i = 0; i < nodes + 1; ++i) {
+      inIndex[i] = nullptr;
+      outIndex[i] = nullptr;
+    }
+
+#pragma omp parallel for
+    for (size_t i = 0; i < edges; ++i) {
+      inEdges[i] = DestinationTy();
+      outEdges[i] = DestinationTy();
+    }
 
     numNodes = nodes;
     numEdges = edges;
@@ -131,8 +143,8 @@ class Graph {
   void convertID(Itr b, Itr e, OutputItr o) const {
     using value_type = typename Itr::value_type;
     std::transform(b, e, o, [&](const value_type &v) -> value_type {
-        return reverseMap[v];
-      });
+      return reverseMap[v];
+    });
   }
 
  private:

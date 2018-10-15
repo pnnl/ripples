@@ -5,17 +5,17 @@
 //===----------------------------------------------------------------------===//
 
 #include <iostream>
-#include <string>
 #include <memory>
-#include <vector>
+#include <string>
 #include <unordered_set>
+#include <vector>
 
 #include "CLI11/CLI11.hpp"
 #include "benchmark/benchmark.h"
 
 #include "im/graph.h"
-#include "im/tim.h"
 #include "im/loaders.h"
+#include "im/tim.h"
 
 struct Configuration {
   std::string InputGraph;
@@ -25,7 +25,7 @@ struct Configuration {
 
 Configuration Config;
 
-Configuration ParseCmdOptions(int argc, char **argv) {
+Configuration ParseCmdOptions(int argc, char** argv) {
   Configuration CFG;
 
   bool tim = true;
@@ -34,16 +34,14 @@ Configuration ParseCmdOptions(int argc, char **argv) {
   app.add_option("-i,--input-graph", CFG.InputGraph,
                  "The input file with the edge-list.")
       ->required();
-  app.add_option("-k,--seed-set-size", CFG.k,
-                 "The size of the seed set.")
+  app.add_option("-k,--seed-set-size", CFG.k, "The size of the seed set.")
       ->required();
-  app.add_option("-e,--epsilon", CFG.epsilon,
-                 "The size of the seed set.")
+  app.add_option("-e,--epsilon", CFG.epsilon, "The size of the seed set.")
       ->required();
 
   try {
     app.parse(argc, argv);
-  } catch (const CLI::ParseError & e) {
+  } catch (const CLI::ParseError& e) {
     exit(app.exit(e));
   }
 
@@ -52,10 +50,7 @@ Configuration ParseCmdOptions(int argc, char **argv) {
 
 class TIM : public benchmark::Fixture {
  public:
-  TIM()
-      : benchmark::Fixture()
-      , GraphPtr_(nullptr)
-  {}
+  TIM() : benchmark::Fixture(), GraphPtr_(nullptr) {}
 
   void SetUp(benchmark::State& st) {
     if (!GraphPtr_) {
@@ -71,13 +66,13 @@ class TIM : public benchmark::Fixture {
 
 BENCHMARK_DEFINE_F(TIM, KptEstimation)(benchmark::State& state) {
   for (auto _ : state) {
-    theta = KptEstimation(*GraphPtr_, Config.k, Config.epsilon, 1./2.);
+    theta = KptEstimation(*GraphPtr_, Config.k, Config.epsilon, 1. / 2.);
   }
 }
 
 BENCHMARK_REGISTER_F(TIM, KptEstimation)
-->UseRealTime()
-->Unit(benchmark::kMillisecond);
+    ->UseRealTime()
+    ->Unit(benchmark::kMillisecond);
 
 #if 0
 BENCHMARK_DEFINE_F(TIM, ThetaEstimation)(benchmark::State& state) {
@@ -113,7 +108,7 @@ BENCHMARK_REGISTER_F(TIM, GenerateRRR)
 ->Range(1, omp_get_max_threads());
 #endif
 
-int main(int argc, char *argv[]) {
+int main(int argc, char* argv[]) {
   benchmark::Initialize(&argc, argv);
   Config = ParseCmdOptions(argc, argv);
   benchmark::RunSpecifiedBenchmarks();

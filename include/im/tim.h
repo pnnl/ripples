@@ -7,8 +7,8 @@
 #ifndef IM_TIM_H
 #define IM_TIM_H
 
-#include <cassert>
 #include <algorithm>
+#include <cassert>
 #include <chrono>
 #include <cmath>
 #include <cstddef>
@@ -24,9 +24,9 @@
 #include "im/bfs.h"
 #include "im/utility.h"
 
+#include "trng/lcg64.hpp"
 #include "trng/uniform01_dist.hpp"
 #include "trng/uniform_int_dist.hpp"
-#include "trng/lcg64.hpp"
 
 #include "im/diffusion_simulation.h"
 
@@ -41,15 +41,15 @@ struct TIMExecutionRecord {
   std::chrono::duration<double, std::milli> Total;
 
   template <typename Ostream>
-  friend Ostream & operator<<(Ostream &O, const TIMExecutionRecord &R) {
+  friend Ostream &operator<<(Ostream &O, const TIMExecutionRecord &R) {
     O << "{ "
       << "\"NumThreads\" : " << R.NumThreads << ", "
       << "\"KptEstimation\" : " << R.KptEstimation.count() << ", "
       << "\"KptRefinement\" : " << R.KptRefinement.count() << ", "
       << "\"GenerateRRRSets\" : " << R.GenerateRRRSets.count() << ", "
-      << "\"FindMostInfluentialSet\" : " << R.FindMostInfluentialSet.count() << ", "
-      << "\"Total\" : " << R.Total.count()
-      << " }";
+      << "\"FindMostInfluentialSet\" : " << R.FindMostInfluentialSet.count()
+      << ", "
+      << "\"Total\" : " << R.Total.count() << " }";
     return O;
   }
 };
@@ -66,7 +66,7 @@ struct TIMExecutionRecord {
 //! \return The number of elements in the RRR set computed starting from r.
 template <typename GraphTy, typename PRNG, typename diff_model_tag>
 size_t WR(GraphTy &G, typename GraphTy::vertex_type r, PRNG &generator,
-          diff_model_tag&&) {
+          diff_model_tag &&) {
   using vertex_type = typename GraphTy::vertex_type;
 
   trng::uniform01_dist<float> value;
@@ -139,7 +139,8 @@ double KptEstimation(GraphTy &G, size_t k, PRNGeneratorTy &generator,
       // Pick a random vertex
       typename GraphTy::vertex_type v = root(generator[0]);
 
-      double wr = WR(G, v, generator[0], std::forward<diff_model_tag>(model_tag));
+      double wr =
+          WR(G, v, generator[0], std::forward<diff_model_tag>(model_tag));
       wr /= G.num_edges();
       // Equation (8) of the paper.
       sum += 1 - pow(1.0 - wr, k);
@@ -169,7 +170,7 @@ double KptEstimation(GraphTy &G, size_t k, PRNGeneratorTy &generator,
 //! \return a lower bond of OPT computed with Algoirthm 2 of the original paper.
 template <typename GraphTy, typename PRNGeneratorTy, typename diff_model_tag>
 double KptEstimation(GraphTy &G, size_t k, PRNGeneratorTy &generator,
-                     diff_model_tag && model_tag, omp_parallel_tag &&) {
+                     diff_model_tag &&model_tag, omp_parallel_tag &&) {
   double KPTStar = 1.0;
 
   for (size_t i = 2; i < G.num_nodes(); i <<= 1) {
@@ -189,8 +190,8 @@ double KptEstimation(GraphTy &G, size_t k, PRNGeneratorTy &generator,
         // Pick a random vertex
         typename GraphTy::vertex_type v = root(generator[rank]);
 
-        double wr = WR(G, v, generator[rank],
-                       std::forward<diff_model_tag>(model_tag));
+        double wr =
+            WR(G, v, generator[rank], std::forward<diff_model_tag>(model_tag));
         wr /= G.num_edges();
         // Equation (8) of the paper.
         sum += 1 - pow(1.0 - wr, k);
@@ -221,11 +222,10 @@ double KptEstimation(GraphTy &G, size_t k, PRNGeneratorTy &generator,
 //! \param i The simulation number
 //! \param HG The Hyper-Graph to build
 template <typename GraphTy, typename PRNGeneratorTy, typename diff_model_tag>
-void AddRRRSet(
-    GraphTy &G, typename GraphTy::vertex_type r, PRNGeneratorTy &generator,
-    std::vector<typename GraphTy::vertex_type> &result, size_t i,
-    std::vector<std::deque<size_t>>& HG,
-    diff_model_tag && tag) {
+void AddRRRSet(GraphTy &G, typename GraphTy::vertex_type r,
+               PRNGeneratorTy &generator,
+               std::vector<typename GraphTy::vertex_type> &result, size_t i,
+               std::vector<std::deque<size_t>> &HG, diff_model_tag &&tag) {
   using vertex_type = typename GraphTy::vertex_type;
 
   trng::uniform01_dist<float> value;
@@ -281,12 +281,10 @@ void AddRRRSet(
 //!
 //! \return A list of theta Random Reverse Rachability Sets.
 template <typename GraphTy, typename PRNGeneratorTy, typename diff_model_tag>
-std::pair<
-  std::vector<std::vector<typename GraphTy::vertex_type>>,
-  std::vector<std::deque<size_t>>>
-GenerateRRRSets(
-    GraphTy &G, size_t theta, PRNGeneratorTy &generator,
-    diff_model_tag && model_tag, sequential_tag &&) {
+std::pair<std::vector<std::vector<typename GraphTy::vertex_type>>,
+          std::vector<std::deque<size_t>>>
+GenerateRRRSets(GraphTy &G, size_t theta, PRNGeneratorTy &generator,
+                diff_model_tag &&model_tag, sequential_tag &&) {
   using vertex_type = typename GraphTy::vertex_type;
   std::vector<std::vector<vertex_type>> rrrSets(theta);
   std::vector<std::deque<size_t>> HyperG(G.num_nodes());
@@ -302,7 +300,8 @@ GenerateRRRSets(
                         std::forward<decltype(HyperG)>(HyperG));
 }
 
-void mergeHG(std::vector<std::deque<size_t>> &out, std::vector<std::deque<size_t>> &in) {
+void mergeHG(std::vector<std::deque<size_t>> &out,
+             std::vector<std::deque<size_t>> &in) {
   for (size_t i = 0; i < in.size(); ++i)
     out[i].insert(out[i].end(), in[i].begin(), in[i].end());
 }
@@ -319,32 +318,29 @@ void mergeHG(std::vector<std::deque<size_t>> &out, std::vector<std::deque<size_t
 //!
 //! \return A list of theta Random Reverse Rachability Sets.
 template <typename GraphTy, typename PRNGeneratorTy, typename diff_model_tag>
-std::pair<
-  std::vector<std::vector<typename GraphTy::vertex_type>>,
-  std::vector<std::deque<size_t>>>
-GenerateRRRSets(
-    GraphTy &G, size_t theta, PRNGeneratorTy &generator, diff_model_tag && model_tag,
-    omp_parallel_tag &&) {
+std::pair<std::vector<std::vector<typename GraphTy::vertex_type>>,
+          std::vector<std::deque<size_t>>>
+GenerateRRRSets(GraphTy &G, size_t theta, PRNGeneratorTy &generator,
+                diff_model_tag &&model_tag, omp_parallel_tag &&) {
   std::vector<std::vector<typename GraphTy::vertex_type>> rrrSets(theta);
   std::vector<std::deque<size_t>> HyperG(G.num_nodes());
 
 #pragma omp declare reduction(MergeHyperGraph : std::vector<std::deque<size_t>> : mergeHG(omp_out, omp_in)) initializer(omp_priv = std::vector<std::deque<size_t>>(omp_orig.size()))
-  
-#pragma omp parallel reduction(MergeHyperGraph:HyperG)
+
+#pragma omp parallel reduction(MergeHyperGraph : HyperG)
   {
-    size_t size = omp_get_num_threads();
     size_t rank = omp_get_thread_num();
 
     trng::uniform_int_dist start(0, G.num_nodes());
 
-    for (size_t i = rank * theta / size; i < (rank + 1) * theta / size; ++i) {
+#pragma omp for schedule(dynamic)
+    for (size_t i = 0; i < theta; ++i) {
       typename GraphTy::vertex_type r = start(generator[rank]);
       AddRRRSet(G, r, generator[rank], rrrSets[i], i, HyperG,
                 std::forward<diff_model_tag>(model_tag));
     }
   }
-  return std::make_pair(std::forward<decltype(rrrSets)>(rrrSets),
-                        std::forward<decltype(HyperG)>(HyperG));
+  return {rrrSets, HyperG};
 }
 
 //! \brief Select k seeds starting from the a list of Random Reverse
@@ -358,12 +354,12 @@ GenerateRRRSets(
 //!
 //! \return a pair where the size_t is the number of RRRset covered and
 //! the set of vertices selected as seeds.
-template <typename GraphTy>
-auto
-FindMostInfluentialSet(
+template <typename GraphTy, typename execution_tag>
+auto FindMostInfluentialSet(
     const GraphTy &G, size_t k,
     const std::vector<std::vector<typename GraphTy::vertex_type>> &RRRsets,
-    const std::vector<std::deque<size_t>> &hyperGraph) {
+    const std::vector<std::deque<size_t>> &hyperGraph,
+    execution_tag&&) {
   using vertex_type = typename GraphTy::vertex_type;
 
   std::vector<size_t> vertexCoverage(G.num_nodes());
@@ -379,15 +375,26 @@ FindMostInfluentialSet(
 
   priorityQueue queue(
       cmp, std::vector<std::pair<vertex_type, size_t>>(G.num_nodes()));
-  for (vertex_type i = 0; i < G.num_nodes(); ++i) {
-    vertexCoverage[i] = hyperGraph[i].size();
-    queue.push(std::make_pair(i, vertexCoverage[i]));
+
+  if (std::is_same<execution_tag, omp_parallel_tag>::value) {
+    #pragma omp parallel for
+    for (vertex_type i = 0; i < G.num_nodes(); ++i) {
+      vertexCoverage[i] = hyperGraph[i].size();
+    }
+    for (vertex_type i = 0; i < G.num_nodes(); ++i) {
+      queue.push(std::make_pair(i, vertexCoverage[i]));
+    }
+  } else {
+    for (vertex_type i = 0; i < G.num_nodes(); ++i) {
+      vertexCoverage[i] = hyperGraph[i].size();
+      queue.push(std::make_pair(i, vertexCoverage[i]));
+    }
   }
 
   std::vector<typename GraphTy::vertex_type> result;
   result.reserve(k);
 
-  std::vector<bool> removed(RRRsets.size(), false);
+  std::vector<char> removed(RRRsets.size(), 0);
   size_t uncovered = RRRsets.size();
 
   while (result.size() < k && uncovered != 0) {
@@ -402,14 +409,28 @@ FindMostInfluentialSet(
 
     uncovered -= element.second;
 
-    for (auto  rrrSetId : hyperGraph[element.first]) {
-      if (removed[rrrSetId]) continue;
+    if (std::is_same<execution_tag, omp_parallel_tag>::value) {
+      #pragma omp parallel for
+      for (size_t i = 0; i < hyperGraph[element.first].size(); ++i) {
+        auto rrrSetId = hyperGraph[element.first][i];
+        if (removed[rrrSetId] != 0) continue;
 
-      for (auto v : RRRsets[rrrSetId]) {
-        vertexCoverage[v] -= 1;
+        for (auto v : RRRsets[rrrSetId]) {
+          vertexCoverage[v] -= 1;
+        }
+
+        removed[rrrSetId] = 1;
       }
+    } else {
+      for (auto rrrSetId : hyperGraph[element.first]) {
+        if (removed[rrrSetId] != 0) continue;
 
-      removed[rrrSetId] = true;
+        for (auto v : RRRsets[rrrSetId]) {
+          vertexCoverage[v] -= 1;
+        }
+
+        removed[rrrSetId] = 1;
+      }
     }
 
     result.push_back(element.first);
@@ -432,17 +453,17 @@ FindMostInfluentialSet(
 //! \param tag The execution policy tag.
 //!
 //! \return The number of Random Reverse Reachability sets to be computed.
-template <typename GraphTy, typename PRNGeneratorTy,
-          typename diff_model_tag, typename execution_tag>
-size_t ThetaEstimation(GraphTy &G, size_t k, double epsilon, PRNGeneratorTy &generator,
-                       TIMExecutionRecord &R,
-                       diff_model_tag && model_tag, execution_tag &&ex_tag) {
+template <typename GraphTy, typename PRNGeneratorTy, typename diff_model_tag,
+          typename execution_tag>
+size_t ThetaEstimation(GraphTy &G, size_t k, double epsilon,
+                       PRNGeneratorTy &generator, TIMExecutionRecord &R,
+                       diff_model_tag &&model_tag, execution_tag &&ex_tag) {
   using vertex_type = typename GraphTy::vertex_type;
 
   auto start = std::chrono::high_resolution_clock::now();
-  double kpt = KptEstimation(G, k, generator,
-                             std::forward<diff_model_tag>(model_tag),
-                             std::forward<execution_tag>(ex_tag));
+  double kpt =
+      KptEstimation(G, k, generator, std::forward<diff_model_tag>(model_tag),
+                    std::forward<execution_tag>(ex_tag));
   auto end = std::chrono::high_resolution_clock::now();
   R.KptEstimation = end - start;
 
@@ -456,12 +477,11 @@ size_t ThetaEstimation(GraphTy &G, size_t k, double epsilon, PRNGeneratorTy &gen
 
   std::vector<std::vector<vertex_type>> RR;
   std::vector<std::deque<size_t>> HyperG;
-  std::tie(RR, HyperG) =
-      std::move(GenerateRRRSets(G, thetaPrime, generator,
-                                std::forward<diff_model_tag>(model_tag),
-                                std::forward<execution_tag>(ex_tag)));
+  std::tie(RR, HyperG) = std::move(GenerateRRRSets(
+      G, thetaPrime, generator, std::forward<diff_model_tag>(model_tag),
+      std::forward<execution_tag>(ex_tag)));
 
-  auto seeds = FindMostInfluentialSet(G, k, RR, HyperG);
+  auto seeds = FindMostInfluentialSet(G, k, RR, HyperG, std::forward<execution_tag>(ex_tag));
   double f = double(seeds.first) / RR.size();
   double kptPrime = (f * G.num_nodes()) / (1 + epsPrime);
 
@@ -495,28 +515,29 @@ size_t ThetaEstimation(GraphTy &G, size_t k, double epsilon, PRNGeneratorTy &gen
 //! \param tag The execution policy tag.
 //!
 //! \return A set of vertices in the graph.
-template <typename GraphTy, typename PRNG, typename diff_model_tag, typename execution_tag>
-auto TIM(const GraphTy &G, size_t k, double epsilon, PRNG & gen, diff_model_tag&& model_tag,
-         execution_tag &&ex_tag) {
+template <typename GraphTy, typename PRNG, typename diff_model_tag,
+          typename execution_tag>
+auto TIM(const GraphTy &G, size_t k, double epsilon, PRNG &gen,
+         diff_model_tag &&model_tag, execution_tag &&ex_tag) {
   using vertex_type = typename GraphTy::vertex_type;
   TIMExecutionRecord Record;
 
   size_t max_num_threads(1);
 
   if (std::is_same<execution_tag, omp_parallel_tag>::value) {
-    #pragma omp single
+#pragma omp single
     max_num_threads = omp_get_max_threads();
   }
 
   std::vector<trng::lcg64> generator(max_num_threads, gen);
 
   if (std::is_same<execution_tag, omp_parallel_tag>::value) {
-    #pragma omp parallel
+#pragma omp parallel
     {
-      generator[omp_get_thread_num()].split(omp_get_num_threads(), omp_get_thread_num());
+      generator[omp_get_thread_num()].split(omp_get_num_threads(),
+                                            omp_get_thread_num());
     }
   }
-
 
   auto theta = ThetaEstimation(G, k, epsilon, generator, Record,
                                std::forward<diff_model_tag>(model_tag),
@@ -525,14 +546,14 @@ auto TIM(const GraphTy &G, size_t k, double epsilon, PRNG & gen, diff_model_tag&
   auto start = std::chrono::high_resolution_clock::now();
   std::vector<std::vector<vertex_type>> RR;
   std::vector<std::deque<size_t>> HyperG;
-  std::tie(RR, HyperG) = std::move(GenerateRRRSets(G, theta, generator,
-                                                   std::forward<diff_model_tag>(model_tag),
-                                                   std::forward<execution_tag>(ex_tag)));
+  std::tie(RR, HyperG) = std::move(GenerateRRRSets(
+      G, theta, generator, std::forward<diff_model_tag>(model_tag),
+      std::forward<execution_tag>(ex_tag)));
   auto end = std::chrono::high_resolution_clock::now();
   Record.GenerateRRRSets = end - start;
 
   start = std::chrono::high_resolution_clock::now();
-  auto seeds = FindMostInfluentialSet(G, k, RR, HyperG);
+  auto seeds = FindMostInfluentialSet(G, k, RR, HyperG, std::forward<execution_tag>(ex_tag));
   end = std::chrono::high_resolution_clock::now();
   Record.FindMostInfluentialSet = end - start;
 
