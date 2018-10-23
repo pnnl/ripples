@@ -41,18 +41,21 @@ struct IMMExecutionRecord {
 };
 
 template <typename execution_tag>
-void FuseHG(std::vector<std::deque<size_t>> &out,
-            std::vector<std::deque<size_t>> &in, size_t firstID,
+void FuseHG(HyperGraphTy &out, HyperGraphTy &in, size_t firstID,
             execution_tag &&) {
   if (std::is_same<execution_tag, omp_parallel_tag>::value) {
 #pragma omp parallel for
-    for (size_t i = 0; i < in.size(); ++i)
+    for (size_t i = 0; i < in.size(); ++i) {
+      out[i].reserve(in[i].size() + out[i].size());
       std::transform(in[i].begin(), in[i].end(), std::back_inserter(out[i]),
                      [=](const size_t &a) -> size_t { return firstID + a; });
+    }
   } else {
-    for (size_t i = 0; i < in.size(); ++i)
+    for (size_t i = 0; i < in.size(); ++i) {
+      out[i].reserve(in[i].size() + out[i].size());
       std::transform(in[i].begin(), in[i].end(), std::back_inserter(out[i]),
                      [=](const size_t &a) -> size_t { return firstID + a; });
+    }
   }
 }
 
@@ -72,13 +75,7 @@ auto Sampling(const GraphTy &G, std::size_t k, double epsilon, double l,
 
   double LB = 0;
   std::vector<std::vector<vertex_type>> RR;
-  std::vector<std::deque<size_t>> HyperG(G.num_nodes());
-
-  ssize_t num_threads = 1;
-  if (std::is_same<execution_tag, omp_parallel_tag>::value) {
-#pragma omp single
-    num_threads = omp_get_max_threads();
-  }
+  HyperGraphTy HyperG(G.num_nodes());
 
   auto start = std::chrono::high_resolution_clock::now();
   size_t thetaPrime = 0;
