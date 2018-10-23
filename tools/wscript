@@ -1,23 +1,18 @@
 #! /usr/bin/env python
 # encoding: utf-8
 
+
 def build(bld):
-  bld(features = 'cxx cxxprogram',
-      source   = 'tim.cc',
-      target   = 'tim',
-      use = [ 'project-headers', '3rd-party', 'SPDLOG', 'TRNG', 'OpenMP', 'JSON' ])
+    tools_deps = ['project-headers', '3rd-party', 'SPDLOG',
+                  'TRNG', 'OpenMP', 'JSON']
+    bld(features='cxx cxxprogram', source='tim.cc', target='tim',
+        use=tools_deps)
 
-  bld(features = 'cxx cxxprogram',
-      source   = 'imm.cc',
-      target   = 'imm',
-      use = [ 'project-headers', '3rd-party', 'SPDLOG', 'TRNG', 'OpenMP', 'JSON' ])
+    bld(features='cxx cxxprogram', source='imm.cc', target='imm',
+        use=tools_deps)
 
-  bld(features = 'cxx cxxprogram',
-      source   = 'simulator.cc',
-      target   = 'simulator',
-      use = [ 'project-headers', '3rd-party', 'SPDLOG', 'TRNG', 'OpenMP', 'JSON' ])
+    bld(features='cxx cxxprogram', source='simulator.cc', target='simulator',
+        use=tools_deps)
 
-  bld(features = 'cxx cxxprogram',
-      source   = 'dump-graph.cc',
-      target   = 'dump-graph',
-      use = [ 'project-headers', '3rd-party', 'SPDLOG', 'TRNG', 'OpenMP' ])
+    bld(features='cxx cxxprogram', source='dump-graph.cc', target='dump-graph',
+        use=tools_deps)

@@ -3,6 +3,4 @@
 
 
 def build(bld):
-  bld(includes = '.',
-      export_includes = '.',
-      name = 'project-headers')
+  bld(includes='.', export_includes='.', name='project-headers')
