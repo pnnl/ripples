@@ -18,7 +18,9 @@
 
 #include "CLI11/CLI11.hpp"
 #include "nlohmann/json.hpp"
+
 #include "spdlog/fmt/ostr.h"
+#include "spdlog/sinks/stdout_color_sinks.h"
 #include "spdlog/spdlog.h"
 
 namespace im {

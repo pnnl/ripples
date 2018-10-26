@@ -87,7 +87,7 @@ auto Sampling(const GraphTy &G, std::size_t k, double epsilon, double l,
          std::log(std::log2(G.num_nodes()))) *
         std::pow(2.0, x) / (epsilonPrime * epsilonPrime);
 
-    auto[deltaRR, deltaHyperG] =
+    auto [deltaRR, deltaHyperG] =
         GenerateRRRSets(G, thetaPrime - RR.size(), generator,
                         std::forward<diff_model_tag>(model_tag),
                         std::forward<execution_tag>(ex_tag));
@@ -98,7 +98,8 @@ auto Sampling(const GraphTy &G, std::size_t k, double epsilon, double l,
 
     FuseHG(HyperG, deltaHyperG, firstID, std::forward<execution_tag>(ex_tag));
 
-    const auto &S = FindMostInfluentialSet(G, k, RR, HyperG, std::forward<execution_tag>(ex_tag));
+    const auto &S = FindMostInfluentialSet(G, k, RR, HyperG,
+                                           std::forward<execution_tag>(ex_tag));
     double f = double(S.first) / RR.size();
 
     if (f >= std::pow(2, -x)) {
@@ -120,7 +121,7 @@ auto Sampling(const GraphTy &G, std::size_t k, double epsilon, double l,
 
   start = std::chrono::high_resolution_clock::now();
   if (delta > RR.size()) {
-    auto[deltaRR, deltaHyperG] =
+    auto [deltaRR, deltaHyperG] =
         GenerateRRRSets(G, delta - RR.size(), generator,
                         std::forward<diff_model_tag>(model_tag),
                         std::forward<execution_tag>(ex_tag));
@@ -166,7 +167,8 @@ auto IMM(const GraphTy &G, std::size_t k, double epsilon, double l, PRNG &gen,
                            std::forward<execution_tag>(ex_tag));
 
   auto start = std::chrono::high_resolution_clock::now();
-  const auto &S = FindMostInfluentialSet(G, k, R.first, R.second, std::forward<execution_tag>(ex_tag));
+  const auto &S = FindMostInfluentialSet(G, k, R.first, R.second,
+                                         std::forward<execution_tag>(ex_tag));
   auto end = std::chrono::high_resolution_clock::now();
 
   record.FindMostInfluentialSet = end - start;

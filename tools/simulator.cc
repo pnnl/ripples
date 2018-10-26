@@ -8,6 +8,8 @@
 
 #include "CLI11/CLI11.hpp"
 #include "nlohmann/json.hpp"
+#include "spdlog/sinks/basic_file_sink.h"
+#include "spdlog/sinks/stdout_color_sinks.h"
 #include "spdlog/spdlog.h"
 #include "trng/lcg64.hpp"
 #include "trng/uniform_int_dist.hpp"

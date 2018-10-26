@@ -12,6 +12,7 @@
 #include "im/loaders.h"
 
 #include "CLI11/CLI11.hpp"
+#include "spdlog/sinks/stdout_color_sinks.h"
 #include "spdlog/spdlog.h"
 #include "trng/lcg64.hpp"
 #include "trng/uniform01_dist.hpp"

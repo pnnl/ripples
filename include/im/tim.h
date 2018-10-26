@@ -493,9 +493,9 @@ size_t ThetaEstimation(GraphTy &G, size_t k, double epsilon,
 
   std::vector<std::vector<vertex_type>> RR;
   HyperGraphTy HyperG;
-  std::tie(RR, HyperG) = std::move(GenerateRRRSets(
+  std::tie(RR, HyperG) = GenerateRRRSets(
       G, thetaPrime, generator, std::forward<diff_model_tag>(model_tag),
-      std::forward<execution_tag>(ex_tag)));
+      std::forward<execution_tag>(ex_tag));
 
   auto seeds = FindMostInfluentialSet(G, k, RR, HyperG, std::forward<execution_tag>(ex_tag));
   double f = double(seeds.first) / RR.size();
@@ -562,9 +562,9 @@ auto TIM(const GraphTy &G, size_t k, double epsilon, PRNG &gen,
   auto start = std::chrono::high_resolution_clock::now();
   std::vector<std::vector<vertex_type>> RR;
   HyperGraphTy HyperG;
-  std::tie(RR, HyperG) = std::move(GenerateRRRSets(
+  std::tie(RR, HyperG) = GenerateRRRSets(
       G, theta, generator, std::forward<diff_model_tag>(model_tag),
-      std::forward<execution_tag>(ex_tag)));
+      std::forward<execution_tag>(ex_tag));
   auto end = std::chrono::high_resolution_clock::now();
   Record.GenerateRRRSets = end - start;
 
