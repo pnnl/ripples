@@ -40,25 +40,6 @@ struct IMMExecutionRecord {
   }
 };
 
-template <typename execution_tag>
-void FuseHG(HyperGraphTy &out, HyperGraphTy &in, size_t firstID,
-            execution_tag &&) {
-  if (std::is_same<execution_tag, omp_parallel_tag>::value) {
-#pragma omp parallel for
-    for (size_t i = 0; i < in.size(); ++i) {
-      out[i].reserve(in[i].size() + out[i].size());
-      std::transform(in[i].begin(), in[i].end(), std::back_inserter(out[i]),
-                     [=](const size_t &a) -> size_t { return firstID + a; });
-    }
-  } else {
-    for (size_t i = 0; i < in.size(); ++i) {
-      out[i].reserve(in[i].size() + out[i].size());
-      std::transform(in[i].begin(), in[i].end(), std::back_inserter(out[i]),
-                     [=](const size_t &a) -> size_t { return firstID + a; });
-    }
-  }
-}
-
 template <typename GraphTy, typename PRNGeneratorTy, typename diff_model_tag,
           typename execution_tag>
 auto Sampling(const GraphTy &G, std::size_t k, double epsilon, double l,
@@ -74,8 +55,7 @@ auto Sampling(const GraphTy &G, std::size_t k, double epsilon, double l,
   };
 
   double LB = 0;
-  std::vector<std::vector<vertex_type>> RR;
-  HyperGraphTy HyperG(G.num_nodes());
+  std::vector<RRRset<GraphTy>> RR;
 
   auto start = std::chrono::high_resolution_clock::now();
   size_t thetaPrime = 0;
@@ -87,19 +67,15 @@ auto Sampling(const GraphTy &G, std::size_t k, double epsilon, double l,
          std::log(std::log2(G.num_nodes()))) *
         std::pow(2.0, x) / (epsilonPrime * epsilonPrime);
 
-    auto [deltaRR, deltaHyperG] =
-        GenerateRRRSets(G, thetaPrime - RR.size(), generator,
-                        std::forward<diff_model_tag>(model_tag),
-                        std::forward<execution_tag>(ex_tag));
+    auto deltaRR = GenerateRRRSets(G, thetaPrime - RR.size(), generator,
+                                   std::forward<diff_model_tag>(model_tag),
+                                   std::forward<execution_tag>(ex_tag));
 
-    size_t firstID = RR.size();
     RR.insert(RR.end(), std::make_move_iterator(deltaRR.begin()),
               std::make_move_iterator(deltaRR.end()));
 
-    FuseHG(HyperG, deltaHyperG, firstID, std::forward<execution_tag>(ex_tag));
-
-    const auto &S = FindMostInfluentialSet(G, k, RR, HyperG,
-                                           std::forward<execution_tag>(ex_tag));
+    const auto &S =
+        FindMostInfluentialSet(G, k, RR, std::forward<execution_tag>(ex_tag));
     double f = double(S.first) / RR.size();
 
     if (f >= std::pow(2, -x)) {
@@ -121,19 +97,18 @@ auto Sampling(const GraphTy &G, std::size_t k, double epsilon, double l,
 
   start = std::chrono::high_resolution_clock::now();
   if (delta > RR.size()) {
-    auto [deltaRR, deltaHyperG] =
-        GenerateRRRSets(G, delta - RR.size(), generator,
-                        std::forward<diff_model_tag>(model_tag),
-                        std::forward<execution_tag>(ex_tag));
-    size_t firstID = RR.size();
-    std::move(deltaRR.begin(), deltaRR.end(), std::back_inserter(RR));
-    FuseHG(HyperG, deltaHyperG, firstID, std::forward<execution_tag>(ex_tag));
+    auto deltaRR = GenerateRRRSets(G, delta - RR.size(), generator,
+                                   std::forward<diff_model_tag>(model_tag),
+                                   std::forward<execution_tag>(ex_tag));
+
+    RR.insert(RR.end(), std::make_move_iterator(deltaRR.begin()),
+              std::make_move_iterator(deltaRR.end()));
   }
   end = std::chrono::high_resolution_clock::now();
 
   record.GenerateRRRSets = end - start;
 
-  return std::make_pair(std::move(RR), std::move(HyperG));
+  return RR;
 }
 
 template <typename GraphTy, typename diff_model_tag, typename PRNG,
@@ -167,8 +142,8 @@ auto IMM(const GraphTy &G, std::size_t k, double epsilon, double l, PRNG &gen,
                            std::forward<execution_tag>(ex_tag));
 
   auto start = std::chrono::high_resolution_clock::now();
-  const auto &S = FindMostInfluentialSet(G, k, R.first, R.second,
-                                         std::forward<execution_tag>(ex_tag));
+  const auto &S =
+      FindMostInfluentialSet(G, k, R, std::forward<execution_tag>(ex_tag));
   auto end = std::chrono::high_resolution_clock::now();
 
   record.FindMostInfluentialSet = end - start;
