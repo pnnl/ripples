@@ -350,7 +350,7 @@ auto FindMostInfluentialSet(const GraphTy &G, size_t k,
                             execution_tag &&) {
   using vertex_type = typename GraphTy::vertex_type;
 
-  std::vector<size_t> vertexCoverage(G.num_nodes());
+  std::vector<uint32_t> vertexCoverage(G.num_nodes(), 0);
 
   auto cmp = [](std::pair<vertex_type, size_t> &a,
                 std::pair<vertex_type, size_t> &b) {
@@ -366,23 +366,25 @@ auto FindMostInfluentialSet(const GraphTy &G, size_t k,
   if (std::is_same<execution_tag, omp_parallel_tag>::value) {
 #pragma omp parallel
     {
-#pragma omp for
+      size_t threadnum = omp_get_thread_num(),
+            numthreads = omp_get_num_threads();
+      vertex_type low = G.num_nodes()*threadnum/numthreads,
+                 high = G.num_nodes()*(threadnum+1)/numthreads;
+
       for (size_t i = 0; i < RRRsets.size(); ++i) {
-        for (size_t j = 0; j < RRRsets[i].size(); ++j) {
-#pragma omp atomic
-          vertexCoverage[RRRsets[i][j]] += 1;
-        }
+        auto begin = std::lower_bound(RRRsets[i].begin(), RRRsets[i].end(), low);
+        auto end = std::upper_bound(RRRsets[i].begin(), RRRsets[i].end(), high - 1);
+        std::for_each(begin, end, [&](const vertex_type v) { vertexCoverage[v] += 1; });
       }
-#pragma omp for
-      for (vertex_type i = 0; i < G.num_nodes(); ++i) {
-        queue_storage[i] = std::make_pair(i, vertexCoverage[i]);
-      }
+    }
+#pragma omp parallel for
+    for (vertex_type i = 0; i < G.num_nodes(); ++i) {
+      queue_storage[i] = std::make_pair(i, vertexCoverage[i]);
     }
   } else {
     for (size_t i = 0; i < RRRsets.size(); ++i) {
-      for (size_t j = 0; j < RRRsets[i].size(); ++j) {
-        vertexCoverage[RRRsets[i][j]] += 1;
-      }
+      std::for_each(RRRsets[i].begin(), RRRsets[i].end(),
+                    [&](const vertex_type v) { vertexCoverage[v] += 1; });
     }
     for (vertex_type i = 0; i < G.num_nodes(); ++i) {
       queue_storage[i] = std::make_pair(i, vertexCoverage[i]);
@@ -410,18 +412,15 @@ auto FindMostInfluentialSet(const GraphTy &G, size_t k,
     uncovered -= element.second;
 
     if (std::is_same<execution_tag, omp_parallel_tag>::value) {
-#pragma omp parallel
-      {
-#pragma omp for schedule(guided)
-        for (size_t i = 0; i < RRRsets.size(); ++i) {
-          if (removed[i]) continue;
+      for (size_t i = 0; i < RRRsets.size(); ++i) {
+        if (removed[i]) continue;
 
-          if (std::binary_search(RRRsets[i].begin(), RRRsets[i].end(),
-                                 element.first)) {
-            for (size_t j = 0; j < RRRsets[i].size(); ++j) {
-#pragma omp atomic
-              vertexCoverage[RRRsets[i][j]] -= 1;
-            }
+        if (std::binary_search(RRRsets[i].begin(), RRRsets[i].end(),
+                               element.first)) {
+          removed[i] = true;
+#pragma omp parallel for
+          for (size_t j = 0; j < RRRsets[i].size(); ++j) {
+            vertexCoverage[RRRsets[i][j]] -= 1;
           }
         }
       }
@@ -431,6 +430,7 @@ auto FindMostInfluentialSet(const GraphTy &G, size_t k,
 
         if (std::binary_search(RRRsets[i].begin(), RRRsets[i].end(),
                                element.first)) {
+          removed[i] = true;
           for (size_t j = 0; j < RRRsets[i].size(); ++j) {
             vertexCoverage[RRRsets[i][j]] -= 1;
           }
