@@ -9,30 +9,63 @@
 
 #include <algorithm>
 #include <cstddef>
-#include <iostream>
 #include <map>
-#include <memory>
 #include <vector>
 
 namespace im {
 
+//! \brief The structure storing edges of the a weighted graph.
+//!
+//! \tparm VertexTy The integer type representing a vertex of the graph.
+//! \tparm WeightTy The type representing the weight on the edge.
 template <typename VertexTy, typename WeightTy>
 struct Edge {
+  //! The integer type representing vertices in the graph.
   using vertex_type = VertexTy;
+  //! The type representing weight on the edges of the graph.
   using weight_type = WeightTy;
+  //! The source of the edge.
   VertexTy source;
+  //! The destination of teh edge.
   VertexTy destination;
+  //! The weight on the edge.
   WeightTy weight;
 };
 
+//! \brief The Graph data structure.
+//!
+//! This graph data structure is nothing more than a classical CSR
+//! representation of the adjacent matrix of the graph.  For efficiency
+//! purposes, it stores the matrix and its transpose so that it is easy to walk
+//! edges in both directions.
+//!
+//! The construction method takes care of projecting the vercites in the input
+//! edge list into a contiguous space [0; N[ of integers in order to build the
+//! CSR representation.  However, the data structure stores a map that allows to
+//! project back the IDs into the original space.
+//!
+//! \tparm VertexTy The integer type representing a vertex of the graph.
+//! \tparm WeightTy The type representing the weight on the edge.
 template <typename VertexTy, typename WeightTy>
 class Graph {
  public:
+  //! The size type.
   using size_type = size_t;
+  //! The type of an edge in the graph.
   using edge_type = Edge<VertexTy, WeightTy>;
+  //! The integer type representing vertices in the graph.
   using vertex_type = VertexTy;
+  //! The type representing the weights on the edges of the graph.
   using edge_weight_type = WeightTy;
 
+  //! \brief Constructor.
+  //!
+  //! Build a Graph from a sequence of edges.
+  //!
+  //! \tparam EdgeIterator The iterator type used to visit the input edge list.
+  //!
+  //! \param begin The start of the edge list.
+  //! \param end The end of the edge list.
   template <typename EdgeIterator>
   Graph(EdgeIterator begin, EdgeIterator end) {
     std::map<VertexTy, VertexTy> idMap;
@@ -101,6 +134,7 @@ class Graph {
     }
   }
 
+  //! \brief Destuctor.
   ~Graph() {
     delete[] inIndex;
     delete[] inEdges;
@@ -125,20 +159,43 @@ class Graph {
     DestinationTy *end_;
   };
 
+  //! Returns the in-degree of a vertex.
+  //! \param v The input vertex.
+  //! \return the in-degree of vertex v in input.
   size_t in_degree(VertexTy v) const { return inIndex[v + 1] - inIndex[v]; }
+
+  //! Returns the out-degree of a vertex.
+  //! \param v The input vertex.
+  //! \return the out-degree of vertex v in input.
   size_t out_degree(VertexTy v) const { return outIndex[v + 1] - outIndex[v]; }
 
+  //! Returns the out-neighbors of a vertex.
+  //! \param v The input vertex.
+  //! \return the out-neighbors of vertex v in input.
   Neighborhood out_neighbors(VertexTy v) const {
     return Neighborhood(outIndex[v], outIndex[v + 1]);
   }
 
+  //! Returns the in-neighbors of a vertex.
+  //! \param v The input vertex.
+  //! \return the in-neighbors of vertex v in input.
   Neighborhood in_neighbors(VertexTy v) const {
     return Neighborhood(inIndex[v], inIndex[v + 1]);
   }
 
+  //! The number of nodes in the Graph.
+  //! \return The number of nodes in the Graph.
   size_t num_nodes() const { return numNodes; }
+
+  //! The number of edges in the Graph.
+  //! \return The number of edges in the Graph.
   size_t num_edges() const { return numEdges; }
 
+  //! Convert a list of vertices of G into IDs of the input edge list.
+  //!
+  //! \tparam Itr The input iterator of the sequence of input vertices.
+  //! \tparam OutputItr The output iterator where the translated ids will be
+  //! written.
   template <typename Itr, typename OutputItr>
   void convertID(Itr b, Itr e, OutputItr o) const {
     using value_type = typename Itr::value_type;
