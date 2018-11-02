@@ -20,24 +20,15 @@
 
 namespace im {
 
+struct IMMConfiguration : public TIMConfiguration {};
+
 struct IMMExecutionRecord {
   size_t NumThreads;
+  size_t Theta;
   std::chrono::duration<double, std::milli> ThetaEstimation;
   std::chrono::duration<double, std::milli> GenerateRRRSets;
   std::chrono::duration<double, std::milli> FindMostInfluentialSet;
   std::chrono::duration<double, std::milli> Total;
-
-  template <typename Ostream>
-  friend Ostream &operator<<(Ostream &O, const IMMExecutionRecord &R) {
-    O << "{ "
-      << "\"NumThreads\" : " << R.NumThreads << ", "
-      << "\"ThetaEstimation\" : " << R.ThetaEstimation.count() << ", "
-      << "\"GenerateRRRSets\" : " << R.GenerateRRRSets.count() << ", "
-      << "\"FindMostInfluentialSet\" : " << R.FindMostInfluentialSet.count()
-      << ", "
-      << "\"Total\" : " << R.Total.count() << " }";
-    return O;
-  }
 };
 
 template <typename GraphTy, typename PRNGeneratorTy, typename diff_model_tag,
@@ -94,6 +85,8 @@ auto Sampling(const GraphTy &G, std::size_t k, double epsilon, double l,
   auto end = std::chrono::high_resolution_clock::now();
 
   record.ThetaEstimation = end - start;
+
+  record.Theta = delta;
 
   start = std::chrono::high_resolution_clock::now();
   if (delta > RR.size()) {

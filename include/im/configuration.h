@@ -7,23 +7,41 @@
 #ifndef IM_CONFIGURATION_H
 #define IM_CONFIGURATION_H
 
-#include <cstddef>
-#include <random>
 #include <string>
+
+#include "CLI11/CLI11.hpp"
 
 namespace im {
 
 //! \brief The command line configuration
-struct Configuration {
+template <typename AlgorithmConfiguration>
+struct ToolConfiguration : public AlgorithmConfiguration {
   std::string IFileName{""};       //!< The input file name
   std::string LogFile{"log.log"};  //!< The file name of the log
-  size_t k{10};                    //!< The size of the seedset
-  double epsilon{0.15};            //!< The epsilon of the IM algorithm
-  bool parallel{false};
   bool weighted{false};
   bool undirected{false};
   bool OMPStrongScaling{false};
-  std::string diffusionModel{"IC"};
+
+  void ParseCmdOptions(int argc, char **argv) {
+    CLI::App app;
+    app.add_option("-i,--input-graph", IFileName,
+                   "The input file with the edge-list.")
+        ->required();
+    app.add_flag("-u,--undirected", undirected,
+                 "The input graph is undirected");
+    app.add_flag("-w,--weighted", weighted, "The input graph is weighted");
+    app.add_option("-l,--log", LogFile, "The file name of the log.");
+    app.add_flag("--omp_strong_scaling", OMPStrongScaling,
+                 "Trigger strong scaling experiments");
+
+    AlgorithmConfiguration::addCmdOptions(app);
+
+    try {
+      app.parse(argc, argv);
+    } catch (const CLI::ParseError &e) {
+      exit(app.exit(e));
+    }
+  }
 };
 
 };  // namespace im

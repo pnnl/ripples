@@ -21,38 +21,51 @@
 
 #include <omp.h>
 
-#include "im/bfs.h"
+#include "im/diffusion_simulation.h"
 #include "im/utility.h"
 
+#include "CLI11/CLI11.hpp"
 #include "trng/lcg64.hpp"
 #include "trng/uniform01_dist.hpp"
 #include "trng/uniform_int_dist.hpp"
 
-#include "im/diffusion_simulation.h"
-
 namespace im {
+
+//! \brief The configuration data structure for the TIM+ algorithm.
+struct TIMConfiguration {
+  size_t k{10};                      //!< The size of the seedset
+  double epsilon{0.50};              //!< The epsilon of the IM algorithm
+  bool parallel{false};              //!< The sequential vs parallel algorithm
+  std::string diffusionModel{"IC"};  //!< The diffusion model to use.
+
+  void addCmdOptions(CLI::App &app) {
+    app.add_option("-k,--seed-set-size", k, "The size of the seed set.")
+        ->required()
+        ->group("Algorithm Options");
+    app.add_option("-e,--epsilon", epsilon, "The size of the seed set.")
+        ->required()
+        ->group("Algorithm Options");
+    app.add_flag("-p,--parallel", parallel,
+                 "Trigger the parallel implementation")
+        ->group("Algorithm Options");
+    app.add_option("-d,--diffusion-model", diffusionModel,
+                   "The diffusion model to be used (LT|IC)")
+        ->required()
+        ->group("Algorithm Options");
+  }
+};
+
 
 struct TIMExecutionRecord {
   size_t NumThreads;
+  size_t Theta;
   std::chrono::duration<double, std::milli> KptEstimation;
   std::chrono::duration<double, std::milli> KptRefinement;
   std::chrono::duration<double, std::milli> GenerateRRRSets;
   std::chrono::duration<double, std::milli> FindMostInfluentialSet;
   std::chrono::duration<double, std::milli> Total;
-
-  template <typename Ostream>
-  friend Ostream &operator<<(Ostream &O, const TIMExecutionRecord &R) {
-    O << "{ "
-      << "\"NumThreads\" : " << R.NumThreads << ", "
-      << "\"KptEstimation\" : " << R.KptEstimation.count() << ", "
-      << "\"KptRefinement\" : " << R.KptRefinement.count() << ", "
-      << "\"GenerateRRRSets\" : " << R.GenerateRRRSets.count() << ", "
-      << "\"FindMostInfluentialSet\" : " << R.FindMostInfluentialSet.count()
-      << ", "
-      << "\"Total\" : " << R.Total.count() << " }";
-    return O;
-  }
 };
+
 
 //! \brief Compute the number of elements in the RRR set starting at r.
 //!
@@ -367,14 +380,17 @@ auto FindMostInfluentialSet(const GraphTy &G, size_t k,
 #pragma omp parallel
     {
       size_t threadnum = omp_get_thread_num(),
-            numthreads = omp_get_num_threads();
-      vertex_type low = G.num_nodes()*threadnum/numthreads,
-                 high = G.num_nodes()*(threadnum+1)/numthreads;
+             numthreads = omp_get_num_threads();
+      vertex_type low = G.num_nodes() * threadnum / numthreads,
+                  high = G.num_nodes() * (threadnum + 1) / numthreads;
 
       for (size_t i = 0; i < RRRsets.size(); ++i) {
-        auto begin = std::lower_bound(RRRsets[i].begin(), RRRsets[i].end(), low);
-        auto end = std::upper_bound(RRRsets[i].begin(), RRRsets[i].end(), high - 1);
-        std::for_each(begin, end, [&](const vertex_type v) { vertexCoverage[v] += 1; });
+        auto begin =
+            std::lower_bound(RRRsets[i].begin(), RRRsets[i].end(), low);
+        auto end =
+            std::upper_bound(RRRsets[i].begin(), RRRsets[i].end(), high - 1);
+        std::for_each(begin, end,
+                      [&](const vertex_type v) { vertexCoverage[v] += 1; });
       }
     }
 #pragma omp parallel for
@@ -546,6 +562,8 @@ auto TIM(const GraphTy &G, size_t k, double epsilon, PRNG &gen,
   auto theta = ThetaEstimation(G, k, epsilon, generator, Record,
                                std::forward<diff_model_tag>(model_tag),
                                std::forward<execution_tag>(ex_tag));
+
+  Record.Theta = theta;
 
   auto start = std::chrono::high_resolution_clock::now();
   auto RR = GenerateRRRSets(G, theta, generator,

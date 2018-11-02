@@ -26,7 +26,8 @@ struct SimulatorConfiguration {
   std::string IFileName;
   std::string OFileName;
   std::string EFileName;
-  std::string DiffusionModel;
+  std::string diffusionModel;
+  bool weighted{false};
   std::size_t Replicas;
   std::size_t Tries;
   bool undirected{false};
@@ -44,7 +45,7 @@ auto ParseCmdOptions(int argc, char **argv) {
          "-e,--experiment-file", CFG.EFileName,
          "The file storing the experiments form a run of an inf-max algorithm.")
       ->required();
-  app.add_option("-d,--diffusion-model", CFG.DiffusionModel,
+  app.add_option("-d,--diffusion-model", CFG.diffusionModel,
                  "The diffusion process to simulate on the input network.")
       ->required();
   app.add_option("-o,--output", CFG.OFileName,
@@ -80,8 +81,30 @@ int main(int argc, char **argv) {
   weightGen.seed(0UL);
   weightGen.split(2, 0);
 
-  auto edgeList = im::load<im::Edge<uint32_t, float>>(
-      CFG.IFileName, CFG.undirected, weightGen, im::edge_list_tsv());
+  std::vector<im::Edge<uint32_t, float>> edgeList;
+  if (CFG.weighted) {
+    console->info("Loading with input weights");
+    if (CFG.diffusionModel == "IC") {
+      edgeList = im::load<im::Edge<uint32_t, float>>(
+          CFG.IFileName, CFG.undirected, weightGen,
+          im::weighted_edge_list_tsv{}, im::independent_cascade_tag{});
+    } else if (CFG.diffusionModel == "LT") {
+      edgeList = im::load<im::Edge<uint32_t, float>>(
+          CFG.IFileName, CFG.undirected, weightGen,
+          im::weighted_edge_list_tsv{}, im::linear_threshold_tag{});
+    }
+  } else {
+    console->info("Loading with random weights");
+    if (CFG.diffusionModel == "IC") {
+      edgeList = im::load<im::Edge<uint32_t, float>>(
+          CFG.IFileName, CFG.undirected, weightGen, im::edge_list_tsv{},
+          im::independent_cascade_tag{});
+    } else if (CFG.diffusionModel == "LT") {
+      edgeList = im::load<im::Edge<uint32_t, float>>(
+          CFG.IFileName, CFG.undirected, weightGen, im::edge_list_tsv{},
+          im::linear_threshold_tag{});
+    }
+  }
   console->info("Loading Done!");
 
   im::Graph<uint32_t, float> G(edgeList.begin(), edgeList.end());

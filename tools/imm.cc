@@ -25,44 +25,30 @@
 
 namespace im {
 
-Configuration ParseCmdOptions(int argc, char **argv) {
-  Configuration CFG;
-
-  bool tim = true;
-
-  CLI::App app{"Yet another tool to experiment with INF-MAX"};
-  app.add_option("-i,--input-graph", CFG.IFileName,
-                 "The input file with the edge-list.")
-      ->required();
-  app.add_option("-k,--seed-set-size", CFG.k, "The size of the seed set.")
-      ->required();
-  app.add_option("-e,--epsilon", CFG.epsilon, "The size of the seed set.")
-      ->required();
-  app.add_flag("-p,--parallel", CFG.parallel,
-               "Trigger the parallel implementation");
-  app.add_flag("-u,--undirected", CFG.undirected,
-               "The input graph is undirected");
-  app.add_flag("-w,--weighted", CFG.weighted, "The input graph is weighted");
-  app.add_option("-d,--diffusion-model", CFG.diffusionModel,
-                 "The diffusion model to be used (LT|IC)")
-      ->required();
-  app.add_option("-l,--log", CFG.LogFile, "The file name of the log.");
-  app.add_flag("--omp_strong_scaling", CFG.OMPStrongScaling,
-               "Trigger strong scaling experiments");
-
-  try {
-    app.parse(argc, argv);
-  } catch (const CLI::ParseError &e) {
-    exit(app.exit(e));
-  }
-
-  return CFG;
+template <typename SeedSet>
+auto GetExperimentRecord(const ToolConfiguration<IMMConfiguration> &CFG,
+                         const IMMExecutionRecord &R, const SeedSet &seeds) {
+  nlohmann::json experiment{
+      {"Algorithm", "IMM"},
+      {"DiffusionModel", CFG.diffusionModel},
+      {"Epsilon", CFG.epsilon},
+      {"K", CFG.k},
+      {"L", 1},
+      {"NumThreads", R.NumThreads},
+      {"Total", R.Total.count()},
+      {"ThetaEstimation", R.ThetaEstimation.count()},
+      {"Theta", R.Theta},
+      {"GenerateRRRSets", R.GenerateRRRSets.count()},
+      {"FindMostInfluentialSet", R.FindMostInfluentialSet.count()},
+      {"Seeds", seeds}};
+  return experiment;
 }
 
 }  // namespace im
 
 int main(int argc, char **argv) {
-  im::Configuration CFG = im::ParseCmdOptions(argc, argv);
+  im::ToolConfiguration<im::IMMConfiguration> CFG;
+  CFG.ParseCmdOptions(argc, argv);
 
   spdlog::set_level(spdlog::level::info);
 
@@ -76,12 +62,26 @@ int main(int argc, char **argv) {
   std::vector<im::Edge<uint32_t, float>> edgeList;
   if (CFG.weighted) {
     console->info("Loading with input weights");
-    edgeList = im::load<im::Edge<uint32_t, float>>(
-        CFG.IFileName, CFG.undirected, weightGen, im::weighted_edge_list_tsv());
+    if (CFG.diffusionModel == "IC") {
+      edgeList = im::load<im::Edge<uint32_t, float>>(
+          CFG.IFileName, CFG.undirected, weightGen,
+          im::weighted_edge_list_tsv{}, im::independent_cascade_tag{});
+    } else if (CFG.diffusionModel == "LT") {
+      edgeList = im::load<im::Edge<uint32_t, float>>(
+          CFG.IFileName, CFG.undirected, weightGen,
+          im::weighted_edge_list_tsv{}, im::linear_threshold_tag{});
+    }
   } else {
     console->info("Loading with random weights");
-    edgeList = im::load<im::Edge<uint32_t, float>>(
-        CFG.IFileName, CFG.undirected, weightGen, im::edge_list_tsv());
+    if (CFG.diffusionModel == "IC") {
+      edgeList = im::load<im::Edge<uint32_t, float>>(
+          CFG.IFileName, CFG.undirected, weightGen, im::edge_list_tsv{},
+          im::independent_cascade_tag{});
+    } else if (CFG.diffusionModel == "LT") {
+      edgeList = im::load<im::Edge<uint32_t, float>>(
+          CFG.IFileName, CFG.undirected, weightGen, im::edge_list_tsv{},
+          im::linear_threshold_tag{});
+    }
   }
   console->info("Loading Done!");
 
@@ -131,19 +131,7 @@ int main(int argc, char **argv) {
                       num_threads, max_threads);
 
         G.convertID(seeds.begin(), seeds.end(), seeds.begin());
-        nlohmann::json experiment{
-            {"Algorithm", "IMM"},
-            {"DiffusionModel", CFG.diffusionModel},
-            {"Epsilon", CFG.epsilon},
-            {"K", CFG.k},
-            {"L", 1},
-            {"NumThreads", R.NumThreads},
-            {"Total", R.Total.count()},
-            {"ThetaEstimation", R.ThetaEstimation.count()},
-            {"GenerateRRRSets", R.GenerateRRRSets.count()},
-            {"FindMostInfluentialSet", R.FindMostInfluentialSet.count()},
-            {"Seeds", seeds}};
-
+        auto experiment = GetExperimentRecord(CFG, R, seeds);
         executionLog.push_back(experiment);
       } else {
         if (CFG.diffusionModel == "IC") {
@@ -167,19 +155,7 @@ int main(int argc, char **argv) {
         R.NumThreads = num_threads;
 
         G.convertID(seeds.begin(), seeds.end(), seeds.begin());
-        nlohmann::json experiment{
-            {"Algorithm", "IMM"},
-            {"Epsilon", CFG.epsilon},
-            {"DiffusionModel", CFG.diffusionModel},
-            {"K", CFG.k},
-            {"L", 1},
-            {"NumThreads", R.NumThreads},
-            {"Total", R.Total.count()},
-            {"ThetaEstimation", R.ThetaEstimation.count()},
-            {"GenerateRRRSets", R.GenerateRRRSets.count()},
-            {"FindMostInfluentialSet", R.FindMostInfluentialSet.count()},
-            {"Seeds", seeds}};
-
+        auto experiment = GetExperimentRecord(CFG, R, seeds);
         executionLog.push_back(experiment);
       }
       perf.seekp(0);
@@ -210,19 +186,7 @@ int main(int argc, char **argv) {
     R.NumThreads = num_threads;
 
     G.convertID(seeds.begin(), seeds.end(), seeds.begin());
-    nlohmann::json experiment{
-        {"Algorithm", "IMM"},
-        {"DiffusionModel", CFG.diffusionModel},
-        {"Epsilon", CFG.epsilon},
-        {"K", CFG.k},
-        {"L", 1},
-        {"NumThreads", R.NumThreads},
-        {"Total", R.Total.count()},
-        {"ThetaEstimation", R.ThetaEstimation.count()},
-        {"GenerateRRRSets", R.GenerateRRRSets.count()},
-        {"FindMostInfluentialSet", R.FindMostInfluentialSet.count()},
-        {"Seeds", seeds}};
-
+    auto experiment = GetExperimentRecord(CFG, R, seeds);
     executionLog.push_back(experiment);
 
     perf << executionLog.dump(2);
@@ -248,19 +212,7 @@ int main(int argc, char **argv) {
     R.NumThreads = 1;
 
     G.convertID(seeds.begin(), seeds.end(), seeds.begin());
-    nlohmann::json experiment{
-        {"Algorithm", "IMM"},
-        {"DiffusionModel", CFG.diffusionModel},
-        {"Epsilon", CFG.epsilon},
-        {"K", CFG.k},
-        {"L", 1},
-        {"NumThreads", R.NumThreads},
-        {"Total", R.Total.count()},
-        {"ThetaEstimation", R.ThetaEstimation.count()},
-        {"GenerateRRRSets", R.GenerateRRRSets.count()},
-        {"FindMostInfluentialSet", R.FindMostInfluentialSet.count()},
-        {"Seeds", seeds}};
-
+    auto experiment = GetExperimentRecord(CFG, R, seeds);
     executionLog.push_back(experiment);
     perf << executionLog.dump(2);
   }
