@@ -5,6 +5,8 @@
 def build(bld):
     tools_deps = ['project-headers', '3rd-party', 'SPDLOG',
                   'TRNG', 'OpenMP', 'JSON']
+    if bld.env.LIB_MPI:
+        tools_deps = tools_deps + [ 'MPI' ]
     bld(features='cxx cxxprogram', source='tim.cc', target='tim',
         use=tools_deps)
 
@@ -15,4 +17,7 @@ def build(bld):
         use=tools_deps)
 
     bld(features='cxx cxxprogram', source='dump-graph.cc', target='dump-graph',
+        use=tools_deps)
+
+    bld(features='cxx cxxprogram', source='mpi-imm.cc', target='mpi-imm',
         use=tools_deps)

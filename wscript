@@ -24,12 +24,15 @@ def options(opt):
         '--nlohmann-json-root', action='store', default='/usr',
         help='root directory of the installation of nlohmann/json')
 
+    cfg_options.add_option(
+        '--enable-mpi', action='store_true', default=False,
+        help='enable openmpi implementation')
+
 
 def configure(conf):
     conf.load('compiler_cxx')
 
-    conf.env.CXXFLAGS += ['-std=c++17', '-O3', '-march=native', '-pipe',
-                          '-fomit-frame-pointer']
+    conf.env.CXXFLAGS += ['-std=c++17', '-O2', '-march=native', '-pipe']
 
     conf.check_cxx(
         includes=['{0}/include'.format(conf.options.spdlog_root)],
@@ -50,6 +53,10 @@ def configure(conf):
     conf.check_cxx(cxxflags=['-fopenmp'], ldflags=['-fopenmp'],
                    libpath=['{0}/lib/'.format(conf.options.openmp_root)],
                    uselib_store='OpenMP')
+
+    if conf.options.enable_mpi:
+        conf.check_cfg(path='mpic++', args=['-compile-info', '-link-info'],
+                       package='mpic++', uselib_store='MPI', mandatory=False)
 
 
 def build(bld):
