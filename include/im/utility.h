@@ -13,6 +13,7 @@ namespace im {
 
 struct sequential_tag {};
 struct omp_parallel_tag {};
+struct mpi_omp_parallel_tag{};
 struct cxx_parallel_tag {};
 
 }  // namespace im
