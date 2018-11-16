@@ -19,6 +19,8 @@
 #include "trng/uniform01_dist.hpp"
 #include "trng/uniform_int_dist.hpp"
 
+#include "im/find_most_influential.h"
+#include "im/generate_rrr_sets.h"
 #include "im/tim.h"
 #include "im/utility.h"
 
@@ -223,4 +225,4 @@ auto IMM(const GraphTy &G, std::size_t k, double epsilon, double l, PRNG &gen,
 
 }  // namespace im
 
-#endif /* IM_IMM_H */
+#endif // IM_IMM_H

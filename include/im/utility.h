@@ -7,8 +7,6 @@
 #ifndef IM_UTILITY_H
 #define IM_UTILITY_H
 
-#include <chrono>
-
 namespace im {
 
 struct sequential_tag {};
