@@ -14,6 +14,7 @@
 
 #include "im/diffusion_simulation.h"
 #include "im/graph.h"
+#include "im/utility.h"
 
 #include "trng/uniform01_dist.hpp"
 #include "trng/uniform_int_dist.hpp"

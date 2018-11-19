@@ -12,8 +12,8 @@
 #include "im/configuration.h"
 #include "im/diffusion_simulation.h"
 #include "im/graph.h"
-#include "im/imm.h"
 #include "im/loaders.h"
+#include "im/mpi/imm.h"
 #include "im/utility.h"
 
 #include "CLI11/CLI11.hpp"
