@@ -37,33 +37,29 @@ struct IMMExecutionRecord {
   std::chrono::duration<double, std::milli> Total;
 };
 
-
 inline double logBinomial(size_t n, size_t k) {
   return n * log(n) - k * log(k) - (n - k) * log(n - k);
 }
 
-
 template <typename execution_tag>
-ssize_t ThetaPrime(ssize_t x, double epsilonPrime, double l,
-                   size_t k, size_t num_nodes, execution_tag &&) {
+ssize_t ThetaPrime(ssize_t x, double epsilonPrime, double l, size_t k,
+                   size_t num_nodes, execution_tag &&) {
   return (2 + 2. / 3. * epsilonPrime) *
-      (l * std::log(num_nodes) + logBinomial(num_nodes, k) +
-       std::log(std::log2(num_nodes))) *
-      std::pow(2.0, x) / (epsilonPrime * epsilonPrime);
+         (l * std::log(num_nodes) + logBinomial(num_nodes, k) +
+          std::log(std::log2(num_nodes))) *
+         std::pow(2.0, x) / (epsilonPrime * epsilonPrime);
 }
 
-
 #ifdef HAVE_MPI
-inline size_t ThetaPrime(ssize_t x, double epsilonPrime, double l,
-                         size_t k, size_t num_nodes, mpi_omp_parallel_tag &&) {
+inline size_t ThetaPrime(ssize_t x, double epsilonPrime, double l, size_t k,
+                         size_t num_nodes, mpi_omp_parallel_tag &&) {
   int world_size;
   MPI_Comm_size(MPI_COMM_WORLD, &world_size);
 
-  return ThetaPrime(x, epsilonPrime, l, k, num_nodes, omp_parallel_tag{})
-      / world_size;
+  return ThetaPrime(x, epsilonPrime, l, k, num_nodes, omp_parallel_tag{}) /
+         world_size;
 }
 #endif
-
 
 inline size_t Theta(double epsilon, double l, size_t k, double LB,
                     size_t num_nodes) {
@@ -76,7 +72,6 @@ inline size_t Theta(double epsilon, double l, size_t k, double LB,
 
   return lamdaStar / LB;
 }
-
 
 template <typename GraphTy, typename PRNGeneratorTy, typename diff_model_tag,
           typename execution_tag>
@@ -225,4 +220,4 @@ auto IMM(const GraphTy &G, std::size_t k, double epsilon, double l, PRNG &gen,
 
 }  // namespace im
 
-#endif // IM_IMM_H
+#endif  // IM_IMM_H

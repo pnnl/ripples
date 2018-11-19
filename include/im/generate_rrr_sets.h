@@ -8,9 +8,9 @@
 #define IM_GENERATE_RRR_SETS_H
 
 #include <algorithm>
-#include <vector>
 #include <queue>
 #include <utility>
+#include <vector>
 
 #include "im/diffusion_simulation.h"
 #include "im/graph.h"
@@ -18,13 +18,11 @@
 #include "trng/uniform01_dist.hpp"
 #include "trng/uniform_int_dist.hpp"
 
-
 namespace im {
 
 //! \brief The Random Reverse Reachability Sets type
 template <typename GraphTy>
 using RRRset = std::vector<typename GraphTy::vertex_type>;
-
 
 //! \brief Execute a randomize BFS to generate a Random RR Set.
 //!
@@ -84,7 +82,6 @@ void AddRRRSet(GraphTy &G, typename GraphTy::vertex_type r,
 
   std::stable_sort(result.begin(), result.end());
 }
-
 
 //! \brief Generate Random Reverse Reachability Sets.
 //!
@@ -156,4 +153,4 @@ std::vector<RRRset<GraphTy>> GenerateRRRSets(GraphTy &G, size_t theta,
 
 }  // namespace im
 
-#endif // IM_GENERATE_RRR_SETS_H
+#endif  // IM_GENERATE_RRR_SETS_H

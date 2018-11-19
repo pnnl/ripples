@@ -57,7 +57,6 @@ struct TIMConfiguration {
   }
 };
 
-
 struct TIMExecutionRecord {
   size_t NumThreads;
   size_t Theta;
@@ -67,7 +66,6 @@ struct TIMExecutionRecord {
   std::chrono::duration<double, std::milli> FindMostInfluentialSet;
   std::chrono::duration<double, std::milli> Total;
 };
-
 
 //! \brief Compute the number of elements in the RRR set starting at r.
 //!
@@ -220,7 +218,6 @@ double KptEstimation(GraphTy &G, size_t k, PRNGeneratorTy &generator,
 
   return KPTStar;
 }
-
 
 //! \brief Estimate the number of Random Reverse Reachability Sets to be
 //! computed.
