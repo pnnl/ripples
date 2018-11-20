@@ -23,12 +23,75 @@
 namespace im {
 
 inline size_t ThetaPrime(ssize_t x, double epsilonPrime, double l, size_t k,
-                         size_t num_nodes, mpi_omp_parallel_tag &&) {
+                         size_t num_nodes, mpi_omp_parallel_tag &) {
   int world_size;
   MPI_Comm_size(MPI_COMM_WORLD, &world_size);
 
-  return ThetaPrime(x, epsilonPrime, l, k, num_nodes, omp_parallel_tag{}) /
-         world_size;
+  return (ThetaPrime(x, epsilonPrime, l, k, num_nodes, omp_parallel_tag{}) /
+          world_size) + 1;
+}
+
+
+template <typename GraphTy, typename PRNGeneratorTy, typename diff_model_tag>
+auto Sampling(const GraphTy &G, std::size_t k, double epsilon, double l,
+              PRNGeneratorTy &generator, IMMExecutionRecord &record,
+              diff_model_tag &&model_tag, mpi_omp_parallel_tag &ex_tag) {
+  using vertex_type = typename GraphTy::vertex_type;
+
+  // sqrt(2) * epsilon
+  double epsilonPrime = 1.4142135623730951 * epsilon;
+
+  double LB = 0;
+  std::vector<RRRset<GraphTy>> RR;
+
+  auto start = std::chrono::high_resolution_clock::now();
+  size_t thetaPrime = 0;
+  for (ssize_t x = 1; x < std::log2(G.num_nodes()); ++x) {
+    // Equation 9
+    ssize_t thetaPrime = ThetaPrime(x, epsilonPrime, l, k, G.num_nodes(),
+                                    ex_tag);
+
+    auto deltaRR = GenerateRRRSets(G, thetaPrime - RR.size(), generator,
+                                   std::forward<diff_model_tag>(model_tag),
+                                   omp_parallel_tag{});
+
+    RR.insert(RR.end(), std::make_move_iterator(deltaRR.begin()),
+              std::make_move_iterator(deltaRR.end()));
+
+    const auto &S = FindMostInfluentialSet(G, k, RR, ex_tag);
+    double f = S.first;
+
+    if (f >= std::pow(2, -x)) {
+      LB = (G.num_nodes() * f) / (1 + epsilonPrime);
+      break;
+    }
+  }
+
+  int world_size;
+  MPI_Comm_size(MPI_COMM_WORLD, &world_size);
+
+  size_t theta = Theta(epsilon, l, k, LB, G.num_nodes());
+  size_t thetaLocal = (theta / world_size) + 1;
+  auto end = std::chrono::high_resolution_clock::now();
+
+  record.ThetaEstimation = end - start;
+
+  record.Theta = theta;
+
+  start = std::chrono::high_resolution_clock::now();
+  if (thetaLocal > RR.size()) {
+    auto deltaRR = GenerateRRRSets(G, thetaLocal - RR.size(), generator,
+                                   std::forward<diff_model_tag>(model_tag),
+                                   omp_parallel_tag{});
+
+    RR.insert(RR.end(), std::make_move_iterator(deltaRR.begin()),
+              std::make_move_iterator(deltaRR.end()));
+  }
+  end = std::chrono::high_resolution_clock::now();
+
+  record.GenerateRRRSets = end - start;
+
+  return RR;
 }
 
 

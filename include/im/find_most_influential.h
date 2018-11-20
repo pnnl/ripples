@@ -63,9 +63,9 @@ void CountOccurrencies(InItr in_begin, InItr in_end, OutItr out_begin,
     vertex_type low = num_elements * threadnum / numthreads,
                 high = num_elements * (threadnum + 1) / numthreads;
 
-    for (; in_begin != in_end; ++in_begin) {
-      auto begin = std::lower_bound(in_begin->begin(), in_begin->end(), low);
-      auto end = std::upper_bound(in_begin->begin(), in_begin->end(), high - 1);
+    for (auto itr = in_begin; itr != in_end; ++itr) {
+      auto begin = std::lower_bound(itr->begin(), itr->end(), low);
+      auto end = std::upper_bound(begin, itr->end(), high - 1);
       std::for_each(begin, end,
                     [&](const vertex_type v) { *(out_begin + v) += 1; });
     }
@@ -239,7 +239,9 @@ auto FindMostInfluentialSet(const GraphTy &G, size_t k,
     result.push_back(element.first);
   }
 
-  return std::make_pair(RRRsets.size() - uncovered, result);
+  double f = double(RRRsets.size() - uncovered) / RRRsets.size();
+
+  return std::make_pair(f, result);
 }
 
 }  // namespace im

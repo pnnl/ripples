@@ -114,15 +114,15 @@ int main(int argc, char *argv[]) {
   if (CFG.diffusionModel == "IC") {
     auto start = std::chrono::high_resolution_clock::now();
     std::tie(seeds, R) =
-        IMM(G, CFG.k, CFG.epsilon, 1, generator,
-            im::independent_cascade_tag{}, im::omp_parallel_tag{});
+        IMM(G, CFG.k, CFG.epsilon, 1.0, generator,
+            im::independent_cascade_tag{}, im::mpi_omp_parallel_tag{});
     auto end = std::chrono::high_resolution_clock::now();
     R.Total = end - start;
   } else if (CFG.diffusionModel == "LT") {
     auto start = std::chrono::high_resolution_clock::now();
     std::tie(seeds, R) =
         IMM(G, CFG.k, CFG.epsilon, 1, generator, im::linear_threshold_tag{},
-            im::omp_parallel_tag{});
+            im::mpi_omp_parallel_tag{});
     auto end = std::chrono::high_resolution_clock::now();
     R.Total = end - start;
   }
