@@ -56,7 +56,7 @@ void AddRRRSet(GraphTy &G, typename GraphTy::vertex_type r,
     queue.pop();
 
     if (std::is_same<diff_model_tag, im::independent_cascade_tag>::value) {
-      for (auto u : G.in_neighbors(v)) {
+      for (auto u : G.neighbors(v)) {
         if (!visited[u.vertex] && value(generator) <= u.weight) {
           queue.push(u.vertex);
           visited[u.vertex] = true;
@@ -65,7 +65,7 @@ void AddRRRSet(GraphTy &G, typename GraphTy::vertex_type r,
       }
     } else if (std::is_same<diff_model_tag, im::linear_threshold_tag>::value) {
       float threshold = value(generator);
-      for (auto u : G.in_neighbors(v)) {
+      for (auto u : G.neighbors(v)) {
         threshold -= u.weight;
 
         if (threshold > 0) continue;

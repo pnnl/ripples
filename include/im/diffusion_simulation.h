@@ -44,7 +44,7 @@ auto run_simulation(const GraphTy &G, Iterator begin, Iterator end,
   while (itr != queue.end()) {
     vertex_type v = *itr;
 
-    for (auto u : G.out_neighbors(v)) {
+    for (auto u : G.neighbors(v)) {
       if (!visited[u.vertex] && value(generator) <= u.weight) {
         visited[u.vertex] = true;
         queue.push_back(u.vertex);

@@ -85,7 +85,7 @@ int main(int argc, char **argv) {
   {
     std::ofstream graph_ic(CFG.ODirName + "/graph_ic.inf");
     for (uint32_t v = 0; v < G.num_nodes(); ++v)
-      for (auto &e : G.out_neighbors(v))
+      for (auto &e : G.neighbors(v))
         graph_ic << v << " " << e.vertex << " " << e.weight << std::endl;
   }
   return EXIT_SUCCESS;
