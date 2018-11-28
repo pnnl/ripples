@@ -14,6 +14,26 @@
 
 namespace im {
 
+template <typename VertexTy>
+struct ForwardDirection {
+  template <typename ItrTy>
+  static VertexTy Source(ItrTy itr) { return itr->source; }
+
+  template <typename ItrTy>
+  static VertexTy Destination(ItrTy itr) { return itr->destination; }
+};
+
+
+template <typename VertexTy>
+struct BackwardDirection {
+  template <typename ItrTy>
+  static VertexTy Source(ItrTy itr) { return itr->destination; }
+
+  template <typename ItrTy>
+  static VertexTy Destination(ItrTy itr) { return itr->source; }
+};
+
+
 //! \brief The structure storing edges of the a weighted graph.
 //!
 //! \tparm VertexTy The integer type representing a vertex of the graph.
@@ -46,7 +66,8 @@ struct Edge {
 //!
 //! \tparm VertexTy The integer type representing a vertex of the graph.
 //! \tparm WeightTy The type representing the weight on the edge.
-template <typename VertexTy, typename WeightTy>
+template <typename VertexTy, typename WeightTy,
+          typename DirectionPolicy = ForwardDirection<VertexTy> >
 class Graph {
  public:
   //! The size type.
@@ -79,19 +100,15 @@ class Graph {
 
     inIndex = new DestinationTy *[nodes + 1];
     inEdges = new DestinationTy[edges];
-    outIndex = new DestinationTy *[nodes + 1];
-    outEdges = new DestinationTy[edges];
 
-#pragma omp parallel for
+#pragma omp parallel for simd
     for (size_t i = 0; i < nodes + 1; ++i) {
-      inIndex[i] = nullptr;
-      outIndex[i] = nullptr;
+      inIndex[i] = inEdges;
     }
 
-#pragma omp parallel for
+#pragma omp parallel for simd
     for (size_t i = 0; i < edges; ++i) {
       inEdges[i] = DestinationTy();
-      outEdges[i] = DestinationTy();
     }
 
     numNodes = nodes;
@@ -108,29 +125,23 @@ class Graph {
     for (auto itr = begin; itr != end; ++itr) {
       itr->source = idMap[itr->source];
       itr->destination = idMap[itr->destination];
-      *(reinterpret_cast<size_t *>(&inIndex[itr->destination + 1])) +=
-          sizeof(DestinationTy);
-      *(reinterpret_cast<size_t *>(&outIndex[itr->source + 1])) +=
-          sizeof(DestinationTy);
+      inIndex[DirectionPolicy::Destination(itr) + 1] += 1;
+
+      // *(reinterpret_cast<size_t *>(&outIndex[itr->source + 1])) +=
+      //     sizeof(DestinationTy);
     }
 
-    inIndex[0] = inEdges;
-    outIndex[0] = outEdges;
     for (size_t i = 1; i <= nodes; ++i) {
-      *reinterpret_cast<size_t *>(&inIndex[i]) +=
-          reinterpret_cast<size_t>(inIndex[i - 1]);
-      *reinterpret_cast<size_t *>(&outIndex[i]) +=
-          reinterpret_cast<size_t>(outIndex[i - 1]);
+      inIndex[i] += inIndex[i - 1] - inEdges;
     }
 
     std::vector<DestinationTy *> ptrInEdge(inIndex, inIndex + nodes);
-    std::vector<DestinationTy *> ptrOutEdge(outIndex, outIndex + nodes);
     for (auto itr = begin; itr != end; ++itr) {
-      *ptrInEdge.at(itr->destination) = {itr->source, itr->weight};
-      ++ptrInEdge[itr->destination];
+      *ptrInEdge[DirectionPolicy::Destination(itr)] = { DirectionPolicy::Source(itr), itr->weight };
+      ++ptrInEdge[DirectionPolicy::Destination(itr)];
 
-      *ptrOutEdge[itr->source] = {itr->destination, itr->weight};
-      ++ptrOutEdge[itr->source];
+      // *ptrOutEdge[itr->source] = {itr->destination, itr->weight};
+      // ++ptrOutEdge[itr->source];
     }
   }
 
@@ -138,9 +149,6 @@ class Graph {
   ~Graph() {
     delete[] inIndex;
     delete[] inEdges;
-
-    delete[] outIndex;
-    delete[] outEdges;
   }
 
   struct DestinationTy {
@@ -162,24 +170,24 @@ class Graph {
   //! Returns the in-degree of a vertex.
   //! \param v The input vertex.
   //! \return the in-degree of vertex v in input.
-  size_t in_degree(VertexTy v) const { return inIndex[v + 1] - inIndex[v]; }
+  size_t degree(VertexTy v) const { return inIndex[v + 1] - inIndex[v]; }
 
   //! Returns the out-degree of a vertex.
   //! \param v The input vertex.
   //! \return the out-degree of vertex v in input.
-  size_t out_degree(VertexTy v) const { return outIndex[v + 1] - outIndex[v]; }
+  // size_t out_degree(VertexTy v) const { return outIndex[v + 1] - outIndex[v]; }
 
   //! Returns the out-neighbors of a vertex.
   //! \param v The input vertex.
   //! \return the out-neighbors of vertex v in input.
-  Neighborhood out_neighbors(VertexTy v) const {
-    return Neighborhood(outIndex[v], outIndex[v + 1]);
-  }
+  // Neighborhood out_neighbors(VertexTy v) const {
+  //   return Neighborhood(outIndex[v], outIndex[v + 1]);
+  // }
 
   //! Returns the in-neighbors of a vertex.
   //! \param v The input vertex.
   //! \return the in-neighbors of vertex v in input.
-  Neighborhood in_neighbors(VertexTy v) const {
+  Neighborhood neighbors(VertexTy v) const {
     return Neighborhood(inIndex[v], inIndex[v + 1]);
   }
 
@@ -208,8 +216,6 @@ class Graph {
   DestinationTy **inIndex;
   DestinationTy *inEdges;
 
-  DestinationTy **outIndex;
-  DestinationTy *outEdges;
   std::vector<VertexTy> reverseMap;
 
   size_t numNodes;

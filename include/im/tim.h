@@ -95,10 +95,10 @@ size_t WR(GraphTy &G, typename GraphTy::vertex_type r, PRNG &generator,
     vertex_type v = queue.front();
     queue.pop();
 
-    wr += G.in_degree(v);
+    wr += G.degree(v);
 
     if (std::is_same<diff_model_tag, im::independent_cascade_tag>::value) {
-      for (auto u : G.in_neighbors(v)) {
+      for (auto u : G.neighbors(v)) {
         if (!visited[u.vertex] && value(generator) <= u.weight) {
           queue.push(u.vertex);
           visited[u.vertex] = true;
@@ -106,7 +106,7 @@ size_t WR(GraphTy &G, typename GraphTy::vertex_type r, PRNG &generator,
       }
     } else if (std::is_same<diff_model_tag, im::linear_threshold_tag>::value) {
       float threshold = value(generator);
-      for (auto u : G.in_neighbors(v)) {
+      for (auto u : G.neighbors(v)) {
         threshold -= u.weight;
 
         if (threshold > 0) continue;

@@ -85,7 +85,7 @@ int main(int argc, char **argv) {
   }
   console->info("Loading Done!");
 
-  im::Graph<uint32_t, float> G(edgeList.begin(), edgeList.end());
+  im::Graph<uint32_t, float, im::BackwardDirection<uint32_t>> G(edgeList.begin(), edgeList.end());
   edgeList.clear();
   console->info("Number of Nodes : {}", G.num_nodes());
   console->info("Number of Edges : {}", G.num_edges());
