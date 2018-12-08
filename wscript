@@ -28,6 +28,8 @@ def options(opt):
         '--enable-mpi', action='store_true', default=False,
         help='enable openmpi implementation')
 
+    opt.load('mpi', tooldir='waftools')
+
 
 def configure(conf):
     conf.load('compiler_cxx')
@@ -55,8 +57,7 @@ def configure(conf):
                    uselib_store='OpenMP')
 
     if conf.options.enable_mpi:
-        conf.check_cfg(path='mpic++', args=['-compile-info', '-link-info'],
-                       package='mpic++', uselib_store='MPI', mandatory=False)
+        conf.load('mpi', tooldir='waftools')
 
 
 def build(bld):
