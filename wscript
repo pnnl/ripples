@@ -8,9 +8,6 @@ APPNAME = 'influence-maximization'
 def options(opt):
     opt.load('compiler_cxx')
     cfg_options = opt.get_option_group('Configuration options')
-    cfg_options.add_option(
-        '--spdlog-root', action='store', default='/usr',
-        help='root directory of the installation of spdlog')
 
     cfg_options.add_option(
         '--trng4-root', action='store', default='/usr',
@@ -28,6 +25,7 @@ def options(opt):
         '--enable-mpi', action='store_true', default=False,
         help='enable openmpi implementation')
 
+    opt.load('spdlog', tooldir='waftools')
     opt.load('mpi', tooldir='waftools')
 
 
@@ -36,11 +34,7 @@ def configure(conf):
 
     conf.env.CXXFLAGS += ['-std=c++17', '-O2', '-march=native', '-pipe']
 
-    conf.check_cxx(
-        includes=['{0}/include'.format(conf.options.spdlog_root)],
-        header_name='spdlog/spdlog.h',
-        uselib_store='SPDLOG',
-        msg='Checking for library spdlog')
+    conf.load('spdlog', tooldir='waftools')
 
     conf.check_cxx(
         includes=['{0}/include'.format(conf.options.nlohmann_json_root)],
