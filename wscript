@@ -9,23 +9,18 @@ def options(opt):
     opt.load('compiler_cxx')
     cfg_options = opt.get_option_group('Configuration options')
 
-    cfg_options.add_option(
-        '--trng4-root', action='store', default='/usr',
-        help='root directory of the installation of trng4')
+    opt.load('trng4', tooldir='waftools')
+    opt.load('json', tooldir='waftools')
+    opt.load('spdlog', tooldir='waftools')
 
     cfg_options.add_option(
         '--openmp-root', action='store', default='/usr',
         help='root directory of the installation of openmp')
 
     cfg_options.add_option(
-        '--nlohmann-json-root', action='store', default='/usr',
-        help='root directory of the installation of nlohmann/json')
-
-    cfg_options.add_option(
         '--enable-mpi', action='store_true', default=False,
         help='enable openmpi implementation')
 
-    opt.load('spdlog', tooldir='waftools')
     opt.load('mpi', tooldir='waftools')
 
 
@@ -35,16 +30,8 @@ def configure(conf):
     conf.env.CXXFLAGS += ['-std=c++17', '-O2', '-march=native', '-pipe']
 
     conf.load('spdlog', tooldir='waftools')
-
-    conf.check_cxx(
-        includes=['{0}/include'.format(conf.options.nlohmann_json_root)],
-        header_name='nlohmann/json.hpp',
-        uselib_store='JSON',
-        msg='Checking for library nlohmann/json')
-
-    conf.check_cxx(lib='trng4', uselib_store='TRNG',
-                   includes=['{0}/include/'.format(conf.options.trng4_root)],
-                   libpath=['{0}/lib/'.format(conf.options.trng4_root)])
+    conf.load('json', tooldir='waftools')
+    conf.load('trng4', tooldir='waftools')
 
     conf.check_cxx(cxxflags=['-fopenmp'], ldflags=['-fopenmp'],
                    libpath=['{0}/lib/'.format(conf.options.openmp_root)],
