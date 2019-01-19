@@ -27,7 +27,7 @@ def options(opt):
 def configure(conf):
     conf.load('compiler_cxx')
 
-    conf.env.CXXFLAGS += ['-std=c++17', '-O2', '-march=native', '-pipe']
+    conf.env.CXXFLAGS += ['-std=c++17', '-O3', '-march=native', '-pipe']
 
     conf.load('spdlog', tooldir='waftools')
     conf.load('json', tooldir='waftools')

@@ -60,18 +60,17 @@ def check_using_mpi_compiler_wrapper(self):
     self.find_program('mpicc', var='MPICC', mandatory=False)
     msg = 'Checking for MPI using mpicc with {0}'
 
-    args_list = [ '-showme:compile -showme:link',
-                  '-compile-info -link-info' ]
+    args_list = { 'OpenMPI' : ['-showme:compile', '-showme:link'],
+                  'MPICH' : ['-compile-info', '-link-info'] }
 
-    for args in args_list[:-1]:
-        self.check_cfg(path=self.env.MPICC,
-                       args=args,
-                       msg=msg.format(args),
-                       package='', uselib_store='MPI',
-                       mandatory=False)
-
-    self.check_cfg(path=self.env.MPICC,
-                   args=args_list[-1],
-                   msg=msg.format(args_list[-1]),
-                   package='', uselib_store='MPI',
-                   mandatory=True)
+    found = False
+    for mpi, flags in args_list.iteritems():
+        for args in flags:
+            check = self.check_cfg(path=self.env.MPICC,
+                                   args=args,
+                                   msg=msg.format(args),
+                                   package='', uselib_store='MPI',
+                                   mandatory=False)
+            found = found and check
+        if found:
+            break

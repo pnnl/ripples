@@ -18,7 +18,7 @@ def build(bld):
     bld(features='cxx cxxprogram', source='dump-graph.cc', target='dump-graph',
         use=tools_deps)
 
-    if bld.env.LIB_MPI:
+    if bld.env.HAVE_MPI:
         tools_deps = tools_deps + [ 'MPI' ]
         bld(features='cxx cxxprogram', source='mpi-imm.cc', target='mpi-imm',
             use=tools_deps)

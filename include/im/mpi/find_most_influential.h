@@ -44,12 +44,20 @@ auto FindMostInfluentialSet(const GraphTy &G, size_t k,
                           std::vector<std::pair<vertex_type, uint32_t>>,
                           decltype(cmp)>;
 
+  MPI_Win win;
+  MPI_Win_create(reduceCoverageInfo.data(), G.num_nodes() * sizeof(uint32_t),
+                 sizeof(uint32_t), MPI_INFO_NULL, MPI_COMM_WORLD, &win);
+
   CountOccurrencies(RRRsets.begin(), RRRsets.end(), vertexCoverage.begin(),
                     vertexCoverage.end(),
                     std::forward<omp_parallel_tag>(omp_parallel_tag{}));
 
-  MPI_Reduce(vertexCoverage.data(), reduceCoverageInfo.data(), G.num_nodes(),
-             MPI_UINT32_T, MPI_SUM, 0, MPI_COMM_WORLD);
+  MPI_Win_fence(0, win);
+  MPI_Accumulate(vertexCoverage.data(), G.num_nodes(), MPI_UINT32_T, 0,
+                 0, G.num_nodes(), MPI_UINT32_T, MPI_SUM, win);
+  MPI_Win_fence(0, win);
+
+  MPI_Win_free(&win);
 
   std::vector<std::pair<vertex_type, uint32_t>> queue_storage;
   int rank;
@@ -67,10 +75,9 @@ auto FindMostInfluentialSet(const GraphTy &G, size_t k,
   result.reserve(k);
 
   std::vector<char> removed(RRRsets.size(), false);
-  uint64_t covered = 0;
+  uint32_t coveredAndSelected[2] = { 0, 0 };
 
   while (result.size() < k) {
-    vertex_type selected;
     if (rank == 0) {
       auto element = queue.top();
       queue.pop();
@@ -80,26 +87,24 @@ auto FindMostInfluentialSet(const GraphTy &G, size_t k,
         queue.push(element);
         continue;
       }
-      selected = element.first;
-      covered += element.second;
+      coveredAndSelected[0] += element.second;
+      coveredAndSelected[1] = element.first;
     }
 
-    MPI_Bcast(&selected, 1, MPI_UINT32_T, 0, MPI_COMM_WORLD);
+    MPI_Bcast(&coveredAndSelected, 2, MPI_UINT32_T, 0, MPI_COMM_WORLD);
 
-    UpdateCounters(selected, RRRsets, removed, vertexCoverage,
+    UpdateCounters(coveredAndSelected[1], RRRsets, removed, vertexCoverage,
                    omp_parallel_tag{});
 
     MPI_Reduce(vertexCoverage.data(), reduceCoverageInfo.data(), G.num_nodes(),
                MPI_UINT32_T, MPI_SUM, 0, MPI_COMM_WORLD);
 
-    result.push_back(selected);
+    result.push_back(coveredAndSelected[1]);
   }
-
-  MPI_Bcast(&covered, 1, MPI_UINT32_T, 0, MPI_COMM_WORLD);
 
   int world_size = 0;
   MPI_Comm_size(MPI_COMM_WORLD, &world_size);
-  double f = double(covered) / (world_size * RRRsets.size());
+  double f = double(coveredAndSelected[0]) / (world_size * RRRsets.size());
 
   return std::make_pair(f, result);
 }

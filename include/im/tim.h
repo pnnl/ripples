@@ -261,7 +261,7 @@ size_t ThetaEstimation(GraphTy &G, size_t k, double epsilon,
 
   auto seeds =
       FindMostInfluentialSet(G, k, RR, std::forward<execution_tag>(ex_tag));
-  double f = double(seeds.first) / RR.size();
+  double f = double(seeds.first);
   double kptPrime = (f * G.num_nodes()) / (1 + epsPrime);
 
   // kpt now contains the best bound we were able to find after refinment.

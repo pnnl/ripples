@@ -87,7 +87,8 @@ auto Sampling(const GraphTy &G, std::size_t k, double epsilon, double l,
 
     const auto &S =
         FindMostInfluentialSet(G, k, RR, std::forward<execution_tag>(ex_tag));
-    double f = double(S.first) / RR.size();
+
+    double f = S.first;
 
     if (f >= std::pow(2, -x)) {
       LB = (G.num_nodes() * f) / (1 + epsilonPrime);
