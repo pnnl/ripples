@@ -79,78 +79,6 @@ class Graph {
   //! The type representing the weights on the edges of the graph.
   using edge_weight_type = WeightTy;
 
-  //! \brief Constructor.
-  //!
-  //! Build a Graph from a sequence of edges.
-  //!
-  //! \tparam EdgeIterator The iterator type used to visit the input edge list.
-  //!
-  //! \param begin The start of the edge list.
-  //! \param end The end of the edge list.
-  template <typename EdgeIterator>
-  Graph(EdgeIterator begin, EdgeIterator end) {
-    std::map<VertexTy, VertexTy> idMap;
-    for (auto itr = begin; itr != end; ++itr) {
-      idMap[itr->source];
-      idMap[itr->destination];
-    }
-
-    size_t nodes = idMap.size();
-    size_t edges = std::distance(begin, end);
-
-    inIndex = new DestinationTy *[nodes + 1];
-    inEdges = new DestinationTy[edges];
-
-#pragma omp parallel for simd
-    for (size_t i = 0; i < nodes + 1; ++i) {
-      inIndex[i] = inEdges;
-    }
-
-#pragma omp parallel for simd
-    for (size_t i = 0; i < edges; ++i) {
-      inEdges[i] = DestinationTy();
-    }
-
-    numNodes = nodes;
-    numEdges = edges;
-
-    VertexTy currentID{0};
-    reverseMap.resize(numNodes);
-    for (auto itr = std::begin(idMap), end = std::end(idMap); itr != end;
-         ++itr) {
-      reverseMap[currentID] = itr->first;
-      itr->second = currentID++;
-    }
-
-    for (auto itr = begin; itr != end; ++itr) {
-      itr->source = idMap[itr->source];
-      itr->destination = idMap[itr->destination];
-      inIndex[DirectionPolicy::Destination(itr) + 1] += 1;
-
-      // *(reinterpret_cast<size_t *>(&outIndex[itr->source + 1])) +=
-      //     sizeof(DestinationTy);
-    }
-
-    for (size_t i = 1; i <= nodes; ++i) {
-      inIndex[i] += inIndex[i - 1] - inEdges;
-    }
-
-    std::vector<DestinationTy *> ptrInEdge(inIndex, inIndex + nodes);
-    for (auto itr = begin; itr != end; ++itr) {
-      *ptrInEdge[DirectionPolicy::Destination(itr)] = { DirectionPolicy::Source(itr), itr->weight };
-      ++ptrInEdge[DirectionPolicy::Destination(itr)];
-
-      // *ptrOutEdge[itr->source] = {itr->destination, itr->weight};
-      // ++ptrOutEdge[itr->source];
-    }
-  }
-
-  //! \brief Destuctor.
-  ~Graph() {
-    delete[] inIndex;
-    delete[] inEdges;
-  }
-
   struct DestinationTy {
     VertexTy vertex;
     WeightTy weight;
@@ -167,10 +95,76 @@ class Graph {
     DestinationTy *end_;
   };
 
+  //! \brief Constructor.
+  //!
+  //! Build a Graph from a sequence of edges.
+  //!
+  //! \tparam EdgeIterator The iterator type used to visit the input edge list.
+  //!
+  //! \param begin The start of the edge list.
+  //! \param end The end of the edge list.
+  template <typename EdgeIterator>
+  Graph(EdgeIterator begin, EdgeIterator end) {
+    std::map<VertexTy, VertexTy> idMap;
+    for (auto itr = begin; itr != end; ++itr) {
+      idMap[itr->source];
+      idMap[itr->destination];
+    }
+
+    size_t num_nodes = idMap.size();
+    size_t num_edges = std::distance(begin, end);
+
+    index = new DestinationTy *[num_nodes + 1];
+    edges = new DestinationTy[num_edges];
+
+#pragma omp parallel for simd
+    for (size_t i = 0; i < num_nodes + 1; ++i) {
+      index[i] = edges;
+    }
+
+#pragma omp parallel for simd
+    for (size_t i = 0; i < num_edges; ++i) {
+      edges[i] = DestinationTy();
+    }
+
+    numNodes = num_nodes;
+    numEdges = num_edges;
+
+    VertexTy currentID{0};
+    reverseMap.resize(numNodes);
+    for (auto itr = std::begin(idMap), end = std::end(idMap); itr != end;
+         ++itr) {
+      reverseMap[currentID] = itr->first;
+      itr->second = currentID++;
+    }
+
+    for (auto itr = begin; itr != end; ++itr) {
+      itr->source = idMap[itr->source];
+      itr->destination = idMap[itr->destination];
+      index[DirectionPolicy::Source(itr) + 1] += 1;
+    }
+
+    for (size_t i = 1; i <= num_nodes; ++i) {
+      index[i] += index[i - 1] - edges;
+    }
+
+    std::vector<DestinationTy *> ptrEdge(index, index + num_nodes);
+    for (auto itr = begin; itr != end; ++itr) {
+      *ptrEdge[DirectionPolicy::Source(itr)] = { DirectionPolicy::Destination(itr), itr->weight };
+      ++ptrEdge[DirectionPolicy::Source(itr)];
+    }
+  }
+
+  //! \brief Destuctor.
+  ~Graph() {
+    delete[] index;
+    delete[] edges;
+  }
+
   //! Returns the in-degree of a vertex.
   //! \param v The input vertex.
   //! \return the in-degree of vertex v in input.
-  size_t degree(VertexTy v) const { return inIndex[v + 1] - inIndex[v]; }
+  size_t degree(VertexTy v) const { return index[v + 1] - index[v]; }
 
   //! Returns the out-degree of a vertex.
   //! \param v The input vertex.
@@ -188,7 +182,7 @@ class Graph {
   //! \param v The input vertex.
   //! \return the in-neighbors of vertex v in input.
   Neighborhood neighbors(VertexTy v) const {
-    return Neighborhood(inIndex[v], inIndex[v + 1]);
+    return Neighborhood(index[v], index[v + 1]);
   }
 
   //! The number of nodes in the Graph.
@@ -213,8 +207,8 @@ class Graph {
   }
 
  private:
-  DestinationTy **inIndex;
-  DestinationTy *inEdges;
+  DestinationTy **index;
+  DestinationTy *edges;
 
   std::vector<VertexTy> reverseMap;
 
