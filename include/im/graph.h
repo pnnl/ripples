@@ -105,7 +105,6 @@ class Graph {
   //! \param end The end of the edge list.
   template <typename EdgeIterator>
   Graph(EdgeIterator begin, EdgeIterator end) {
-    std::map<VertexTy, VertexTy> idMap;
     for (auto itr = begin; itr != end; ++itr) {
       idMap[itr->source];
       idMap[itr->destination];
@@ -135,7 +134,8 @@ class Graph {
     for (auto itr = std::begin(idMap), end = std::end(idMap); itr != end;
          ++itr) {
       reverseMap[currentID] = itr->first;
-      itr->second = currentID++;
+      itr->second = currentID;
+      currentID++;
     }
 
     for (auto itr = begin; itr != end; ++itr) {
@@ -206,10 +206,23 @@ class Graph {
     });
   }
 
+  template <typename Itr, typename OutputItr>
+  void transformID(Itr b, Itr e, OutputItr o) const {
+    using value_type = typename Itr::value_type;
+    std::transform(b, e, o, [&](const value_type &v) -> value_type {
+      auto itr = idMap.find(v);
+      if (itr != idMap.end())
+        return itr->second;
+      else
+        throw "Bad node";
+    });
+  }
+
  private:
   DestinationTy **index;
   DestinationTy *edges;
 
+  std::map<VertexTy, VertexTy> idMap;
   std::vector<VertexTy> reverseMap;
 
   size_t numNodes;

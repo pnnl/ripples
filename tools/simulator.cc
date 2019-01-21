@@ -125,6 +125,8 @@ int main(int argc, char **argv) {
 
     std::vector<vertex_type> seeds = record["Seeds"];
 
+    G.transformID(seeds.begin(), seeds.end(), seeds.begin());
+
     std::vector<trng::lcg64> generator;
 #pragma omp single
     generator.resize(omp_get_max_threads());
