@@ -64,7 +64,7 @@ def check_using_mpi_compiler_wrapper(self):
                   'MPICH' : ['-compile-info', '-link-info'] }
 
     found = False
-    for mpi, flags in args_list.iteritems():
+    for flags in args_list.values():
         for args in flags:
             check = self.check_cfg(path=self.env.MPICC,
                                    args=args,
