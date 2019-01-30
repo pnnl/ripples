@@ -95,6 +95,34 @@ class Graph {
     DestinationTy *end_;
   };
 
+  Graph()
+      : numNodes(0), numEdges(0), index(nullptr), edges(nullptr)
+      , idMap(), reverseMap() {}
+
+  Graph(Graph && O) {
+    std::swap(numNodes, O.numNodes);
+    std::swap(numEdges, O.numEdges);
+    std::swap(index, O.index);
+    std::swap(edges, O.edges);
+    idMap = std::move(O.idMap);
+    reverseMap = std::move(O.reverseMap);
+  }
+      
+
+  Graph & operator=(Graph && O) {
+    std::swap(numNodes, O.numNodes);
+    std::swap(numEdges, O.numEdges);
+    std::swap(index, O.index);
+    std::swap(edges, O.edges);
+    idMap = std::move(O.idMap);
+    reverseMap = std::move(O.reverseMap);
+  }
+
+  template<typename FStream>
+  Graph(FStream & FS) {
+    load_binary(FS);
+  }
+
   //! \brief Constructor.
   //!
   //! Build a Graph from a sequence of edges.
@@ -218,7 +246,47 @@ class Graph {
     });
   }
 
+  template <typename FStream>
+  void dump_binary(FStream & FS) const {
+    FS.write(reinterpret_cast<const char *>(&numNodes), sizeof(numNodes));
+    FS.write(reinterpret_cast<const char *>(&numEdges), sizeof(numEdges));
+
+    FS.write(reinterpret_cast<const char *>(reverseMap.data()), reverseMap.size() * sizeof(VertexTy));
+
+    std::vector<ptrdiff_t> relIndex(numNodes + 1, 0);
+    std::transform(index, index + numNodes + 1, relIndex.begin(),
+                   [=](DestinationTy * const v) -> ptrdiff_t { return std::distance(edges, v); });
+    
+    FS.write(reinterpret_cast<char *>(relIndex.data()), relIndex.size() * sizeof(ptrdiff_t));
+    FS.write(reinterpret_cast<char *>(edges), numEdges * sizeof(DestinationTy));
+  }
+
  private:
+  template <typename FStream>
+  void load_binary(FStream & FS) {
+    if (!FS.is_open()) throw "Bad things happened!!!";
+
+    FS.read(reinterpret_cast<char *>(&numNodes), sizeof(numNodes));
+    FS.read(reinterpret_cast<char *>(&numEdges), sizeof(numEdges));
+
+    reverseMap.resize(numNodes);
+    FS.read(reinterpret_cast<char *>(reverseMap.data()), reverseMap.size() * sizeof(VertexTy));
+
+    for (VertexTy i = 0; i < numNodes; ++i)
+      idMap[reverseMap[i]] = i;
+
+    index = new DestinationTy * [numNodes + 1];
+    edges = new DestinationTy [numEdges];
+
+    FS.read(reinterpret_cast<char *>(index), (numNodes + 1) * sizeof(ptrdiff_t));
+
+    std::transform(index, index + numNodes + 1, index,
+                   [=](DestinationTy * v) -> DestinationTy * {
+                     return reinterpret_cast<ptrdiff_t>(v) + edges; });
+
+    FS.read(reinterpret_cast<char *>(edges), numEdges * sizeof(DestinationTy));
+  }
+
   DestinationTy **index;
   DestinationTy *edges;
 

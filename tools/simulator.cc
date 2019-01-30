@@ -36,7 +36,7 @@ struct SimulatorConfiguration {
 auto ParseCmdOptions(int argc, char **argv) {
   SimulatorConfiguration CFG;
   CLI::App app("Yet Another tool to simulate spread in social networks");
-  app.add_option("-i,--input-grah", CFG.IFileName,
+  app.add_option("-i,--input-graph", CFG.IFileName,
                  "The input file storing the edge-list.")
       ->required();
   app.add_flag("-u,--undirected", CFG.undirected,
@@ -64,6 +64,23 @@ auto ParseCmdOptions(int argc, char **argv) {
   }
 
   return CFG;
+}
+
+}  // namespace im
+
+namespace im {
+
+template <typename Sims>
+auto GetExperimentRecord(const SimulatorConfiguration &CFG,
+                         size_t seeds, float epsilon, const Sims &experiments) {
+  nlohmann::json experiment{
+      {"Algorithm", "IMM"},
+      {"DiffusionModel", CFG.diffusionModel},
+      {"Epsilon", epsilon},
+      {"K", seeds},
+      {"Simulations", experiments}
+  };
+  return experiment;
 }
 
 }  // namespace im
@@ -117,6 +134,7 @@ int main(int argc, char **argv) {
 
   experimentRecordIS >> experimentRecord;
 
+  nlohmann::json simRecordLog;
   for (auto &record : experimentRecord) {
     using vertex_type = typename im::Graph<uint32_t, float>::vertex_type;
 
@@ -139,20 +157,20 @@ int main(int argc, char **argv) {
                                             omp_get_thread_num());
     }
 
+    for (auto itr = seeds.begin() + 1; itr <= seeds.end(); ++itr) {
 #pragma omp parallel for schedule(dynamic)
-    for (size_t i = 0; i < experiments.size(); ++i) {
-      for (auto &v : experiments[i]) {
-        v = simulate(G, seeds.begin(), seeds.end(),
-                     generator[omp_get_thread_num()],
-                     im::independent_cascade_tag{});
+      for (size_t i = 0; i < experiments.size(); ++i) {
+        for (auto &v : experiments[i]) {
+          v = simulate(G, seeds.begin(), itr,
+                       generator[omp_get_thread_num()],
+                       im::independent_cascade_tag{});
+        }
       }
-    }
-
-    for (auto &replica : experiments) {
-      record["simulations"].push_back(replica);
+      simRecordLog.push_back(
+          im::GetExperimentRecord(CFG, std::distance(seeds.begin(), itr), record["Epsilon"], experiments));
     }
   }
-  simRecord->info("{}", experimentRecord.dump(2));
+  simRecord->info("{}", simRecordLog.dump(2));
 
   return EXIT_SUCCESS;
 }

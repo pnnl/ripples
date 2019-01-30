@@ -21,12 +21,15 @@ struct ToolConfiguration : public AlgorithmConfiguration {
   bool weighted{false};
   bool undirected{false};
   bool OMPStrongScaling{false};
+  bool reload{false};
 
   void ParseCmdOptions(int argc, char **argv) {
     CLI::App app;
     app.add_option("-i,--input-graph", IFileName,
                    "The input file with the edge-list.")
         ->required();
+    app.add_flag("--reload-binary", reload,
+                 "Reload a graph from binary input");
     app.add_flag("-u,--undirected", undirected,
                  "The input graph is undirected");
     app.add_flag("-w,--weighted", weighted, "The input graph is weighted");
