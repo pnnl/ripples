@@ -3,31 +3,31 @@
 ## List of dependencies
 
 The following is the complete list of dependencies and the version that have been tested:
-- A compiler with C++14 and OpenMP support.
+- A compiler with C++17 and OpenMP support.
 - [Spdlog (v1.1.0)](https://github.com/gabime/spdlog)
 - [JSON](https://github.com/nlohmann/json)
 - [TRNG4](https://github.com/rabauke/trng4)
+- MPI library (only to support distributed systems).
 
-Please use your package manager of choice or follow their instructions to get them installed on your system.
+Please use your package manager of choice or follow the instructions of each software package to get dependencies installed on your system.
 
-## Buldind Instruction
+## Build Instruction
 
-To configure and build the project run the following commands from the root of the project:
+This project uses [WAF](https://waf.io) as its build system.  The build is a two step process: configure and build.
 
+The configure step can be invoked with:
 ```shell
 ./waf configure
-./waf build
 ```
-
-If you have installed some of the dependencies in uncoventional paths (like the OpenMP library on MacOS X):
+The build system offers options that can be used to help the configuration step locate dependencies (i.e., they are installed in unconventional paths).  A complete list of the options can be obtained with:
 ```shell
 ./waf configure --help
 ```
-will list the options to help find libraries where they are installed.  For example, you use brew and you have installed llvm from it:
+
+After the configuration step suceed, the build step can be executed running:
 ```shell
-./waf configure --openmp-root=/usr/local/opt/llvm
+./waf build
 ```
-Similar options are present for all the dependencies.
 
 ## Usage
 

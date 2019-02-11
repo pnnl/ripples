@@ -2,7 +2,7 @@
 # encoding: utf-8
 
 VERSION = '0.0.1'
-APPNAME = 'influence-maximization'
+APPNAME = 'ripples'
 
 
 def options(opt):
