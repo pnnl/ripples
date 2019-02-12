@@ -72,30 +72,7 @@ int main(int argc, char *argv[]) {
   weightGen.split(2, 0);
   im::Graph<uint32_t, float, im::BackwardDirection<uint32_t>> G;
   if (!CFG.reload) {
-    std::vector<im::Edge<uint32_t, float>> edgeList;
-    if (CFG.weighted) {
-      console->info("Loading with input weights");
-      if (CFG.diffusionModel == "IC") {
-        edgeList = im::load<im::Edge<uint32_t, float>>(
-            CFG.IFileName, CFG.undirected, weightGen,
-            im::weighted_edge_list_tsv{}, im::independent_cascade_tag{});
-      } else if (CFG.diffusionModel == "LT") {
-        edgeList = im::load<im::Edge<uint32_t, float>>(
-            CFG.IFileName, CFG.undirected, weightGen,
-            im::weighted_edge_list_tsv{}, im::linear_threshold_tag{});
-      }
-    } else {
-      console->info("Loading with random weights");
-      if (CFG.diffusionModel == "IC") {
-        edgeList = im::load<im::Edge<uint32_t, float>>(
-            CFG.IFileName, CFG.undirected, weightGen, im::edge_list_tsv{},
-            im::independent_cascade_tag{});
-      } else if (CFG.diffusionModel == "LT") {
-        edgeList = im::load<im::Edge<uint32_t, float>>(
-            CFG.IFileName, CFG.undirected, weightGen, im::edge_list_tsv{},
-            im::linear_threshold_tag{});
-      }
-    }
+    auto edgeList = im::loadEdgeList<im::Edge<uint32_t, float>>(CFG, weightGen);
     console->info("Loading Done!");
     im::Graph<uint32_t, float, im::BackwardDirection<uint32_t>> tmpG(edgeList.begin(), edgeList.end());
     edgeList.clear();
@@ -153,7 +130,7 @@ int main(int argc, char *argv[]) {
   console->info("IMM Rank : {}", world_rank);
 
   if (world_rank == 0) {
-    std::ofstream perf(CFG.LogFile);
+    std::ofstream perf(CFG.OutputFile);
     perf << executionLog.dump(2);
   }
 

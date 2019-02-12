@@ -39,6 +39,7 @@ struct TIMConfiguration {
   double epsilon{0.50};              //!< The epsilon of the IM algorithm
   bool parallel{false};              //!< The sequential vs parallel algorithm
   std::string diffusionModel{"IC"};  //!< The diffusion model to use.
+  bool OMPStrongScaling{false};
 
   void addCmdOptions(CLI::App &app) {
     app.add_option("-k,--seed-set-size", k, "The size of the seed set.")
@@ -51,8 +52,11 @@ struct TIMConfiguration {
                  "Trigger the parallel implementation")
         ->group("Algorithm Options");
     app.add_option("-d,--diffusion-model", diffusionModel,
-                   "The diffusion model to be used (LT|IC)")
+                   "The diffusion model to use (LT|IC)")
         ->required()
+        ->group("Algorithm Options");
+    app.add_flag("--omp_strong_scaling", OMPStrongScaling,
+                 "Trigger strong scaling experiments")
         ->group("Algorithm Options");
   }
 };

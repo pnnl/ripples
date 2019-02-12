@@ -34,30 +34,7 @@ int main(int argc, char **argv) {
   weightGen.seed(0UL);
   weightGen.split(2, 0);
 
-  std::vector<im::Edge<uint32_t, float>> edgeList;
-  if (CFG.weighted) {
-    console->info("Loading with input weights");
-    if (CFG.diffusionModel == "IC") {
-      edgeList = im::load<im::Edge<uint32_t, float>>(
-          CFG.IFileName, CFG.undirected, weightGen,
-          im::weighted_edge_list_tsv{}, im::independent_cascade_tag{});
-    } else if (CFG.diffusionModel == "LT") {
-      edgeList = im::load<im::Edge<uint32_t, float>>(
-          CFG.IFileName, CFG.undirected, weightGen,
-          im::weighted_edge_list_tsv{}, im::linear_threshold_tag{});
-    }
-  } else {
-    console->info("Loading with random weights");
-    if (CFG.diffusionModel == "IC") {
-      edgeList = im::load<im::Edge<uint32_t, float>>(
-          CFG.IFileName, CFG.undirected, weightGen, im::edge_list_tsv{},
-          im::independent_cascade_tag{});
-    } else if (CFG.diffusionModel == "LT") {
-      edgeList = im::load<im::Edge<uint32_t, float>>(
-          CFG.IFileName, CFG.undirected, weightGen, im::edge_list_tsv{},
-          im::linear_threshold_tag{});
-    }
-  }
+  auto edgeList = im::loadEdgeList<im::Edge<uint32_t, float>>(CFG, weightGen);
   console->info("Loading Done!");
 
   im::Graph<uint32_t, float, im::BackwardDirection<uint32_t>> G(edgeList.begin(), edgeList.end());
@@ -76,7 +53,7 @@ int main(int argc, char **argv) {
 
   if (CFG.OMPStrongScaling) {
     size_t max_threads = 1;
-    std::ofstream perf(CFG.LogFile);
+    std::ofstream perf(CFG.OutputFile);
 #pragma omp single
     max_threads = omp_get_max_threads();
 
@@ -164,7 +141,7 @@ int main(int argc, char **argv) {
       perf << executionLog.dump(2);
     }
   } else if (CFG.parallel) {
-    std::ofstream perf(CFG.LogFile);
+    std::ofstream perf(CFG.OutputFile);
     if (CFG.diffusionModel == "IC") {
       auto start = std::chrono::high_resolution_clock::now();
       std::tie(seeds, R) =
@@ -207,7 +184,7 @@ int main(int argc, char **argv) {
 
     perf << executionLog.dump(2);
   } else {
-    std::ofstream perf(CFG.LogFile);
+    std::ofstream perf(CFG.OutputFile);
     if (CFG.diffusionModel == "IC") {
       auto start = std::chrono::high_resolution_clock::now();
       std::tie(seeds, R) =

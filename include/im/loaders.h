@@ -27,7 +27,7 @@ struct edge_list_tsv {};
 struct weighted_edge_list_tsv {};
 
 template <typename EdgeTy, typename PRNG, typename diff_model_tag>
-std::vector<EdgeTy> load(std::string &inputFile, bool undirected, PRNG &rand,
+std::vector<EdgeTy> load(const std::string &inputFile, const bool undirected, PRNG &rand,
                          const edge_list_tsv &&, const diff_model_tag &&) {
   std::ifstream GFS(inputFile);
   size_t lineNumber = 0;
@@ -85,7 +85,7 @@ std::vector<EdgeTy> load(std::string &inputFile, bool undirected, PRNG &rand,
 }
 
 template <typename EdgeTy, typename PRNG, typename diff_model_tag>
-std::vector<EdgeTy> load(std::string &inputFile, bool undirected, PRNG &rand,
+std::vector<EdgeTy> load(const std::string &inputFile, const bool undirected, PRNG &rand,
                          const weighted_edge_list_tsv &&, diff_model_tag &&) {
   std::ifstream GFS(inputFile);
   size_t lineNumber = 0;
@@ -111,6 +111,34 @@ std::vector<EdgeTy> load(std::string &inputFile, bool undirected, PRNG &rand,
     }
   }
   return result;
+}
+
+
+template<typename EdgeTy, typename Configuration, typename PRNG>
+std::vector<EdgeTy> loadEdgeList(const Configuration & CFG, PRNG & weightGen) {
+  std::vector<EdgeTy> edgeList;
+  if (CFG.weighted) {
+    if (CFG.diffusionModel == "IC") {
+      edgeList = load<EdgeTy>(
+          CFG.IFileName, CFG.undirected, weightGen,
+          im::weighted_edge_list_tsv{}, im::independent_cascade_tag{});
+    } else if (CFG.diffusionModel == "LT") {
+      edgeList = load<EdgeTy>(
+          CFG.IFileName, CFG.undirected, weightGen,
+          im::weighted_edge_list_tsv{}, im::linear_threshold_tag{});
+    }
+  } else {
+    if (CFG.diffusionModel == "IC") {
+      edgeList = load<EdgeTy>(
+          CFG.IFileName, CFG.undirected, weightGen, im::edge_list_tsv{},
+          im::independent_cascade_tag{});
+    } else if (CFG.diffusionModel == "LT") {
+      edgeList = load<EdgeTy>(
+          CFG.IFileName, CFG.undirected, weightGen, im::edge_list_tsv{},
+          im::linear_threshold_tag{});
+    }
+  }
+  return edgeList;
 }
 
 }  // namespace im

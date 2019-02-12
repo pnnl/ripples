@@ -18,25 +18,41 @@
 #include "trng/lcg64.hpp"
 #include "trng/uniform01_dist.hpp"
 
-struct DumpConfiguration {
+
+struct DumpOutputConfiguration {
   std::string OName{"."};
-  std::string diffusionModel{"IC"};  //!< The diffusion model to use.
   bool binary{false};
 
   void addCmdOptions(CLI::App &app) {
     app.add_option("-o,--output", OName,
                    "The name of the output file/directory")
-        ->required();
-    app.add_option("-d,--diffusion-model", diffusionModel,
-                   "The diffusion model to be used (LT|IC)")
-        ->required();
+        ->required()
+        ->group("Output Options");
     app.add_flag("--binary", binary,
-                 "Dump in binary format");
+                 "Dump in binary format")
+        ->group("Output Options");
   }
 };
 
+
+struct DumpConfiguration {
+  std::string diffusionModel{"IC"};  //!< The diffusion model to use.
+
+  void addCmdOptions(CLI::App &app) {
+    app.add_option("-d,--diffusion-model", diffusionModel,
+                   "The diffusion model to be used (LT|IC)")
+        ->required()
+        ->group("Tool Options");
+  }
+};
+
+
+using Configuration =
+    im::ToolConfiguration<DumpConfiguration, DumpOutputConfiguration>;
+
+
 int main(int argc, char **argv) {
-  im::ToolConfiguration<DumpConfiguration> CFG;
+  Configuration CFG;
   CFG.ParseCmdOptions(argc, argv);
 
   namespace fs = std::experimental::filesystem;
@@ -50,30 +66,7 @@ int main(int argc, char **argv) {
   auto console = spdlog::stdout_color_st("console");
   console->info("Loading...");
 
-  std::vector<im::Edge<uint32_t, float>> edgeList;
-  if (CFG.weighted) {
-    console->info("Loading with input weights");
-    if (CFG.diffusionModel == "IC") {
-      edgeList = im::load<im::Edge<uint32_t, float>>(
-          CFG.IFileName, CFG.undirected, weightGen,
-          im::weighted_edge_list_tsv{}, im::independent_cascade_tag{});
-    } else if (CFG.diffusionModel == "LT") {
-      edgeList = im::load<im::Edge<uint32_t, float>>(
-          CFG.IFileName, CFG.undirected, weightGen,
-          im::weighted_edge_list_tsv{}, im::linear_threshold_tag{});
-    }
-  } else {
-    console->info("Loading with random weights");
-    if (CFG.diffusionModel == "IC") {
-      edgeList = im::load<im::Edge<uint32_t, float>>(
-          CFG.IFileName, CFG.undirected, weightGen, im::edge_list_tsv{},
-          im::independent_cascade_tag{});
-    } else if (CFG.diffusionModel == "LT") {
-      edgeList = im::load<im::Edge<uint32_t, float>>(
-          CFG.IFileName, CFG.undirected, weightGen, im::edge_list_tsv{},
-          im::linear_threshold_tag{});
-    }
-  }
+  auto edgeList = im::loadEdgeList<im::Edge<uint32_t, float>>(CFG, weightGen);
   console->info("Loading Done!");
 
   im::Graph<uint32_t, float> G(edgeList.begin(), edgeList.end());
