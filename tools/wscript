@@ -22,3 +22,8 @@ def build(bld):
         tools_deps = tools_deps + [ 'MPI' ]
         bld(features='cxx cxxprogram', source='mpi-imm.cc', target='mpi-imm',
             use=tools_deps)
+
+    if bld.env.ENABLE_CUDA:
+        cuda_tools_deps = tools_deps + [ 'CUDA', 'CUDART' ]
+        bld(features='cxx cxxprogram', source='imm.cc', target='imm-cuda',
+            use=cuda_tools_deps, cuda = True)

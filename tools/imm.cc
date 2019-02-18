@@ -192,6 +192,14 @@ int main(int argc, char **argv) {
     auto experiment = GetExperimentRecord(CFG, R, seeds);
     executionLog.push_back(experiment);
     perf << executionLog.dump(2);
+
+#if ENABLE_CUDA
+    auto start = std::chrono::high_resolution_clock::now();
+    std::tie(seeds, R) =
+              IMM(G, CFG.k, CFG.epsilon, 1, generator, im::linear_threshold_tag{},
+                  im::cuda_sequential_tag{});
+    auto end = std::chrono::high_resolution_clock::now();
+#endif
   }
 
   return EXIT_SUCCESS;

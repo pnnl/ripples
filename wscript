@@ -21,13 +21,18 @@ def options(opt):
         '--enable-mpi', action='store_true', default=False,
         help='enable openmpi implementation')
 
+    cfg_options.add_option(
+        '--enable-cuda', action='store_true', default=False,
+        help='enable cuda implementation')
+
     opt.load('mpi', tooldir='waftools')
+    opt.load('cuda', tooldir='waftools')
 
 
 def configure(conf):
     conf.load('compiler_cxx')
 
-    conf.env.CXXFLAGS += ['-std=c++17', '-O3', '-march=native', '-pipe']
+    conf.env.CXXFLAGS += ['-std=c++14', '-O3', '-march=native', '-pipe']
 
     conf.load('spdlog', tooldir='waftools')
     conf.load('json', tooldir='waftools')
@@ -40,8 +45,11 @@ def configure(conf):
     if conf.options.enable_mpi:
         conf.load('mpi', tooldir='waftools')
 
+    if conf.options.enable_cuda:
+        conf.load('cuda', tooldir='waftools')
+        conf.env.ENABLE_CUDA = True
+
 
 def build(bld):
     directories = ['3rd-party', 'include', 'tools']
-
     bld.recurse(directories)

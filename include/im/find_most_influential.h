@@ -72,6 +72,23 @@ void CountOccurrencies(InItr in_begin, InItr in_end, OutItr out_begin,
   }
 }
 
+//! \brief Count the occurrencies of vertices in the RRR sets.
+//!
+//! \tparam InItr The input sequence iterator type.
+//! \tparam OutItr The output sequence iterator type.
+//!
+//! \param in_begin The begin of the sequence of RRR sets.
+//! \param in_end The end of the sequence of RRR sets.
+//! \param out_begin The begin of the sequence storing the counters for each
+//! vertex.
+//! \param out_end The end of the sequence storing the counters for each vertex.
+//! \param e The execution policy tag.
+template <typename InItr, typename OutItr>
+void CountOccurrencies(InItr in_begin, InItr in_end, OutItr out_begin,
+                       OutItr out_end, cuda_sequential_tag &&e) {
+	CountOccurrencies(in_begin, in_end, out_begin, out_end, sequential_tag{});
+}
+
 //! \brief Initialize the Heap storage.
 //!
 //! \tparam InItr The input sequence iterator type.
@@ -113,6 +130,22 @@ void InitHeapStorage(InItr in_begin, InItr in_end, OutItr out_begin,
   for (vertex_type v = 0; v < std::distance(in_begin, in_end); ++v) {
     *(out_begin + v) = {v, *(in_begin + v)};
   }
+}
+
+//! \brief Initialize the Heap storage.
+//!
+//! \tparam InItr The input sequence iterator type.
+//! \tparam OutItr The output sequence iterator type.
+//!
+//! \param in_begin The begin of the sequence of vertex counters.
+//! \param in_end The end of the sequence of vertex counters.
+//! \param out_begin The begin of the sequence used as storage in the Heap.
+//! \param out_end The end of the sequence used as storage in the Heap.
+//! \param e The execution policy tag.
+template <typename InItr, typename OutItr>
+void InitHeapStorage(InItr in_begin, InItr in_end, OutItr out_begin,
+                     OutItr out_end, cuda_sequential_tag &&e) {
+	InitHeapStorage(in_begin, in_end, out_begin, out_end, sequential_tag{});
 }
 
 //! \brief Update the coverage counters.
@@ -172,6 +205,25 @@ void UpdateCounters(const VertexTy v, const RRRsetsTy &RRRsets,
       }
     }
   }
+}
+
+//! \brief Update the coverage counters.
+//!
+//! \tparam VertexTy The type of the vertices.
+//! \tparam RRRsetsTy The type storing RRR sets.
+//! \tparam RemovedVectorTy The type of the vector storing removed RRR sets.
+//! \tparam VertexCoverageVectorTy The type of the vector storing counters.
+//!
+//! \param v The chosen vertex.
+//! \param RRRsets The sequence of RRRsets.
+//! \param removed The vector storing covered/uncovered flags for the RRRsets.
+//! \param vertexCoverage The vector storing the counters to be updated.
+template <typename VertexTy, typename RRRsetsTy, typename RemovedVectorTy,
+          typename VertexCoverageVectorTy>
+void UpdateCounters(const VertexTy v, const RRRsetsTy &RRRsets,
+                    RemovedVectorTy &removed,
+                    VertexCoverageVectorTy &vertexCoverage, cuda_sequential_tag &&) {
+	UpdateCounters(v, RRRsets, removed, vertexCoverage, sequential_tag{});
 }
 
 //! \brief Select k seeds starting from the a list of Random Reverse

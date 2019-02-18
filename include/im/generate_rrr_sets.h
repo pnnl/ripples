@@ -16,6 +16,8 @@
 #include "im/graph.h"
 #include "im/utility.h"
 
+#include "im/cuda/cuda_sequential.h"
+
 #include "trng/uniform01_dist.hpp"
 #include "trng/uniform_int_dist.hpp"
 
@@ -149,6 +151,30 @@ std::vector<RRRset<GraphTy>> GenerateRRRSets(GraphTy &G, size_t theta,
     }
   }
 
+  return rrrSets;
+}
+
+//! \brief Generate Random Reverse Reachability Sets.
+//!
+//! \tparam GraphTy The type of the garph.
+//! \tparam PRNGeneratorty The type of the random number generator.
+//! \tparam diff_model_tag The policy for the diffusion model.
+//!
+//! \param G The original graph.
+//! \param theta The number of RRR sets to be generated.
+//! \param generator The random numeber generator.
+//! \param model_tag The diffusion model tag.
+//! \param ex_tag The execution policy tag.
+//!
+//! \return A list of theta Random Reverse Rachability Sets.
+template <typename GraphTy, typename PRNGeneratorTy, typename diff_model_tag>
+std::vector<RRRset<GraphTy>> GenerateRRRSets(GraphTy &G, size_t theta,
+                                             PRNGeneratorTy &generator,
+                                             diff_model_tag &&model_tag,
+                                             cuda_sequential_tag &&ex_tag) {
+  std::vector<RRRset<GraphTy>> rrrSets(theta);
+  cuda_sequential(rrrSets, G, theta, generator,
+	  std::forward < diff_model_tag > (model_tag));
   return rrrSets;
 }
 
