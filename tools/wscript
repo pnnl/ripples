@@ -9,8 +9,14 @@ def build(bld):
     bld(features='cxx cxxprogram', source='tim.cc', target='tim',
         use=tools_deps)
 
-    bld(features='cxx cxxprogram', source='imm.cc', target='imm',
-        use=tools_deps)
+    if bld.env.ENABLE_CUDA:
+        tools_deps += [ 'CUDA', 'CUDART' ]
+        bld(features='cxx cxxstlib', source='cuda/cuda_sequential.cu', target='cuda_sequential', cuda=True, use=tools_deps)
+        bld(features='cxx cxxprogram', source='imm.cc', target='imm',
+            use=tools_deps + ['cuda_sequential'], cuda=True)
+    else:
+        bld(features='cxx cxxprogram', source='imm.cc', target='imm',
+            use=tools_deps)
 
     bld(features='cxx cxxprogram', source='simulator.cc', target='simulator',
         use=tools_deps)
@@ -22,8 +28,3 @@ def build(bld):
         tools_deps = tools_deps + [ 'MPI' ]
         bld(features='cxx cxxprogram', source='mpi-imm.cc', target='mpi-imm',
             use=tools_deps)
-
-    if bld.env.ENABLE_CUDA:
-        cuda_tools_deps = tools_deps + [ 'CUDA', 'CUDART' ]
-        bld(features='cxx cxxprogram', source='imm.cc', target='imm-cuda',
-            use=cuda_tools_deps, cuda = True)
