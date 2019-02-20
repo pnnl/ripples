@@ -11,15 +11,17 @@ namespace im {
 
 template<typename DeviceGraphTy>
 __global__
-void seq_bfs_kernel(DeviceGraphTy *G, typename DeviceGraphTy::vertex_type *dres,
-		size_t *dres_num) {
+void seq_bfs_kernel(typename DeviceGraphTy::destination_type **index,
+		size_t num_nodes, typename DeviceGraphTy::destination_type *edges,
+		typename DeviceGraphTy::vertex_type *dres, size_t *dres_num) {
 	*dres_num = 0;
 }
 
 //template<typename res_t, typename GraphTy, typename PRNGeneratorTy,
 //		typename diff_model_tag>
-void cuda_sequential_impl(cuda_res_t &rrr_sets, const cuda_GraphTy &G, size_t theta,
-		cuda_PRNGeneratorTy &generator, im::linear_threshold_tag &&model_tag) {
+void cuda_sequential_impl(cuda_res_t &rrr_sets, const cuda_GraphTy &G,
+		size_t theta, cuda_PRNGeneratorTy &generator,
+		im::linear_threshold_tag &&model_tag) {
 	using vertex_type = typename cuda_GraphTy::vertex_type;
 
 	// allocate host memory for results
@@ -27,7 +29,7 @@ void cuda_sequential_impl(cuda_res_t &rrr_sets, const cuda_GraphTy &G, size_t th
 		set.reserve(G.num_nodes());
 
 	// copy graph to device
-	auto device_graph = cuda_h2d_graph(G);
+	cuda_graph_t<cuda_GraphTy> cuda_graph(G);
 
 	// allocate device memory for results
 	vertex_type *dres;
@@ -35,15 +37,10 @@ void cuda_sequential_impl(cuda_res_t &rrr_sets, const cuda_GraphTy &G, size_t th
 	cudaMalloc(&dres, G.num_nodes() * sizeof(vertex_type));
 	cudaMalloc(&dres_num, sizeof(size_t));
 
-	//size_t i = 0;
 	for (auto &set : rrr_sets) {
 		// run kernel
-		seq_bfs_kernel<<<1, 1>>>(device_graph, dres, dres_num);
-		auto err = cudaGetLastError();
-		if (cudaSuccess != err) {
-			printf("CUDA-kernel error: %s\n", cudaGetErrorString(err));
-			exit(1);
-		}
+		seq_bfs_kernel<cuda_graph_t<cuda_GraphTy>> <<<1, 1>>>(cuda_graph.index_,
+				cuda_graph.num_nodes_, cuda_graph.edges_, dres, dres_num);
 
 		// copy results back to host and convert to host representation
 		size_t res_num;
@@ -53,8 +50,6 @@ void cuda_sequential_impl(cuda_res_t &rrr_sets, const cuda_GraphTy &G, size_t th
 		cudaMemcpy(set.data(), dres, res_num * sizeof(vertex_type),
 				cudaMemcpyDeviceToHost);
 	}
-
-	cuda_destroy_graph(device_graph);
 }
 
 void cuda_sequential(cuda_res_t &r, const cuda_GraphTy &g, size_t s,
@@ -62,11 +57,5 @@ void cuda_sequential(cuda_res_t &r, const cuda_GraphTy &g, size_t s,
 	cuda_sequential_impl(r, g, s, p,
 			std::forward < im::linear_threshold_tag > (t));
 }
-
-//void cuda_sequential(cuda_res_t &, const cuda_GraphTy &, size_t,
-//		cuda_PRNGeneratorTy&, im::independent_cascade_tag&&) {
-//	cuda_sequential_impl(r, g, s, p,
-//			std::forward < im::independent_cascade_tag > (t));
-//}
 
 } // namespace im
