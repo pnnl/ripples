@@ -14,11 +14,23 @@
 
 namespace im {
 
+//! \brief Type-tag for the Independent Cascade Model.
 struct independent_cascade_tag {};
+//! \brief Type-tag for the Linear Threshold Model.
 struct linear_threshold_tag {};
 
 namespace impl {
 
+//! \brief Simulate using the Independent Cascade Model.
+//!
+//! \tparam GraphTy The type of the Graph.
+//! \tparam Iterator The Iterator type of the sequence of seeds.
+//! \tparam PRNG The type of the parallel random number generator.
+//!
+//! \param G The input graph.
+//! \param begin The start of the sequence of seeds.
+//! \param end The end of the sequence of seeds.
+//! \param generator The parallel random number generator.
 template <typename GraphTy, typename Iterator, typename PRNG>
 auto run_simulation(const GraphTy &G, Iterator begin, Iterator end,
                     PRNG &generator, const independent_cascade_tag &) {
@@ -63,6 +75,19 @@ auto run_simulation(const GraphTy &G, Iterator begin, Iterator end,
 
 }  // namespace impl
 
+
+//! \brief Simulate the diffusion on the input graph.
+//!
+//! \tparam GraphTy The type of the Graph.
+//! \tparam Iterator The Iterator type of the sequence of seeds.
+//! \tparam PRNG The type of the parallel random number generator.
+//! \tparam Model The type-tag of the diffusion model to be used.
+//!
+//! \param G The input graph.
+//! \param begin The start of the sequence of seeds.
+//! \param end The end of the sequence of seeds.
+//! \param generator The parallel random number generator.
+//! \param M The diffusion model tag.
 template <typename GraphTy, typename Iterator, typename PRNG, typename Model>
 auto simulate(const GraphTy &G, Iterator begin, Iterator end, PRNG &generator,
               const Model &M) {
