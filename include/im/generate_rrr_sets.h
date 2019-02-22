@@ -16,7 +16,7 @@
 #include "im/graph.h"
 #include "im/utility.h"
 
-#include "im/cuda/cuda_sequential.h"
+#include "im/cuda/cuda_generate_rrr_sets.h"
 
 #include "trng/uniform01_dist.hpp"
 #include "trng/uniform_int_dist.hpp"
@@ -171,9 +171,9 @@ template <typename GraphTy, typename PRNGeneratorTy, typename diff_model_tag>
 std::vector<RRRset<GraphTy>> GenerateRRRSets(GraphTy &G, size_t theta,
                                              PRNGeneratorTy &generator,
                                              diff_model_tag &&model_tag,
-                                             cuda_sequential_tag &&ex_tag) {
+                                             cuda_parallel_tag &&ex_tag) {
   std::vector<RRRset<GraphTy>> rrrSets(theta);
-  cuda_sequential(rrrSets, G, theta, generator,
+  CudaGenerateRRRSets(rrrSets, G, theta, generator,
 	  std::forward < diff_model_tag > (model_tag));
   return rrrSets;
 }

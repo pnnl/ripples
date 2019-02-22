@@ -85,7 +85,7 @@ void CountOccurrencies(InItr in_begin, InItr in_end, OutItr out_begin,
 //! \param e The execution policy tag.
 template <typename InItr, typename OutItr>
 void CountOccurrencies(InItr in_begin, InItr in_end, OutItr out_begin,
-                       OutItr out_end, cuda_sequential_tag &&e) {
+                       OutItr out_end, cuda_parallel_tag &&e) {
 	CountOccurrencies(in_begin, in_end, out_begin, out_end, sequential_tag{});
 }
 
@@ -144,7 +144,7 @@ void InitHeapStorage(InItr in_begin, InItr in_end, OutItr out_begin,
 //! \param e The execution policy tag.
 template <typename InItr, typename OutItr>
 void InitHeapStorage(InItr in_begin, InItr in_end, OutItr out_begin,
-                     OutItr out_end, cuda_sequential_tag &&e) {
+                     OutItr out_end, cuda_parallel_tag &&e) {
 	InitHeapStorage(in_begin, in_end, out_begin, out_end, sequential_tag{});
 }
 
@@ -222,7 +222,7 @@ template <typename VertexTy, typename RRRsetsTy, typename RemovedVectorTy,
           typename VertexCoverageVectorTy>
 void UpdateCounters(const VertexTy v, const RRRsetsTy &RRRsets,
                     RemovedVectorTy &removed,
-                    VertexCoverageVectorTy &vertexCoverage, cuda_sequential_tag &&) {
+                    VertexCoverageVectorTy &vertexCoverage, cuda_parallel_tag &&) {
 	UpdateCounters(v, RRRsets, removed, vertexCoverage, sequential_tag{});
 }
 

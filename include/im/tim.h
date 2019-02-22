@@ -40,7 +40,7 @@ struct TIMConfiguration {
   bool parallel{false};              //!< The sequential vs parallel algorithm
   std::string diffusionModel{"IC"};  //!< The diffusion model to use.
   bool OMPStrongScaling{false};
-  bool cuda_sequential{false};
+  bool cuda_parallel{false};
 
   void addCmdOptions(CLI::App &app) {
     app.add_option("-k,--seed-set-size", k, "The size of the seed set.")
@@ -52,8 +52,8 @@ struct TIMConfiguration {
     app.add_flag("-p,--parallel", parallel,
                  "Trigger the parallel implementation")
         ->group("Algorithm Options");
-    app.add_flag("--cuda-sequential", cuda_sequential,
-                     "Trigger the CUDA-sequential implementation")
+    app.add_flag("--cuda-parallel", cuda_parallel,
+                     "Trigger the CUDA implementation")
             ->group("Algorithm Options");
     app.add_option("-d,--diffusion-model", diffusionModel,
                    "The diffusion model to use (LT|IC)")

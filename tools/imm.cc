@@ -167,12 +167,31 @@ int main(int argc, char **argv) {
     executionLog.push_back(experiment);
 
     perf << executionLog.dump(2);
-  } else if(CFG.cuda_sequential) {
-    auto start = std::chrono::high_resolution_clock::now();
-    std::tie(seeds, R) =
-              IMM(G, CFG.k, CFG.epsilon, 1, generator, im::linear_threshold_tag{},
-                  im::cuda_sequential_tag{});
-    auto end = std::chrono::high_resolution_clock::now();
+  } else if(CFG.cuda_parallel) {
+    std::ofstream perf(CFG.OutputFile);
+    if (CFG.diffusionModel == "IC") {
+      auto start = std::chrono::high_resolution_clock::now();
+      std::tie(seeds, R) =
+          IMM(G, CFG.k, CFG.epsilon, 1, generator,
+              im::independent_cascade_tag{}, im::cuda_parallel_tag{});
+      auto end = std::chrono::high_resolution_clock::now();
+      R.Total = end - start;
+    } else if (CFG.diffusionModel == "LT") {
+      auto start = std::chrono::high_resolution_clock::now();
+      std::tie(seeds, R) =
+          IMM(G, CFG.k, CFG.epsilon, 1, generator, im::linear_threshold_tag{},
+              im::cuda_parallel_tag{});
+      auto end = std::chrono::high_resolution_clock::now();
+      R.Total = end - start;
+    }
+    console->info("IMM CUDA : {}ms", R.Total.count());
+
+    R.NumThreads = 1;
+
+    G.convertID(seeds.begin(), seeds.end(), seeds.begin());
+    auto experiment = GetExperimentRecord(CFG, R, seeds);
+    executionLog.push_back(experiment);
+    perf << executionLog.dump(2);
   }
   else {
     std::ofstream perf(CFG.OutputFile);
