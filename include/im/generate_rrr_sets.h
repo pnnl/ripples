@@ -172,10 +172,7 @@ std::vector<RRRset<GraphTy>> GenerateRRRSets(GraphTy &G, size_t theta,
                                              PRNGeneratorTy &generator,
                                              diff_model_tag &&model_tag,
                                              cuda_parallel_tag &&ex_tag) {
-  trng::uniform_int_dist cuda_rng_seed_dist(
-      0, std::numeric_limits<unsigned long long>::max());
-  return CudaGenerateRRRSets(G, theta, std::forward<diff_model_tag>(model_tag),
-                             cuda_rng_seed_dist(generator[0]));
+  return CudaGenerateRRRSets(G, theta, std::forward<diff_model_tag>(model_tag));
 }
 
 }  // namespace im

@@ -62,7 +62,8 @@ int main(int argc, char **argv) {
   auto edgeList = im::loadEdgeList<im::Edge<uint32_t, float>>(CFG, weightGen);
   console->info("Loading Done!");
 
-  im::Graph<uint32_t, float, im::BackwardDirection<uint32_t>> G(edgeList.begin(), edgeList.end());
+  im::Graph<uint32_t, float, im::BackwardDirection<uint32_t>> G(
+      edgeList.begin(), edgeList.end());
   edgeList.clear();
   console->info("Number of Nodes : {}", G.num_nodes());
   console->info("Number of Edges : {}", G.num_edges());
@@ -167,21 +168,28 @@ int main(int argc, char **argv) {
     executionLog.push_back(experiment);
 
     perf << executionLog.dump(2);
-  } else if(CFG.cuda_parallel) {
+  } else if (CFG.cuda_parallel) {
     std::ofstream perf(CFG.OutputFile);
+    trng::uniform_int_dist cuda_rng_seed_dist(
+        0, std::numeric_limits<unsigned long long>::max());
     if (CFG.diffusionModel == "IC") {
+      cuda_init(G, cuda_rng_seed_dist(generator),
+                im::independent_cascade_tag{});
       auto start = std::chrono::high_resolution_clock::now();
       std::tie(seeds, R) =
           IMM(G, CFG.k, CFG.epsilon, 1, generator,
               im::independent_cascade_tag{}, im::cuda_parallel_tag{});
       auto end = std::chrono::high_resolution_clock::now();
+      cuda_fini(im::independent_cascade_tag{});
       R.Total = end - start;
     } else if (CFG.diffusionModel == "LT") {
+      cuda_init(G, cuda_rng_seed_dist(generator), im::linear_threshold_tag{});
       auto start = std::chrono::high_resolution_clock::now();
       std::tie(seeds, R) =
           IMM(G, CFG.k, CFG.epsilon, 1, generator, im::linear_threshold_tag{},
               im::cuda_parallel_tag{});
       auto end = std::chrono::high_resolution_clock::now();
+      cuda_fini(im::linear_threshold_tag{});
       R.Total = end - start;
     }
     console->info("IMM CUDA : {}ms", R.Total.count());
@@ -192,8 +200,7 @@ int main(int argc, char **argv) {
     auto experiment = GetExperimentRecord(CFG, R, seeds);
     executionLog.push_back(experiment);
     perf << executionLog.dump(2);
-  }
-  else {
+  } else {
     std::ofstream perf(CFG.OutputFile);
     if (CFG.diffusionModel == "IC") {
       auto start = std::chrono::high_resolution_clock::now();

@@ -19,6 +19,69 @@
 
 namespace im {
 
+struct cuda_conf_t {
+  cuda_conf_t(const cuda_GraphTy &G) : d_graph(G) {}
+  cuda_graph<cuda_GraphTy> d_graph;
+  uint8_t *res_masks = nullptr, *d_res_masks = nullptr;
+  curandState *d_rng_states = nullptr;
+  size_t mask_size = 0, grid_size = 0, block_size = 0, n_blocks = 0;
+} * cuda_conf_ptr;
+
+__global__ void kernel_rng_setup(curandState *d_rng_states,
+                                 unsigned long long seed) {
+  int tid = blockIdx.x * blockDim.x + threadIdx.x;
+  curand_init(seed, tid, 0, d_rng_states + tid);
+}
+
+void cuda_init(const cuda_GraphTy &G, unsigned long long seed,
+               im::linear_threshold_tag &&model_tag) {
+  assert(!cuda_conf_ptr);
+  cuda_conf_ptr = new cuda_conf_t(G);
+  auto &cuda_conf(*cuda_conf_ptr);
+
+  // copy graph to device
+  cuda_conf.d_graph = cuda_graph<cuda_GraphTy>(G);
+
+  // sizing
+  cuda_conf.block_size = 512;  // 512
+  cuda_conf.n_blocks = 128;    // 128
+  cuda_conf.grid_size = cuda_conf.n_blocks * cuda_conf.block_size;
+  cuda_conf.mask_size = (G.num_nodes() + 7) / 8;
+
+  // print sizing info
+  CUDA_LOG("> *** CUDA_BATCHED sizing ***\n");
+  CUDA_LOG("block-size =%d\n", cuda_conf.block_size);
+  CUDA_LOG("n. blocks  =%d\n", cuda_conf.n_blocks);
+  CUDA_LOG("g-mem size =%d\n", cuda_conf.grid_size * cuda_conf.mask_size);
+  CUDA_LOG("shmem size =%d\n", cuda_conf.block_size * cuda_conf.mask_size);
+
+  // allocate memory for result-masks
+  cuda_conf.res_masks =
+      (uint8_t *)malloc(cuda_conf.grid_size * cuda_conf.mask_size);
+  cudaMalloc(&cuda_conf.d_res_masks, cuda_conf.grid_size * cuda_conf.mask_size);
+
+  // init rng
+  cudaMalloc(&cuda_conf.d_rng_states,
+             cuda_conf.grid_size * sizeof(curandState));
+  kernel_rng_setup<<<cuda_conf.n_blocks, cuda_conf.block_size>>>(
+      cuda_conf.d_rng_states, seed);
+}
+
+void cuda_init(const cuda_GraphTy &G, unsigned long long seed,
+               im::independent_cascade_tag &&) {}
+
+void cuda_fini(im::linear_threshold_tag &&) {
+  assert(cuda_conf_ptr);
+  auto &cuda_conf(*cuda_conf_ptr);
+  // cleanup
+  if (cuda_conf.res_masks) free(cuda_conf.res_masks);
+  if (cuda_conf.d_res_masks) cudaFree(cuda_conf.d_res_masks);
+  if (cuda_conf.d_rng_states) cudaFree(cuda_conf.d_rng_states);
+  delete cuda_conf_ptr;
+}
+
+void cuda_fini(im::independent_cascade_tag &&) {}
+
 extern __shared__ uint8_t shmem_lt_per_thread[];
 template <typename DeviceGraphTy>
 __global__ void kernel_lt_per_thread(
@@ -43,17 +106,18 @@ __global__ void kernel_lt_per_thread(
   float threshold;
   destination_type *first, *last;
   vertex_type v;
-  CUDA_LOG("> [kernel] START root=%d\n", src);
+  // CUDA_LOG("> [kernel] START root=%d\n", src);
   while (src != num_nodes) {
-    CUDA_LOG("> [kernel] insert %d\n", src);
+    // CUDA_LOG("> [kernel] insert %d\n", src);
     threshold = curand_uniform(rng_state);
     first = index[src];
     last = index[src + 1];
     src = num_nodes;
     for (; first != last; ++first) {
       threshold -= first->weight;
-      CUDA_LOG("> [kernel] visiting: v=%d w=%f (threshold=%f)\n", first->vertex,
-               first->weight, threshold);
+      //    CUDA_LOG("> [kernel] visiting: v=%d w=%f (threshold=%f)\n",
+      //    first->vertex,
+      //             first->weight, threshold);
       if (threshold <= 0) {
         v = first->vertex;
         if (!vertex_mask_get(shmem_res_mask, v)) {
@@ -64,84 +128,54 @@ __global__ void kernel_lt_per_thread(
       }
     }
   }
-  CUDA_LOG("> [kernel] END\n");
+  /// CUDA_LOG("> [kernel] END\n");
 
   // print mask for debug
-  CUDA_LOG("> [kernel threadIdx.x=%d] shmem_res_mask first=%p last=%p\n",
-           threadIdx.x, shmem_res_mask, shmem_res_mask + mask_size);
-  for (int i = 0; i < mask_size; ++i) {
-    CUDA_LOG("> [kernel threadIdx.x=%d] shmem_res_mask w=%d\t: %d\n",
-             threadIdx.x, i, shmem_res_mask[i]);
-  }
+  // CUDA_LOG("> [kernel threadIdx.x=%d] shmem_res_mask first=%p last=%p\n",
+  //        threadIdx.x, shmem_res_mask, shmem_res_mask + mask_size);
+  // for (int i = 0; i < mask_size; ++i) {
+  //  CUDA_LOG("> [kernel threadIdx.x=%d] shmem_res_mask w=%d\t: %d\n",
+  //           threadIdx.x, i, shmem_res_mask[i]);
+  //}
 
   // write back results to global memory
   uint8_t *d_res_mask = d_res_masks + tid * mask_size;
   memcpy(d_res_mask, shmem_res_mask, mask_size);
 }
 
-__global__ void kernel_rng_setup(curandState *d_rng_states,
-                                 unsigned long long seed) {
-  int tid = blockIdx.x * blockDim.x + threadIdx.x;
-  curand_init(seed, tid, 0, d_rng_states + tid);
-}
-
 cuda_res_t CudaGenerateRRRSets(const cuda_GraphTy &G, size_t theta,
-                               im::linear_threshold_tag &&model_tag,
-                               unsigned long long seed) {
+                               im::linear_threshold_tag &&model_tag) {
   using vertex_type = typename cuda_GraphTy::vertex_type;
+
+  auto &cuda_conf(*cuda_conf_ptr);
 
   cuda_res_t rrr_sets(theta);
 
-  // copy graph to device
-  cuda_graph<cuda_GraphTy> d_graph(G);
-
 #if CUDA_BATCHED
-  // sizing
-  size_t block_size = 512;  // 512
-  size_t n_blocks = 128;    // 128
-  size_t grid_size = n_blocks * block_size;
-  size_t mask_size = (G.num_nodes() + 7) / 8;
-
-  // print sizing info
-  CUDA_LOG("> *** CUDA_BATCHED sizing ***\n");
-  CUDA_LOG("block-size =%d\n", block_size);
-  CUDA_LOG("n. blocks  =%d\n", n_blocks);
-  CUDA_LOG("g-mem size =%d\n", grid_size * mask_size);
-  CUDA_LOG("shmem size =%d\n", block_size * mask_size);
-
-  // allocate memory for result-masks
-  uint8_t *res_masks, *d_res_masks;
-  res_masks = (uint8_t *)malloc(grid_size * mask_size);
-  cudaMalloc(&d_res_masks, grid_size * mask_size);
-
-  // init rng
-  curandState *d_rng_states;
-  cudaMalloc(&d_rng_states, grid_size * sizeof(curandState));
-  kernel_rng_setup<<<n_blocks, block_size>>>(d_rng_states, seed);
-
-  for (size_t bf = 0; bf < rrr_sets.size(); bf += grid_size) {
-    CUDA_LOG("instance %d/%d\n", bf, rrr_sets.size());
-    fflush(stdout);
+  for (size_t bf = 0; bf < rrr_sets.size(); bf += cuda_conf.grid_size) {
     // execute a batch
     kernel_lt_per_thread<cuda_graph<cuda_GraphTy>>
-        <<<n_blocks, block_size, block_size * mask_size>>>(
-            d_graph.d_index_, G.num_nodes(), mask_size, d_rng_states,
-            d_res_masks);
+        <<<cuda_conf.n_blocks, cuda_conf.block_size,
+           cuda_conf.block_size * cuda_conf.mask_size>>>(
+            cuda_conf.d_graph.d_index_, G.num_nodes(), cuda_conf.mask_size,
+            cuda_conf.d_rng_states, cuda_conf.d_res_masks);
 
     // copy masks back to host
     CUDA_LOG("> copying back masks batch-first=%d\n", bf);
     fflush(stdout);
-    cudaMemcpy(res_masks, d_res_masks, grid_size * mask_size,
+    cudaMemcpy(cuda_conf.res_masks, cuda_conf.d_res_masks,
+               cuda_conf.grid_size * cuda_conf.mask_size,
                cudaMemcpyDeviceToHost);
 
     // convert masks to results
     // TODO optimize bitwise operations
     CUDA_LOG("> converting sets\n");
     fflush(stdout);
-    for (size_t i = 0; i < grid_size && (bf + i) < rrr_sets.size(); ++i) {
+    for (size_t i = 0; i < cuda_conf.grid_size && (bf + i) < rrr_sets.size();
+         ++i) {
       auto &rrr_set = rrr_sets[bf + i];
-      auto res_mask = res_masks + (i * mask_size);
-      for (size_t j = 0; j < mask_size; ++j) {
+      auto res_mask = cuda_conf.res_masks + (i * cuda_conf.mask_size);
+      for (size_t j = 0; j < cuda_conf.mask_size; ++j) {
         // scan a word from the res mask
         uint8_t w = res_mask[j];
         for (uint8_t bi = 0; bi < 8; ++bi) {
@@ -157,19 +191,13 @@ cuda_res_t CudaGenerateRRRSets(const cuda_GraphTy &G, size_t theta,
       check_lt(rrr_set, G, bf + i);
     }
   }
-
-  // cleanup
-  free(res_masks);
-  cudaFree(d_res_masks);
-  cudaFree(d_rng_states);
 #endif
 
   return rrr_sets;
 }
 
 cuda_res_t CudaGenerateRRRSets(const cuda_GraphTy &G, size_t theta,
-                               im::independent_cascade_tag &&model_tag,
-                               unsigned long long seed) {
+                               im::independent_cascade_tag &&model_tag) {
   assert(false);
   return cuda_res_t{};
 }

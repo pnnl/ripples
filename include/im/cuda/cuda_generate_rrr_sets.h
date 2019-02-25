@@ -29,18 +29,42 @@ using cuda_GraphTy =
 using cuda_res_t = std::vector<std::vector<typename cuda_GraphTy::vertex_type>>;
 using cuda_PRNGeneratorTy = std::vector<trng::lcg64>;
 
+//! \brief Initialize CUDA execution context for LT model.
+//!
+//! \param G The input host-side graph.
+//! \param seed The seed for the device-side generator.
+//! \param model_tag The diffusion model tag.
+void cuda_init(const cuda_GraphTy &G, unsigned long long seed,
+               im::linear_threshold_tag &&model_tag);
+
+//! \brief Initialize CUDA execution context for IC model.
+//!
+//! \param G The input host-side graph.
+//! \param seed The seed for the device-side generator.
+//! \param model_tag The diffusion model tag.
+void cuda_init(const cuda_GraphTy &G, unsigned long long seed,
+               im::independent_cascade_tag &&model_tag);
+
+//! \brief Finalize CUDA execution context for LT model.
+//!
+//! \param model_tag The diffusion model tag.
+void cuda_fini(im::linear_threshold_tag &&model_tag);
+
+//! \brief Finalize CUDA execution context for IC model.
+//!
+//! \param model_tag The diffusion model tag.
+void cuda_fini(im::independent_cascade_tag &&model_tag);
+
 //! \brief Generate Random Reverse Reachability Sets according to Linear
 //! Threshold model - CUDA.
 //!
 //! \param G The original graph.
 //! \param theta The number of RRR sets to be generated.
 //! \param model_tag The diffusion model tag.
-//! \param seed The seed for the device-side generator.
 //!
 //! \return A list of theta Random Reverse Rachability Sets.
 cuda_res_t CudaGenerateRRRSets(const cuda_GraphTy &G, size_t theta,
-                               im::linear_threshold_tag &&model_tag,
-                               unsigned long long seed);
+                               im::linear_threshold_tag &&model_tag);
 
 //! \brief Generate Random Reverse Reachability Sets according to Independent
 //! Cascade model - CUDA.
@@ -48,13 +72,10 @@ cuda_res_t CudaGenerateRRRSets(const cuda_GraphTy &G, size_t theta,
 //! \param G The original graph.
 //! \param theta The number of RRR sets to be generated.
 //! \param model_tag The diffusion model tag.
-//! \param seed The seed for the device-side generator.
 //!
 //! \return A list of theta Random Reverse Rachability Sets.
 cuda_res_t CudaGenerateRRRSets(const cuda_GraphTy &G, size_t theta,
-                               im::independent_cascade_tag &&model_tag,
-                               unsigned long long seed);
-
+                               im::independent_cascade_tag &&model_tag);
 }  // namespace im
 
 #endif  // IM_CUDA_CUDA_GENERATE_RRR_SETS_H

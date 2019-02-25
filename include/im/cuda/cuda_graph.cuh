@@ -50,12 +50,12 @@ struct cuda_graph {
   }
 
   ~cuda_graph() {
-    cudaFree(d_edges_);
-    cudaFree(d_index_);
+    if (d_edges_) cudaFree(d_edges_);
+    if (d_index_) cudaFree(d_index_);
   }
 
   // device pointers
-  destination_type **d_index_, *d_edges_;
+  destination_type **d_index_ = nullptr, *d_edges_ = nullptr;
 };
 
 #endif  // IM_CUDA_CUDA_COMMON_CUH
