@@ -12,6 +12,11 @@
 
 #define CUDA_BATCHED 1
 
+#define vertex_mask_set(m, v) \
+  { (m)[(v) >> 3] |= (uint8_t)1 << ((v) & (vertex_type)7); }
+#define vertex_mask_get(m, v) \
+  ((m)[(v) >> 3] & (uint8_t)1 << ((v) & (vertex_type)7))
+
 namespace im {
 
 extern __shared__ uint8_t shmem_lt_per_thread[];
@@ -33,26 +38,30 @@ __global__ void kernel_lt_per_thread(
 
   // select source node
   vertex_type src = curand(rng_state) % num_nodes;
+  vertex_mask_set(shmem_res_mask, src);
 
-  float x, acc;
+  float threshold;
   destination_type *first, *last;
+  vertex_type v;
   CUDA_LOG("> [kernel] START root=%d\n", src);
   while (src != num_nodes) {
     CUDA_LOG("> [kernel] insert %d\n", src);
-    shmem_res_mask[src >> 3] |= (uint8_t)1 << (src & (vertex_type)7);
+    threshold = curand_uniform(rng_state);
     first = index[src];
     last = index[src + 1];
-    x = curand_uniform(rng_state);
-    acc = 0;
     src = num_nodes;
-    while (first != last) {
-      CUDA_LOG("> [kernel] visiting: v=%d w=%f (rng=%f acc=%f)\n",
-               first->vertex, first->weight, x, acc);
-      if (x < (acc += first->weight)) {
-        src = first->vertex;
+    for (; first != last; ++first) {
+      threshold -= first->weight;
+      CUDA_LOG("> [kernel] visiting: v=%d w=%f (threshold=%f)\n", first->vertex,
+               first->weight, threshold);
+      if (threshold <= 0) {
+        v = first->vertex;
+        if (!vertex_mask_get(shmem_res_mask, v)) {
+          src = v;
+          vertex_mask_set(shmem_res_mask, src);
+        }
         break;
       }
-      ++first;
     }
   }
   CUDA_LOG("> [kernel] END\n");
@@ -111,6 +120,8 @@ cuda_res_t CudaGenerateRRRSets(const cuda_GraphTy &G, size_t theta,
   kernel_rng_setup<<<n_blocks, block_size>>>(d_rng_states, seed);
 
   for (size_t bf = 0; bf < rrr_sets.size(); bf += grid_size) {
+    CUDA_LOG("instance %d/%d\n", bf, rrr_sets.size());
+    fflush(stdout);
     // execute a batch
     kernel_lt_per_thread<cuda_graph<cuda_GraphTy>>
         <<<n_blocks, block_size, block_size * mask_size>>>(
@@ -119,12 +130,15 @@ cuda_res_t CudaGenerateRRRSets(const cuda_GraphTy &G, size_t theta,
 
     // copy masks back to host
     CUDA_LOG("> copying back masks batch-first=%d\n", bf);
+    fflush(stdout);
     cudaMemcpy(res_masks, d_res_masks, grid_size * mask_size,
                cudaMemcpyDeviceToHost);
 
     // convert masks to results
+    // TODO optimize bitwise operations
+    CUDA_LOG("> converting sets\n");
+    fflush(stdout);
     for (size_t i = 0; i < grid_size && (bf + i) < rrr_sets.size(); ++i) {
-      CUDA_LOG("> converting set %d\n", bf + i);
       auto &rrr_set = rrr_sets[bf + i];
       auto res_mask = res_masks + (i * mask_size);
       for (size_t j = 0; j < mask_size; ++j) {
