@@ -6,125 +6,158 @@
 
 #include <curand_kernel.h>
 
-#include "im/cuda/cuda_common.cuh"
 #include "im/cuda/cuda_generate_rrr_sets.h"
+#include "im/cuda/cuda_graph.cuh"
+#include "im/cuda/cuda_utils.h"
 
 #define CUDA_BATCHED 1
 
 namespace im {
 
-constexpr size_t BATCH_SIZE = 1024;
-static unsigned long long d_rng_seed = 666;
-
 extern __shared__ uint8_t shmem_lt_per_thread[];
-template<typename DeviceGraphTy>
-__global__
-void kernel_lt_per_thread(typename DeviceGraphTy::destination_type **index,
-		size_t num_nodes, curandState *d_rng_states, uint8_t *d_res_masks) {
-	using destination_type = typename DeviceGraphTy::destination_type;
-	using vertex_type = typename DeviceGraphTy::vertex_type;
+template <typename DeviceGraphTy>
+__global__ void kernel_lt_per_thread(
+    typename DeviceGraphTy::destination_type **index, size_t num_nodes,
+    size_t mask_size, curandState *d_rng_states, uint8_t *d_res_masks) {
+  using destination_type = typename DeviceGraphTy::destination_type;
+  using vertex_type = typename DeviceGraphTy::vertex_type;
 
-	int tid = blockIdx.x * blockDim.x + threadIdx.x;
-	uint8_t *d_res_mask = d_res_masks + tid * num_nodes;
+  int tid = blockIdx.x * blockDim.x + threadIdx.x;
 
-	//init res memory
-	uint8_t *shmem_res_mask = shmem_lt_per_thread + threadIdx.x * num_nodes;
-	memset(shmem_res_mask, 0, num_nodes * sizeof(uint8_t));
+  // init res memory
+  uint8_t *shmem_res_mask = shmem_lt_per_thread + threadIdx.x * mask_size;
+  memset(shmem_res_mask, 0, mask_size);
 
-	// cache rng state
-	auto rng_state = d_rng_states + tid;
+  // cache rng state
+  auto rng_state = d_rng_states + tid;
 
-	// select source node
-	vertex_type src = tid % num_nodes;
+  // select source node
+  vertex_type src = curand(rng_state) % num_nodes;
 
-	float x, acc;
-	destination_type *first, *last;
-	while (src != num_nodes) {
-		shmem_res_mask[src] = 1;
-		first = index[src];
-		last = index[src + 1];
-		x = curand(rng_state);
-		acc = 0;
-		src = num_nodes;
-		while (first != last) {
-			if (x < (acc += first->weight)) {
-				src = first->vertex;
-				break;
-			}
-			++first;
-		}
-	}
+  float x, acc;
+  destination_type *first, *last;
+  CUDA_LOG("> [kernel] START root=%d\n", src);
+  while (src != num_nodes) {
+    CUDA_LOG("> [kernel] insert %d\n", src);
+    shmem_res_mask[src >> 3] |= (uint8_t)1 << (src & (vertex_type)7);
+    first = index[src];
+    last = index[src + 1];
+    x = curand_uniform(rng_state);
+    acc = 0;
+    src = num_nodes;
+    while (first != last) {
+      CUDA_LOG("> [kernel] visiting: v=%d w=%f (rng=%f acc=%f)\n",
+               first->vertex, first->weight, x, acc);
+      if (x < (acc += first->weight)) {
+        src = first->vertex;
+        break;
+      }
+      ++first;
+    }
+  }
+  CUDA_LOG("> [kernel] END\n");
 
-	// write back results to global memory
-	memcpy(d_res_mask, shmem_res_mask, num_nodes * sizeof(uint8_t));
+  // print mask for debug
+  CUDA_LOG("> [kernel threadIdx.x=%d] shmem_res_mask first=%p last=%p\n",
+           threadIdx.x, shmem_res_mask, shmem_res_mask + mask_size);
+  for (int i = 0; i < mask_size; ++i) {
+    CUDA_LOG("> [kernel threadIdx.x=%d] shmem_res_mask w=%d\t: %d\n",
+             threadIdx.x, i, shmem_res_mask[i]);
+  }
+
+  // write back results to global memory
+  uint8_t *d_res_mask = d_res_masks + tid * mask_size;
+  memcpy(d_res_mask, shmem_res_mask, mask_size);
 }
 
-__global__
-void kernel_rng_setup(curandState *d_rng_states, unsigned long long seed) {
-	int tid = blockIdx.x * blockDim.x + threadIdx.x;
-	curand_init(seed, tid, 0, d_rng_states + tid);
+__global__ void kernel_rng_setup(curandState *d_rng_states,
+                                 unsigned long long seed) {
+  int tid = blockIdx.x * blockDim.x + threadIdx.x;
+  curand_init(seed, tid, 0, d_rng_states + tid);
 }
 
-//template<typename res_t, typename GraphTy, typename PRNGeneratorTy,
-//		typename diff_model_tag>
-void CudaGenerateRRRSets(cuda_res_t &rrr_sets, const cuda_GraphTy &G,
-		size_t theta, cuda_PRNGeneratorTy &generator,
-		im::linear_threshold_tag &&model_tag) {
-	using vertex_type = typename cuda_GraphTy::vertex_type;
+cuda_res_t CudaGenerateRRRSets(const cuda_GraphTy &G, size_t theta,
+                               im::linear_threshold_tag &&model_tag,
+                               unsigned long long seed) {
+  using vertex_type = typename cuda_GraphTy::vertex_type;
 
-	// copy graph to device
-	cuda_graph_t<cuda_GraphTy> cuda_graph(G);
+  cuda_res_t rrr_sets(theta);
+
+  // copy graph to device
+  cuda_graph<cuda_GraphTy> d_graph(G);
 
 #if CUDA_BATCHED
-	// allocate memory for result-masks
-	uint8_t *res_masks, *d_res_masks;
-	res_masks = (uint8_t *) malloc(
-			BATCH_SIZE * G.num_nodes() * sizeof(uint8_t));
-	cudaMalloc(&d_res_masks, BATCH_SIZE * G.num_nodes() * sizeof(uint8_t));
+  // sizing
+  size_t block_size = 512;  // 512
+  size_t n_blocks = 128;    // 128
+  size_t grid_size = n_blocks * block_size;
+  size_t mask_size = (G.num_nodes() + 7) / 8;
 
-	//init rng
-	curandState *d_rng_states;
-	cudaMalloc(&d_rng_states, BATCH_SIZE * sizeof(curandState));
-	kernel_rng_setup<<<128, BATCH_SIZE / 128>>>(d_rng_states, d_rng_seed++);
+  // print sizing info
+  CUDA_LOG("> *** CUDA_BATCHED sizing ***\n");
+  CUDA_LOG("block-size =%d\n", block_size);
+  CUDA_LOG("n. blocks  =%d\n", n_blocks);
+  CUDA_LOG("g-mem size =%d\n", grid_size * mask_size);
+  CUDA_LOG("shmem size =%d\n", block_size * mask_size);
 
-	for (size_t bf = 0; bf < rrr_sets.size(); bf += BATCH_SIZE) {
-		//execute a batch
-		kernel_lt_per_thread<cuda_graph_t<cuda_GraphTy>> <<<128,
-				BATCH_SIZE / 128, G.num_nodes() * 128 * sizeof(uint8_t)>>>(
-				cuda_graph.d_index_, G.num_nodes(), d_rng_states, d_res_masks);
+  // allocate memory for result-masks
+  uint8_t *res_masks, *d_res_masks;
+  res_masks = (uint8_t *)malloc(grid_size * mask_size);
+  cudaMalloc(&d_res_masks, grid_size * mask_size);
 
-		// copy masks back to host
-		cudaMemcpy(res_masks, d_res_masks,
-				BATCH_SIZE * G.num_nodes() * sizeof(uint8_t),
-				cudaMemcpyDeviceToHost);
+  // init rng
+  curandState *d_rng_states;
+  cudaMalloc(&d_rng_states, grid_size * sizeof(curandState));
+  kernel_rng_setup<<<n_blocks, block_size>>>(d_rng_states, seed);
 
-		// convert masks to results
-		for (size_t i = 0; i < BATCH_SIZE; ++i) {
-			auto set_idx = bf + i;
-			if (set_idx < rrr_sets.size()) {
-				for (size_t j = 0; j < G.num_nodes(); ++j)
-					if (res_masks[i * G.num_nodes() + j])
-						rrr_sets[bf + i].push_back(vertex_type(j));
+  for (size_t bf = 0; bf < rrr_sets.size(); bf += grid_size) {
+    // execute a batch
+    kernel_lt_per_thread<cuda_graph<cuda_GraphTy>>
+        <<<n_blocks, block_size, block_size * mask_size>>>(
+            d_graph.d_index_, G.num_nodes(), mask_size, d_rng_states,
+            d_res_masks);
 
-				//check - TODO
+    // copy masks back to host
+    CUDA_LOG("> copying back masks batch-first=%d\n", bf);
+    cudaMemcpy(res_masks, d_res_masks, grid_size * mask_size,
+               cudaMemcpyDeviceToHost);
 
-			} else
-				break;
-		}
-	}
+    // convert masks to results
+    for (size_t i = 0; i < grid_size && (bf + i) < rrr_sets.size(); ++i) {
+      CUDA_LOG("> converting set %d\n", bf + i);
+      auto &rrr_set = rrr_sets[bf + i];
+      auto res_mask = res_masks + (i * mask_size);
+      for (size_t j = 0; j < mask_size; ++j) {
+        // scan a word from the res mask
+        uint8_t w = res_mask[j];
+        for (uint8_t bi = 0; bi < 8; ++bi) {
+          if (w & (uint8_t)1) {
+            // convert mask bit to vertex id
+            auto v = vertex_type(8 * j + bi);
+            rrr_set.push_back(v);
+          }
+          w >>= 1;
+        }
+      }
 
-	// cleanup
-	free(res_masks);
-	cudaFree(d_res_masks);
-	cudaFree(d_rng_states);
+      check_lt(rrr_set, G, bf + i);
+    }
+  }
 
+  // cleanup
+  free(res_masks);
+  cudaFree(d_res_masks);
+  cudaFree(d_rng_states);
 #endif
+
+  return rrr_sets;
 }
 
-void CudaGenerateRRRSets(cuda_res_t &rrr_sets, const cuda_GraphTy &G,
-		size_t theta, cuda_PRNGeneratorTy &generator,
-		im::independent_cascade_tag &&model_tag) {
-	assert(false);
+cuda_res_t CudaGenerateRRRSets(const cuda_GraphTy &G, size_t theta,
+                               im::independent_cascade_tag &&model_tag,
+                               unsigned long long seed) {
+  assert(false);
+  return cuda_res_t{};
 }
 
-} // namespace im
+}  // namespace im

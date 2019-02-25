@@ -86,7 +86,7 @@ void AddRRRSet(GraphTy &G, typename GraphTy::vertex_type r,
   std::stable_sort(result.begin(), result.end());
 }
 
-//! \brief Generate Random Reverse Reachability Sets.
+//! \brief Generate Random Reverse Reachability Sets - sequential.
 //!
 //! \tparam GraphTy The type of the garph.
 //! \tparam PRNGeneratorty The type of the random number generator.
@@ -117,7 +117,7 @@ std::vector<RRRset<GraphTy>> GenerateRRRSets(GraphTy &G, size_t theta,
   return rrrSets;
 }
 
-//! \brief Generate Random Reverse Reachability Sets.
+//! \brief Generate Random Reverse Reachability Sets - OpenMP.
 //!
 //! \tparam GraphTy The type of the garph.
 //! \tparam PRNGeneratorty The type of the random number generator.
@@ -154,7 +154,7 @@ std::vector<RRRset<GraphTy>> GenerateRRRSets(GraphTy &G, size_t theta,
   return rrrSets;
 }
 
-//! \brief Generate Random Reverse Reachability Sets.
+//! \brief Generate Random Reverse Reachability Sets - CUDA.
 //!
 //! \tparam GraphTy The type of the garph.
 //! \tparam PRNGeneratorty The type of the random number generator.
@@ -172,10 +172,10 @@ std::vector<RRRset<GraphTy>> GenerateRRRSets(GraphTy &G, size_t theta,
                                              PRNGeneratorTy &generator,
                                              diff_model_tag &&model_tag,
                                              cuda_parallel_tag &&ex_tag) {
-  std::vector<RRRset<GraphTy>> rrrSets(theta);
-  CudaGenerateRRRSets(rrrSets, G, theta, generator,
-	  std::forward < diff_model_tag > (model_tag));
-  return rrrSets;
+  trng::uniform_int_dist cuda_rng_seed_dist(
+      0, std::numeric_limits<unsigned long long>::max());
+  return CudaGenerateRRRSets(G, theta, std::forward<diff_model_tag>(model_tag),
+                             cuda_rng_seed_dist(generator[0]));
 }
 
 }  // namespace im
