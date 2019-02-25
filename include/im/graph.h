@@ -14,27 +14,57 @@
 
 namespace im {
 
+//! \brif Forward Direction Graph loading policy.
+//!
+//! \tparam VertexTy The type of the vertex in the graph.
 template <typename VertexTy>
 struct ForwardDirection {
+  //! \brief Edge Source
+  //!
+  //! \tparam ItrTy Edge iterator type.
+  //!
+  //! \param itr Iterator to the current edge.
+  //! \return The source of the egde to be loaded in the graph.
   template <typename ItrTy>
   static VertexTy Source(ItrTy itr) { return itr->source; }
 
+  //! \brief Edge Destination
+  //!
+  //! \tparam ItrTy Edge iterator type.
+  //!
+  //! \param itr Iterator to the current edge.
+  //! \return The destination of the egde to be loaded in the graph.
   template <typename ItrTy>
   static VertexTy Destination(ItrTy itr) { return itr->destination; }
 };
 
 
+//! \brif Backward Direction Graph loading policy.
+//!
+//! \tparam VertexTy The type of the vertex in the graph.
 template <typename VertexTy>
 struct BackwardDirection {
+  //! \brief Edge Source
+  //!
+  //! \tparam ItrTy Edge iterator type.
+  //!
+  //! \param itr Iterator to the current edge.
+  //! \return The source of the egde to be loaded in the graph.
   template <typename ItrTy>
   static VertexTy Source(ItrTy itr) { return itr->destination; }
 
+  //! \brief Edge Destination
+  //!
+  //! \tparam ItrTy Edge iterator type.
+  //!
+  //! \param itr Iterator to the current edge.
+  //! \return The destination of the egde to be loaded in the graph.
   template <typename ItrTy>
   static VertexTy Destination(ItrTy itr) { return itr->source; }
 };
 
 
-//! \brief The structure storing edges of the a weighted graph.
+//! \brief A weighted edge.
 //!
 //! \tparm VertexTy The integer type representing a vertex of the graph.
 //! \tparm WeightTy The type representing the weight on the edge.
@@ -42,11 +72,11 @@ template <typename VertexTy, typename WeightTy>
 struct Edge {
   //! The integer type representing vertices in the graph.
   using vertex_type = VertexTy;
-  //! The type representing weight on the edges of the graph.
+  //! The type representing weights on the edges of the graph.
   using weight_type = WeightTy;
   //! The source of the edge.
   VertexTy source;
-  //! The destination of teh edge.
+  //! The destination of the edge.
   VertexTy destination;
   //! The weight on the edge.
   WeightTy weight;
@@ -54,15 +84,10 @@ struct Edge {
 
 //! \brief The Graph data structure.
 //!
-//! This graph data structure is nothing more than a classical CSR
-//! representation of the adjacent matrix of the graph.  For efficiency
-//! purposes, it stores the matrix and its transpose so that it is easy to walk
-//! edges in both directions.
-//!
-//! The construction method takes care of projecting the vercites in the input
-//! edge list into a contiguous space [0; N[ of integers in order to build the
-//! CSR representation.  However, the data structure stores a map that allows to
-//! project back the IDs into the original space.
+//! A graph in CSR format.  The construction method takes care of projecting the
+//! vercites in the input edge list into a contiguous space [0; N[ of integers
+//! in order to build the CSR representation.  However, the data structure
+//! stores a map that allows to project back the IDs into the original space.
 //!
 //! \tparm VertexTy The integer type representing a vertex of the graph.
 //! \tparm WeightTy The type representing the weight on the edge.
@@ -79,15 +104,26 @@ class Graph {
   //! The type representing the weights on the edges of the graph.
   using edge_weight_type = WeightTy;
 
+  //! \brief The edges stored in the CSR.
   struct DestinationTy {
     VertexTy vertex;
     WeightTy weight;
   };
 
+  //! \brief The neighborhood of a vertex.
   class Neighborhood {
    public:
+    //! Construct the neighborhood.
+    //!
+    //! \param B The begin of the neighbor list.
+    //! \param E The end of the neighbor list.
     Neighborhood(DestinationTy *B, DestinationTy *E) : begin_(B), end_(E) {}
+
+    //! Begin of the neighborhood.
+    //! \return an iterator to the begin of the neighborhood.
     DestinationTy *begin() const { return begin_; }
+    //! End of the neighborhood.
+    //! \return an iterator to the begin of the neighborhood.
     DestinationTy *end() const { return end_; }
 
    private:
@@ -95,10 +131,13 @@ class Graph {
     DestinationTy *end_;
   };
 
+  //! Empty Graph Constructor.
   Graph()
       : numNodes(0), numEdges(0), index(nullptr), edges(nullptr)
       , idMap(), reverseMap() {}
 
+  //! Move constructor.
+  //! \param O The graph to be moved.
   Graph(Graph && O) {
     std::swap(numNodes, O.numNodes);
     std::swap(numEdges, O.numEdges);
@@ -107,8 +146,10 @@ class Graph {
     idMap = std::move(O.idMap);
     reverseMap = std::move(O.reverseMap);
   }
-      
 
+  //! Move assignment operator.
+  //! \param O The graph to be moved.
+  //! \return a reference to the destination graph.
   Graph & operator=(Graph && O) {
     std::swap(numNodes, O.numNodes);
     std::swap(numEdges, O.numEdges);
@@ -118,6 +159,11 @@ class Graph {
     reverseMap = std::move(O.reverseMap);
   }
 
+  //! Reload from binary constructor.
+  //!
+  //! \tparam FStream The type of the input stream.
+  //!
+  //! \param FS The binary stream containing the graph dump.
   template<typename FStream>
   Graph(FStream & FS) {
     load_binary(FS);
@@ -125,7 +171,10 @@ class Graph {
 
   //! \brief Constructor.
   //!
-  //! Build a Graph from a sequence of edges.
+  //! Build a Graph from a sequence of edges.  The vertex identifiers are
+  //! projected over the integer interval [0;N[.  The data structure stores
+  //! conversion maps to move fro the internal representation of the vertex IDs
+  //! to the original input representation.
   //!
   //! \tparam EdgeIterator The iterator type used to visit the input edge list.
   //!
@@ -189,26 +238,14 @@ class Graph {
     delete[] edges;
   }
 
-  //! Returns the in-degree of a vertex.
+  //! Returns the out-degree of a vertex.
   //! \param v The input vertex.
   //! \return the in-degree of vertex v in input.
   size_t degree(VertexTy v) const { return index[v + 1] - index[v]; }
 
-  //! Returns the out-degree of a vertex.
+  //! Returns the neighborhood of a vertex.
   //! \param v The input vertex.
-  //! \return the out-degree of vertex v in input.
-  // size_t out_degree(VertexTy v) const { return outIndex[v + 1] - outIndex[v]; }
-
-  //! Returns the out-neighbors of a vertex.
-  //! \param v The input vertex.
-  //! \return the out-neighbors of vertex v in input.
-  // Neighborhood out_neighbors(VertexTy v) const {
-  //   return Neighborhood(outIndex[v], outIndex[v + 1]);
-  // }
-
-  //! Returns the in-neighbors of a vertex.
-  //! \param v The input vertex.
-  //! \return the in-neighbors of vertex v in input.
+  //! \return  a range containing the out-neighbors of the vertex v in input.
   Neighborhood neighbors(VertexTy v) const {
     return Neighborhood(index[v], index[v + 1]);
   }
@@ -221,11 +258,15 @@ class Graph {
   //! \return The number of edges in the Graph.
   size_t num_edges() const { return numEdges; }
 
-  //! Convert a list of vertices of G into IDs of the input edge list.
+  //! Convert a list of vertices from the interal representation to the original
+  //! input representation.
   //!
-  //! \tparam Itr The input iterator of the sequence of input vertices.
-  //! \tparam OutputItr The output iterator where the translated ids will be
-  //! written.
+  //! \tparam Itr The iterator type of the input sequence of vertex IDs.
+  //! \tparam OutputItr The iterator type of the output sequence.
+  //!
+  //! \param b The begin of the input vertex IDs sequence.
+  //! \param e The end of the input vertex IDs sequence.
+  //! \param o The start of the output vertex IDs sequence.
   template <typename Itr, typename OutputItr>
   void convertID(Itr b, Itr e, OutputItr o) const {
     using value_type = typename Itr::value_type;
@@ -234,6 +275,15 @@ class Graph {
     });
   }
 
+  //! Convert a list of vertices from the original input edge list
+  //! representation to the internal vertex representation.
+  //!
+  //! \tparam Itr The iterator type of the input sequence of vertex IDs.
+  //! \tparam OutputItr The iterator type of the output sequence.
+  //!
+  //! \param b The begin of the input vertex IDs sequence.
+  //! \param e The end of the input vertex IDs sequence.
+  //! \param o The start of the output vertex IDs sequence.
   template <typename Itr, typename OutputItr>
   void transformID(Itr b, Itr e, OutputItr o) const {
     using value_type = typename Itr::value_type;
@@ -246,6 +296,11 @@ class Graph {
     });
   }
 
+  //! Dump the internal representation to a binary stream.
+  //!
+  //! \tparam FStream The type of the output stream
+  //!
+  //! \param FS The ouput file stream.
   template <typename FStream>
   void dump_binary(FStream & FS) const {
     FS.write(reinterpret_cast<const char *>(&numNodes), sizeof(numNodes));
