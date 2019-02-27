@@ -29,7 +29,7 @@ struct IMMConfiguration : public TIMConfiguration {};
 struct IMMExecutionRecord {
   //! Number of threads used during the execution.
   size_t NumThreads;
-  //! Number of RRR sets to generated.
+  //! Number of RRR sets generated.
   size_t Theta;
   //! Execution time of the Theta estimation phase.
   std::chrono::duration<double, std::milli> ThetaEstimation;

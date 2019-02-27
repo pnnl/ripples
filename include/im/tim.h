@@ -39,8 +39,12 @@ struct TIMConfiguration {
   double epsilon{0.50};              //!< The epsilon of the IM algorithm
   bool parallel{false};              //!< The sequential vs parallel algorithm
   std::string diffusionModel{"IC"};  //!< The diffusion model to use.
-  bool OMPStrongScaling{false};
+  bool OMPStrongScaling{false};      //!< OpenMP Strong Sclaing experiment?
 
+  
+  //! \brief Add command line options to configure TIM+.
+  //!
+  //! \param app The command-line parser object.
   void addCmdOptions(CLI::App &app) {
     app.add_option("-k,--seed-set-size", k, "The size of the seed set.")
         ->required()
@@ -61,20 +65,30 @@ struct TIMConfiguration {
   }
 };
 
+//! TIM+ execution record.
 struct TIMExecutionRecord {
+  //! Number of threads used during the execution.
   size_t NumThreads;
+  //! Number of RRR sets generated.
   size_t Theta;
+  //! Execution time of the Kpt Estimation phase.
   std::chrono::duration<double, std::milli> KptEstimation;
+  //! Execution time of the Kpt Refinement phase.
   std::chrono::duration<double, std::milli> KptRefinement;
+  //! Execution time of the RRR sets generation phase.
   std::chrono::duration<double, std::milli> GenerateRRRSets;
+  //! Execution time of the maximum coverage phase.
   std::chrono::duration<double, std::milli> FindMostInfluentialSet;
+  //! Total execution time.
   std::chrono::duration<double, std::milli> Total;
 };
+
 
 //! \brief Compute the number of elements in the RRR set starting at r.
 //!
 //! \tparam GraphTy The type of the Graph.
 //! \tparam PNRG The type of the random number generator.
+//! \tparam diff_model_tag The Type-Tag selecting the diffusion model.
 //!
 //! \param G The original graph.
 //! \param r The start vertex.
@@ -115,10 +129,11 @@ size_t WR(GraphTy &G, typename GraphTy::vertex_type r, PRNG &generator,
 
         if (threshold > 0) continue;
 
-        if (visited[u.vertex]) break;
-
-        queue.push(u.vertex);
-        visited[u.vertex] = true;
+        if (!visited[u.vertex]) {
+          queue.push(u.vertex);
+          visited[u.vertex] = true;
+          break;
+        }
       }
     } else {
       throw;
@@ -132,11 +147,12 @@ size_t WR(GraphTy &G, typename GraphTy::vertex_type r, PRNG &generator,
 //!
 //! \tparam GraphTy The type of the graph.
 //! \tparam PRNGeneratorty The type of the random number generator.
+//! \tparam diff_model_tag The Type-Tag selecting the diffusion model.
 //!
 //! \param G The original graph.
 //! \param k The size of the desired seed set.
 //! \param generator The random numeber generator.
-//! \param tag The execution policy tag.
+//! \param model_tag The diffusion model to be used.
 //!
 //! \return a lower bond of OPT computed with Algoirthm 2 of the original paper.
 template <typename GraphTy, typename PRNGeneratorTy, typename diff_model_tag>
@@ -178,11 +194,12 @@ double KptEstimation(GraphTy &G, size_t k, PRNGeneratorTy &generator,
 //!
 //! \tparam GraphTy The type of the graph.
 //! \tparam PRNGeneratorty The type of the random number generator.
+//! \tparam diff_model_tag The Type-Tag selecting the diffusion model.
 //!
 //! \param G The original graph.
 //! \param k The size of the desired seed set.
 //! \param generator The random numeber generator.
-//! \param tag The execution policy tag.
+//! \param model_tag The diffusion model to use.
 //!
 //! \return a lower bond of OPT computed with Algoirthm 2 of the original paper.
 template <typename GraphTy, typename PRNGeneratorTy, typename diff_model_tag>
@@ -228,13 +245,16 @@ double KptEstimation(GraphTy &G, size_t k, PRNGeneratorTy &generator,
 //!
 //! \tparam GraphTy The graph type.
 //! \tparam PRNGeneratorty The type of the Random Number Generator.
-//! \tparam execution_tag Type tag to selecte the execution policy.
+//! \tparam diff_model_tag The Type-Tag selecting the diffusion model.
+//! \tparam execution_tag The Type-Tag to selecte the execution policy.
 //!
 //! \param G The original graph.
 //! \param k The size of the seed set to be selected.
 //! \param epsilon The approximation factor.
 //! \param generator The random number generator.
-//! \param tag The execution policy tag.
+//! \param R The execution record.
+//! \param model_tag The diffusion model to use.
+//! \param ex_tag The execution policy to use.
 //!
 //! \return The number of Random Reverse Reachability sets to be computed.
 template <typename GraphTy, typename PRNGeneratorTy, typename diff_model_tag,
@@ -290,12 +310,15 @@ size_t ThetaEstimation(GraphTy &G, size_t k, double epsilon,
 //! \brief The TIM+ algorithm for Influence Maximization.
 //!
 //! \tparam GraphTy The type of the graph.
+//! \tparam diff_model_tag The Type-Tag selecting the diffusion model.
 //! \tparam execution_tag The execution policy tag.
 //!
 //! \param G The original graph.
 //! \param k The size of the seed set.
 //! \param epsilon The approximation factor.
-//! \param tag The execution policy tag.
+//! \param gen A parallel random number generator.
+//! \param model_tag The diffusion model to use.
+//! \param ex_tag The execution policy to use.
 //!
 //! \return A set of vertices in the graph.
 template <typename GraphTy, typename PRNG, typename diff_model_tag,
