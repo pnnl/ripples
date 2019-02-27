@@ -84,6 +84,17 @@ void print_graph(const graph_t &g) {
   printf("*** graph END ***\n");
 }
 
+void cuda_check(cudaError_t err, const char *fname, int line) {
+  if (err != cudaSuccess) {
+    CUDA_LOG("> CUDA error @%s:%d: name=%s msg='%s'\n", fname, line,
+             cudaGetErrorName(err), cudaGetErrorString(err));
+    assert(false);
+  }
+}
+
+void cuda_check(const char *fname, int line) {
+  cuda_check(cudaGetLastError(), fname, line);
+}
 }  // namespace im
 
 #endif  // IM_CUDA_CUDA_UTILS_H
