@@ -72,12 +72,12 @@ void AddRRRSet(GraphTy &G, typename GraphTy::vertex_type r,
 
         if (threshold > 0) continue;
 
-        if (visited[u.vertex]) break;
-
-        queue.push(u.vertex);
-        visited[u.vertex] = true;
-        result.push_back(u.vertex);
-        break;
+        if (!visited[u.vertex]) {
+          queue.push(u.vertex);
+          visited[u.vertex] = true;
+          result.push_back(u.vertex);
+          break;
+        }
       }
     } else {
       throw;

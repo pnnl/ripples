@@ -19,11 +19,11 @@ namespace im {
 //!
 //! \tparam GraphTy The graph type.
 //! \tparam RRRset The type storing Random Reverse Reachability Sets.
-//! \tparam execution_tag The execution policy.
 //!
 //! \param G The input graph.
 //! \param k The size of the seed set.
 //! \param RRRsets A vector of Random Reverse Reachability sets.
+//! \param ex_tag The MPI+OpenMP execution tag.
 //!
 //! \return a pair where the size_t is the number of RRRset covered and
 //! the set of vertices selected as seeds.
