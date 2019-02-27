@@ -22,6 +22,13 @@
 
 namespace im {
 
+//! Compute ThetaPrime for the MPI implementation.
+//!
+//! \param x The index of the current iteration.
+//! \param epsilonPrime Parameter controlling the approximation factor.
+//! \param l Parameter usually set to 1.
+//! \param k The size of the seed set.
+//! \param num_nodes The number of nodes in the input graph.
 inline size_t ThetaPrime(ssize_t x, double epsilonPrime, double l, size_t k,
                          size_t num_nodes, mpi_omp_parallel_tag &) {
   int world_size;
@@ -32,6 +39,20 @@ inline size_t ThetaPrime(ssize_t x, double epsilonPrime, double l, size_t k,
 }
 
 
+//! Collect a set of Random Reverse Reachable set.
+//!
+//! \tparam GraphTy The type of the input graph.
+//! \tparam PRNGeneratorTy The type of the parallel random number generator.
+//! \tparam diff_model_tag Type-Tag to selecte the diffusion model.
+//!
+//! \param G The input graph.  The graph is transoposed.
+//! \param k The size of the seed set.
+//! \param epsilon The parameter controlling the approximation guarantee.
+//! \param l Parameter usually set to 1.
+//! \param generator The parallel random number generator.
+//! \param record Data structure storing timing and event counts.
+//! \param model_tag The diffusion model tag.
+//! \param ex_tag The execution policy tag.
 template <typename GraphTy, typename PRNGeneratorTy, typename diff_model_tag>
 auto Sampling(const GraphTy &G, std::size_t k, double epsilon, double l,
               PRNGeneratorTy &generator, IMMExecutionRecord &record,
@@ -95,6 +116,19 @@ auto Sampling(const GraphTy &G, std::size_t k, double epsilon, double l,
 }
 
 
+//! The IMM algroithm for Influence Maximization (MPI specialization).
+//!
+//! \tparam GraphTy The type of the input graph.
+//! \tparam PRNG The type of the parallel random number generator.
+//! \tparam diff_model_tag Type-Tag to selecte the diffusion model.
+//!
+//! \param G The input graph.  The graph is transoposed.
+//! \param k The size of the seed set.
+//! \param epsilon The parameter controlling the approximation guarantee.
+//! \param l Parameter usually set to 1.
+//! \param gen The parallel random number generator.
+//! \param model_tag The diffusion model tag.
+//! \param ex_tag The execution policy tag.
 template <typename GraphTy, typename diff_model_tag, typename PRNG>
 auto IMM(const GraphTy &G, std::size_t k, double epsilon, double l, PRNG &gen,
          diff_model_tag &&model_tag, im::mpi_omp_parallel_tag &&ex_tag) {
