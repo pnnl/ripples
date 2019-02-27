@@ -22,21 +22,42 @@
 
 namespace im {
 
+//! The IMM algorithm configuration descriptor.
 struct IMMConfiguration : public TIMConfiguration {};
 
+//! IMM execution record.
 struct IMMExecutionRecord {
+  //! Number of threads used during the execution.
   size_t NumThreads;
+  //! Number of RRR sets to generated.
   size_t Theta;
+  //! Execution time of the Theta estimation phase.
   std::chrono::duration<double, std::milli> ThetaEstimation;
+  //! Execution time of the RRR sets generation phase.
   std::chrono::duration<double, std::milli> GenerateRRRSets;
+  //! Execution time of the maximum coverage phase.
   std::chrono::duration<double, std::milli> FindMostInfluentialSet;
+  //! Total execution time.
   std::chrono::duration<double, std::milli> Total;
 };
 
+//! Approximate logarithm of n chose k.
+//! \param n
+//! \param k
+//! \return an approximation of log(n choose k).
 inline double logBinomial(size_t n, size_t k) {
   return n * log(n) - k * log(k) - (n - k) * log(n - k);
 }
 
+//! Compute ThetaPrime.
+//!
+//! \tparam execution_tag The execution policy
+//!
+//! \param x The index of the current iteration.
+//! \param epsilonPrime Parameter controlling the approximation factor.
+//! \param l Parameter usually set to 1.
+//! \param k The size of the seed set.
+//! \param num_nodes The number of nodes in the input graph.
 template <typename execution_tag>
 ssize_t ThetaPrime(ssize_t x, double epsilonPrime, double l, size_t k,
                    size_t num_nodes, execution_tag &&) {
@@ -46,6 +67,14 @@ ssize_t ThetaPrime(ssize_t x, double epsilonPrime, double l, size_t k,
          std::pow(2.0, x) / (epsilonPrime * epsilonPrime);
 }
 
+
+//! Compute Theta.
+//!
+//! \param epsilon Parameter controlling the approximation factor.
+//! \param l Parameter usually set to 1.
+//! \param k The size of the seed set.
+//! \param LB The estimate of the lower bound.
+//! \param num_nodes The number of nodes in the input graph.
 inline size_t Theta(double epsilon, double l, size_t k, double LB,
                     size_t num_nodes) {
   double term1 = 0.6321205588285577;  // 1 - 1/e
@@ -58,6 +87,22 @@ inline size_t Theta(double epsilon, double l, size_t k, double LB,
   return lamdaStar / LB;
 }
 
+
+//! Collect a set of Random Reverse Reachable set.
+//!
+//! \tparam GraphTy The type of the input graph.
+//! \tparam PRNGeneratorTy The type of the parallel random number generator.
+//! \tparam diff_model_tag Type-Tag to selecte the diffusion model.
+//! \tparam execution_tag Type-Tag to select the execution policy.
+//!
+//! \param G The input graph.  The graph is transoposed.
+//! \param k The size of the seed set.
+//! \param epsilon The parameter controlling the approximation guarantee.
+//! \param l Parameter usually set to 1.
+//! \param generator The parallel random number generator.
+//! \param record Data structure storing timing and event counts.
+//! \param model_tag The diffusion model tag.
+//! \param ex_tag The execution policy tag.
 template <typename GraphTy, typename PRNGeneratorTy, typename diff_model_tag,
           typename execution_tag>
 auto Sampling(const GraphTy &G, std::size_t k, double epsilon, double l,
@@ -119,7 +164,22 @@ auto Sampling(const GraphTy &G, std::size_t k, double epsilon, double l,
   return RR;
 }
 
-template <typename GraphTy, typename diff_model_tag, typename PRNG,
+
+//! The IMM algroithm for Influence Maximization
+//!
+//! \tparam GraphTy The type of the input graph.
+//! \tparam PRNG The type of the parallel random number generator.
+//! \tparam diff_model_tag Type-Tag to selecte the diffusion model.
+//! \tparam execution_tag Type-Tag to select the execution policy.
+//!
+//! \param G The input graph.  The graph is transoposed.
+//! \param k The size of the seed set.
+//! \param epsilon The parameter controlling the approximation guarantee.
+//! \param l Parameter usually set to 1.
+//! \param gen The parallel random number generator.
+//! \param model_tag The diffusion model tag.
+//! \param ex_tag The execution policy tag.
+template <typename GraphTy, typename PRNG, typename diff_model_tag,
           typename execution_tag>
 auto IMM(const GraphTy &G, std::size_t k, double epsilon, double l, PRNG &gen,
          diff_model_tag &&model_tag, execution_tag &&ex_tag) {
@@ -158,9 +218,6 @@ auto IMM(const GraphTy &G, std::size_t k, double epsilon, double l, PRNG &gen,
 
   return std::make_pair(S.second, record);
 }
-
-#ifdef HAVE_MPI
-#endif
 
 }  // namespace im
 
