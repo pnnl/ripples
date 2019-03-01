@@ -62,10 +62,10 @@ void cuda_init(const cuda_GraphTy &G, unsigned long long seed,
   cuda_conf.d_graph = make_cuda_graph(G);
 
   // sizing
-  // cuda_conf.warp_step = 1;                             // per thread
-  cuda_conf.warp_step = cuda_conf.cuda_prop.warpSize;  // per warp
-  cuda_conf.block_size = 256;                          // 128
-  cuda_conf.n_blocks = 512;                            // 512
+  cuda_conf.warp_step = 1;  // per thread
+  // cuda_conf.warp_step = cuda_conf.cuda_prop.warpSize;  // per warp
+  cuda_conf.block_size = 1;   // 128
+  cuda_conf.n_blocks = 8192;  // 512
   cuda_conf.grid_size = cuda_conf.n_blocks * cuda_conf.block_size;
   cuda_conf.batch_size = cuda_conf.grid_size / cuda_conf.warp_step;
   cuda_conf.mask_size = (G.num_nodes() + 7) / 8;
@@ -92,13 +92,8 @@ void cuda_init(const cuda_GraphTy &G, unsigned long long seed,
              cuda_conf.batch_size * sizeof(curandState));
   cuda_check(e, __FILE__, __LINE__);
 
-#if CUDA_PER_WARP
   kernel_rng_setup<<<cuda_conf.n_blocks, cuda_conf.block_size>>>(
-      cuda_conf.d_rng_states, seed, cuda_conf.cuda_prop.warpSize);
-#else
-  kernel_rng_setup<<<cuda_conf.n_blocks, cuda_conf.block_size>>>(
-      cuda_conf.d_rng_states, seed, 1);
-#endif
+      cuda_conf.d_rng_states, seed, cuda_conf.warp_step);
   cuda_check(__FILE__, __LINE__);
 }
 
@@ -173,18 +168,10 @@ cuda_res_t CudaGenerateRRRSets(const cuda_GraphTy &G, size_t theta,
 
   for (size_t bf = 0; bf < rrr_sets.size(); bf += cuda_conf.batch_size) {
     // execute a batch
-#if CUDA_PER_WARP
     kernel_lt_per_thread<cuda_GraphTy>
         <<<cuda_conf.n_blocks, cuda_conf.block_size>>>(
             cuda_conf.d_graph->d_index_, G.num_nodes(), cuda_conf.mask_size,
-            cuda_conf.cuda_prop.warpSize, cuda_conf.d_rng_states,
-            cuda_conf.d_res_masks);
-#else
-    kernel_lt_per_thread<cuda_GraphTy>
-        <<<cuda_conf.n_blocks, cuda_conf.block_size>>>(
-            cuda_conf.d_graph->d_index_, G.num_nodes(), cuda_conf.mask_size, 1,
-            cuda_conf.d_rng_states, cuda_conf.d_res_masks);
-#endif
+            cuda_conf.warp_step, cuda_conf.d_rng_states, cuda_conf.d_res_masks);
     cuda_check(__FILE__, __LINE__);
 
     // copy masks back to host
