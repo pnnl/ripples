@@ -10,17 +10,33 @@
 #include "im/cuda/cuda_graph.cuh"
 #include "im/cuda/cuda_utils.h"
 
-#define is_set_in_word(w, v) ((w) & ((uint8_t)1 << ((v) & (vertex_type)7)))
-
-#define set_in_word(w, v) \
-  { (w) |= ((uint8_t)1 << ((v) & (vertex_type)7)); }
-
-#define read_mask_word(m, v) (m)[(v) >> 3]
-
-#define write_mask_word(m, v, w) \
-  { (m)[(v) >> 3] = (w); }
+#define CUDA_ATOMIC_MASK 0
 
 namespace im {
+
+#if CUDA_ATOMIC_MASK
+using mask_word_t = int;
+constexpr size_t mask_word_size = sizeof(mask_word_t) * 8;
+#define word_index(v) ((v) / mask_word_size)
+#define word_offset(v) ((mask_word_t)(v) & ((mask_word_t)mask_word_size - 1))
+#define encode_vertex(index, offset) ((index)*mask_word_size + (offset))
+#define mask_mark(m, v) \
+  atomicOr((m) + word_index(v), (mask_word_t)1 << word_offset(v))
+#else
+using mask_word_t = uint8_t;
+constexpr size_t mask_word_size = sizeof(mask_word_t) * 8;
+#define word_index(v) ((v) >> 3)
+#define word_offset(v) ((mask_word_t)(v) & ((mask_word_t)mask_word_size - 1))
+#define encode_vertex(index, offset) ((index)*mask_word_size + (offset))
+#define mask_mark(m, v)                         \
+  {                                             \
+    auto w = (m)[word_index(v)];                \
+    if ((w) & ((uint8_t)1 << word_offset(v))) { \
+      w |= ((uint8_t)1 << word_offset(v));      \
+      (m)[word_index(v)] = w;                   \
+    }                                           \
+  }
+#endif
 
 // tested configurations:
 // + 1 walk per thread:
@@ -35,12 +51,15 @@ namespace im {
 struct cuda_conf_t {
   cudaDeviceProp cuda_prop;
   cuda_graph<cuda_GraphTy> *d_graph = nullptr;
-  uint8_t *res_masks = nullptr, *d_res_masks = nullptr;
   curandState *d_rng_states = nullptr;
   size_t grid_size = 0, block_size = 0, n_blocks = 0;
   size_t warp_step = 0;   // 1: per-thread, warp-size: per-warp
   size_t batch_size = 0;  // walks per batch
-  size_t mask_size = 0;
+
+  // frontier mask
+  mask_word_t *res_masks = nullptr, *d_res_masks = nullptr;
+  size_t mask_word_size = 0;  // n. of vertices fitting in a mask word
+  size_t mask_size = 0;       // words in a frontier-mask
 } cuda_conf;
 
 __global__ void kernel_rng_setup(curandState *d_rng_states,
@@ -62,13 +81,15 @@ void cuda_init(const cuda_GraphTy &G, unsigned long long seed,
   cuda_conf.d_graph = make_cuda_graph(G);
 
   // sizing
-  // cuda_conf.warp_step = 1;                             // per thread
+  // cuda_conf.warp_step = 1;  // per thread
   cuda_conf.warp_step = cuda_conf.cuda_prop.warpSize;  // per warp
-  cuda_conf.block_size = 256;                          // 128
+  cuda_conf.block_size = 128;                          // 128
   cuda_conf.n_blocks = 512;                            // 512
   cuda_conf.grid_size = cuda_conf.n_blocks * cuda_conf.block_size;
   cuda_conf.batch_size = cuda_conf.grid_size / cuda_conf.warp_step;
-  cuda_conf.mask_size = (G.num_nodes() + 7) / 8;
+  cuda_conf.mask_word_size = sizeof(mask_word_t) * 8;
+  cuda_conf.mask_size =
+      (G.num_nodes() + cuda_conf.mask_word_size - 1) / cuda_conf.mask_word_size;
 
   // print sizing info
   CUDA_LOG("> *** CUDA_BATCHED sizing ***\n");
@@ -78,13 +99,14 @@ void cuda_init(const cuda_GraphTy &G, unsigned long long seed,
   CUDA_LOG("grid size  = %d\n", cuda_conf.grid_size);
   CUDA_LOG("batch size = %d\n", cuda_conf.batch_size);
   CUDA_LOG("g-mem size = %d\n", cuda_conf.grid_size * cuda_conf.mask_size);
-  CUDA_LOG("shmem size = %d\n", cuda_conf.block_size * cuda_conf.mask_size);
+  CUDA_LOG("DBG mask word size = %d\n", cuda_conf.mask_word_size);
 
   // allocate memory for result-masks
-  cuda_conf.res_masks =
-      (uint8_t *)malloc(cuda_conf.batch_size * cuda_conf.mask_size);
-  e = cudaMalloc(&cuda_conf.d_res_masks,
-                 cuda_conf.batch_size * cuda_conf.mask_size);
+  cuda_conf.res_masks = (mask_word_t *)malloc(
+      cuda_conf.batch_size * cuda_conf.mask_size * sizeof(mask_word_t));
+  e = cudaMalloc(
+      &cuda_conf.d_res_masks,
+      cuda_conf.batch_size * cuda_conf.mask_size * sizeof(mask_word_t));
   cuda_check(e, __FILE__, __LINE__);
 
   // init rng
@@ -92,13 +114,8 @@ void cuda_init(const cuda_GraphTy &G, unsigned long long seed,
              cuda_conf.batch_size * sizeof(curandState));
   cuda_check(e, __FILE__, __LINE__);
 
-#if CUDA_PER_WARP
   kernel_rng_setup<<<cuda_conf.n_blocks, cuda_conf.block_size>>>(
-      cuda_conf.d_rng_states, seed, cuda_conf.cuda_prop.warpSize);
-#else
-  kernel_rng_setup<<<cuda_conf.n_blocks, cuda_conf.block_size>>>(
-      cuda_conf.d_rng_states, seed, 1);
-#endif
+      cuda_conf.d_rng_states, seed, cuda_conf.warp_step);
   cuda_check(__FILE__, __LINE__);
 }
 
@@ -119,45 +136,40 @@ template <typename HostGraphTy>
 __global__ void kernel_lt_per_thread(
     typename HostGraphTy::DestinationTy **index, size_t num_nodes,
     size_t mask_size, size_t warp_size, curandState *d_rng_states,
-    uint8_t *d_res_masks) {
+    mask_word_t *d_res_masks) {
   using destination_type = typename HostGraphTy::DestinationTy;
   using vertex_type = typename HostGraphTy::vertex_type;
 
   int tid = blockIdx.x * blockDim.x + threadIdx.x;
   if (tid % warp_size == 0) {
     int wid = tid / warp_size;
-    uint8_t mask_word = 0;
 
     // init res memory
-    uint8_t *d_res_mask = d_res_masks + wid * mask_size;
-    memset(d_res_mask, 0, mask_size);
+    auto d_res_mask = d_res_masks + wid * mask_size;
+    memset(d_res_mask, 0, mask_size * sizeof(mask_word_t));
 
     // cache rng state
     auto rng_state = d_rng_states + wid;
 
     // select source node
     vertex_type src = curand(rng_state) % num_nodes;
-    set_in_word(mask_word, src);
-    write_mask_word(d_res_mask, src, mask_word);
+    CUDA_LOG("> [kernel] BEGIN root=%d\n", src);
+    mask_mark(d_res_mask, src);
 
     float threshold;
-    destination_type *first, *last;
-    vertex_type v;
+    destination_type *first, *last, d;
     while (src != num_nodes) {
       threshold = curand_uniform(rng_state);
       first = index[src];
       last = index[src + 1];
       src = num_nodes;
       for (; first != last; ++first) {
-        threshold -= first->weight;
+        d = *first;
+        CUDA_LOG("> [kernel] visiting (v=%d w=%f)\n", d.vertex, d.weight);
+        threshold -= d.weight;
         if (threshold <= 0) {
-          v = first->vertex;
-          mask_word = read_mask_word(d_res_mask, v);
-          if (!is_set_in_word(mask_word, v)) {
-            src = v;
-            set_in_word(mask_word, src);
-            write_mask_word(d_res_mask, v, mask_word);
-          }
+          CUDA_LOG("> [kernel] try-insert %d\n", d.vertex);
+          mask_mark(d_res_mask, d.vertex);
           break;
         }
       }
@@ -173,23 +185,15 @@ cuda_res_t CudaGenerateRRRSets(const cuda_GraphTy &G, size_t theta,
 
   for (size_t bf = 0; bf < rrr_sets.size(); bf += cuda_conf.batch_size) {
     // execute a batch
-#if CUDA_PER_WARP
     kernel_lt_per_thread<cuda_GraphTy>
         <<<cuda_conf.n_blocks, cuda_conf.block_size>>>(
             cuda_conf.d_graph->d_index_, G.num_nodes(), cuda_conf.mask_size,
-            cuda_conf.cuda_prop.warpSize, cuda_conf.d_rng_states,
-            cuda_conf.d_res_masks);
-#else
-    kernel_lt_per_thread<cuda_GraphTy>
-        <<<cuda_conf.n_blocks, cuda_conf.block_size>>>(
-            cuda_conf.d_graph->d_index_, G.num_nodes(), cuda_conf.mask_size, 1,
-            cuda_conf.d_rng_states, cuda_conf.d_res_masks);
-#endif
+            cuda_conf.warp_step, cuda_conf.d_rng_states, cuda_conf.d_res_masks);
     cuda_check(__FILE__, __LINE__);
 
     // copy masks back to host
     cudaMemcpy(cuda_conf.res_masks, cuda_conf.d_res_masks,
-               cuda_conf.batch_size * cuda_conf.mask_size,
+               cuda_conf.batch_size * cuda_conf.mask_size * sizeof(mask_word_t),
                cudaMemcpyDeviceToHost);
 
     // convert masks to results
@@ -200,12 +204,11 @@ cuda_res_t CudaGenerateRRRSets(const cuda_GraphTy &G, size_t theta,
       auto res_mask = cuda_conf.res_masks + (i * cuda_conf.mask_size);
       for (size_t j = 0; j < cuda_conf.mask_size; ++j) {
         // scan a word from the res mask
-        uint8_t w = res_mask[j];
-        for (uint8_t bi = 0; bi < 8; ++bi) {
-          if (w & (uint8_t)1) {
+        auto w = res_mask[j];
+        for (size_t bi = 0; bi < mask_word_size; ++bi) {
+          if (w & (mask_word_t)1) {
             // convert mask bit to vertex id
-            auto v = vertex_type(8 * j + bi);
-            rrr_set.push_back(v);
+            rrr_set.push_back(encode_vertex(j, bi));
           }
           w >>= 1;
         }
