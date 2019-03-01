@@ -41,6 +41,7 @@ struct cuda_conf_t {
   size_t warp_step = 0;   // 1: per-thread, warp-size: per-warp
   size_t batch_size = 0;  // walks per batch
   size_t mask_size = 0;
+  size_t shmem_size = 0;
 } cuda_conf;
 
 __global__ void kernel_rng_setup(curandState *d_rng_states,
@@ -69,6 +70,23 @@ void cuda_init(const cuda_GraphTy &G, unsigned long long seed,
   cuda_conf.grid_size = cuda_conf.n_blocks * cuda_conf.block_size;
   cuda_conf.batch_size = cuda_conf.grid_size / cuda_conf.warp_step;
   cuda_conf.mask_size = (G.num_nodes() + 7) / 8;
+
+  // prepare enough shared memory to store an adjacency list per walk
+  std::vector<size_t> degrees;
+  for (typename cuda_GraphTy::vertex_type v = 0; v < G.num_nodes(); ++v)
+    degrees.push_back(G.degree(v));
+  auto max_degree = *std::max_element(degrees.begin(), degrees.end());
+  cuda_conf.shmem_size = max_degree * cuda_conf.block_size *
+                         sizeof(typename cuda_GraphTy::DestinationTy);
+  if (cuda_conf.shmem_size > cuda_conf.cuda_prop.sharedMemPerBlock) {
+    CUDA_LOG("max_degree = %d\n", max_degree);
+    CUDA_LOG("sizeof(destination_type)=%d\n",
+             sizeof(typename cuda_GraphTy::DestinationTy));
+    fprintf(stderr,
+            "> error: requested shared memory exceeds sharedMemPerBlock:\n");
+    fprintf(stderr, ">   requested=%d available=%d\n", cuda_conf.shmem_size,
+            cuda_conf.cuda_prop.sharedMemPerBlock);
+  }
 
   // print sizing info
   CUDA_LOG("> *** CUDA_BATCHED sizing ***\n");
@@ -120,6 +138,10 @@ __global__ void kernel_lt_per_thread(
 
   int tid = blockIdx.x * blockDim.x + threadIdx.x;
   if (tid % warp_size == 0) {
+    // shared memory
+    extern __shared__ typename HostGraphTy::DestinationTy shmem[];
+    destination_type *el = shmem + threadIdx.x;
+
     int wid = tid / warp_size;
     uint8_t mask_word = 0;
 
@@ -142,6 +164,11 @@ __global__ void kernel_lt_per_thread(
       threshold = curand_uniform(rng_state);
       first = index[src];
       last = index[src + 1];
+      // bring edgelist into shared memory
+      size_t el_len = last - first;
+      memcpy(el, first, el_len * sizeof(destination_type));
+      first = el;
+      last = el + el_len;
       src = num_nodes;
       for (; first != last; ++first) {
         threshold -= first->weight;
@@ -169,7 +196,7 @@ cuda_res_t CudaGenerateRRRSets(const cuda_GraphTy &G, size_t theta,
   for (size_t bf = 0; bf < rrr_sets.size(); bf += cuda_conf.batch_size) {
     // execute a batch
     kernel_lt_per_thread<cuda_GraphTy>
-        <<<cuda_conf.n_blocks, cuda_conf.block_size>>>(
+        <<<cuda_conf.n_blocks, cuda_conf.block_size, cuda_conf.shmem_size>>>(
             cuda_conf.d_graph->d_index_, G.num_nodes(), cuda_conf.mask_size,
             cuda_conf.warp_step, cuda_conf.d_rng_states, cuda_conf.d_res_masks);
     cuda_check(__FILE__, __LINE__);
