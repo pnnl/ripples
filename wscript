@@ -28,7 +28,7 @@ def options(opt):
 
 def configure(conf):
     conf.load('compiler_cxx')
-    conf.load('doxygen')
+    conf.load('sphinx', tooldir='waftools')
 
     conf.env.CXXFLAGS += ['-std=c++17', '-O3', '-march=native', '-pipe']
 
@@ -45,40 +45,17 @@ def configure(conf):
 
 
 def build(bld):
-    directories = ['3rd-party', 'include', 'tools', 'tests']
+    directories = ['3rd-party', 'include', 'tools']
 
     bld.recurse(directories)
 
 
-def build_doxy(bld):
-
-    bld(features='subst',
-        source='docs/doxygen.conf.in',
-        target='docs/doxygen.conf',
-        VERSION=VERSION,
-        INPUT=bld.path.get_src()
-    )
-
-    bld(features='doxygen',
-        doxyfile='docs/doxygen.conf',
-        target='docs/doxygen.conf.doxy')
-
-    bld(features='subst',
-        source='docs/conf.py.in',
-        target='docs/html-out/conf.py',
-        VERSION=VERSION,
-        SRC=bld.path.get_src()
-    )
-
-    bld(rule='sphinx-build -c ${TGT} ${SRC} ${TGT}',
-        source=bld.path.get_src().find_node('docs'),
-        target='docs/html-out')
-    bld.add_manual_dependency(
-        bld.path.find_node('docs'),
-        bld.path.find_node('docs/conf.py.in'))
+def build_docs(bld):
+    bld(features='sphinx',
+        sources='docs')
 
 
 from waflib import Build
 class doxygen(Build.BuildContext):
-    fun = 'build_doxy'
+    fun = 'build_docs'
     cmd = 'docs'
