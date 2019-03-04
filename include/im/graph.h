@@ -157,6 +157,7 @@ class Graph {
     std::swap(edges, O.edges);
     idMap = std::move(O.idMap);
     reverseMap = std::move(O.reverseMap);
+    return *this;
   }
 
   //! Reload from binary constructor.
