@@ -7,6 +7,8 @@ APPNAME = 'ripples'
 
 def options(opt):
     opt.load('compiler_cxx')
+    opt.load('doxygen')
+
     cfg_options = opt.get_option_group('Configuration options')
 
     opt.load('trng4', tooldir='waftools')
@@ -26,6 +28,7 @@ def options(opt):
 
 def configure(conf):
     conf.load('compiler_cxx')
+    conf.load('sphinx', tooldir='waftools')
 
     conf.env.CXXFLAGS += ['-std=c++17', '-O3', '-march=native', '-pipe']
 
@@ -45,3 +48,14 @@ def build(bld):
     directories = ['3rd-party', 'include', 'tools']
 
     bld.recurse(directories)
+
+
+def build_docs(bld):
+    bld(features='sphinx',
+        sources='docs')
+
+
+from waflib import Build
+class doxygen(Build.BuildContext):
+    fun = 'build_docs'
+    cmd = 'docs'
