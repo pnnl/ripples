@@ -217,6 +217,48 @@ __global__ void kernel_lt_per_thread(
   }  // end if active warp
 }
 
+void batch_kernel(const cuda_GraphTy &G) {
+  kernel_lt_per_thread<cuda_GraphTy>
+      <<<cuda_conf.n_blocks, cuda_conf.block_size>>>(
+          cuda_conf.d_graph->d_index_, G.num_nodes(), cuda_conf.mask_size,
+          cuda_conf.warp_step, cuda_conf.d_rng_states, cuda_conf.d_res_masks,
+          cuda_conf.d_res_sizes
+#if CUDA_PROFILE
+          ,
+          d_profile
+#endif
+      );
+  cuda_check(__FILE__, __LINE__);
+}
+
+void batch_kernel_profile() {
+#if CUDA_PROFILE
+  cudaMemcpy(profile, d_profile, cuda_conf.batch_size * sizeof(cuda_profile),
+             cudaMemcpyDeviceToHost);
+  std::vector<clock_t> rng_prof, el_prof;
+  for (size_t i = 0; i < cuda_conf.batch_size; ++i) {
+    if (profile[i].rng) rng_prof.push_back(profile[i].rng);
+    if (profile[i].el) el_prof.push_back(profile[i].el);
+  }
+  std::sort(rng_prof.begin(), rng_prof.end());
+  std::sort(el_prof.begin(), el_prof.end());
+  printf("*** rng:\tmin =%10d\tmed =%10d\tmax =%10d\t(#zeros=%d)\n",
+         rng_prof[0], rng_prof[rng_prof.size() / 2], rng_prof.back(),
+         cuda_conf.batch_size - rng_prof.size());
+  printf("*** el :\tmin =%10d\tmed =%10d\tmax =%10d\t(#zeros=%d)\n", el_prof[0],
+         el_prof[el_prof.size() / 2], el_prof.back(),
+         cuda_conf.batch_size - el_prof.size());
+#endif
+}
+
+void batch_d2h() {
+  cudaMemcpy(cuda_conf.res_masks, cuda_conf.d_res_masks,
+             cuda_conf.batch_size * cuda_conf.mask_size,
+             cudaMemcpyDeviceToHost);
+  cudaMemcpy(cuda_conf.res_sizes, cuda_conf.d_res_sizes,
+             cuda_conf.batch_size * sizeof(size_t), cudaMemcpyDeviceToHost);
+}
+
 cuda_res_t CudaGenerateRRRSets(const cuda_GraphTy &G, size_t theta,
                                im::linear_threshold_tag &&model_tag) {
   using vertex_type = typename cuda_GraphTy::vertex_type;
@@ -233,49 +275,20 @@ cuda_res_t CudaGenerateRRRSets(const cuda_GraphTy &G, size_t theta,
            bf / cuda_conf.batch_size);
     auto start = std::chrono::high_resolution_clock::now();
 #endif
-    kernel_lt_per_thread<cuda_GraphTy>
-        <<<cuda_conf.n_blocks, cuda_conf.block_size>>>(
-            cuda_conf.d_graph->d_index_, G.num_nodes(), cuda_conf.mask_size,
-            cuda_conf.warp_step, cuda_conf.d_rng_states, cuda_conf.d_res_masks,
-            cuda_conf.d_res_sizes
+    batch_kernel(G);
 #if CUDA_PROFILE
-            ,
-            d_profile
-#endif
-        );
-#if CUDA_PROFILE
+    // TODO wait
     kernel_time = std::chrono::duration_cast<std::chrono::nanoseconds>(
         std::chrono::high_resolution_clock::now() - start);
 #endif
-    cuda_check(__FILE__, __LINE__);
 
-#if CUDA_PROFILE
-    cudaMemcpy(profile, d_profile, cuda_conf.batch_size * sizeof(cuda_profile),
-               cudaMemcpyDeviceToHost);
-    std::vector<clock_t> rng_prof, el_prof;
-    for (size_t i = 0; i < cuda_conf.batch_size; ++i) {
-      if (profile[i].rng) rng_prof.push_back(profile[i].rng);
-      if (profile[i].el) el_prof.push_back(profile[i].el);
-    }
-    std::sort(rng_prof.begin(), rng_prof.end());
-    std::sort(el_prof.begin(), el_prof.end());
-    printf("*** rng:\tmin =%10d\tmed =%10d\tmax =%10d\t(#zeros=%d)\n",
-           rng_prof[0], rng_prof[rng_prof.size() / 2], rng_prof.back(),
-           cuda_conf.batch_size - rng_prof.size());
-    printf("*** el :\tmin =%10d\tmed =%10d\tmax =%10d\t(#zeros=%d)\n",
-           el_prof[0], el_prof[el_prof.size() / 2], el_prof.back(),
-           cuda_conf.batch_size - el_prof.size());
-#endif
+    batch_kernel_profile();
 
     // copy results back to host
 #if CUDA_PROFILE
     start = std::chrono::high_resolution_clock::now();
 #endif
-    cudaMemcpy(cuda_conf.res_masks, cuda_conf.d_res_masks,
-               cuda_conf.batch_size * cuda_conf.mask_size,
-               cudaMemcpyDeviceToHost);
-    cudaMemcpy(cuda_conf.res_sizes, cuda_conf.d_res_sizes,
-               cuda_conf.batch_size * sizeof(size_t), cudaMemcpyDeviceToHost);
+    batch_d2h();
 #if CUDA_PROFILE
     copyback_time = std::chrono::duration_cast<std::chrono::nanoseconds>(
         std::chrono::high_resolution_clock::now() - start);
@@ -286,11 +299,11 @@ cuda_res_t CudaGenerateRRRSets(const cuda_GraphTy &G, size_t theta,
     start = std::chrono::high_resolution_clock::now();
 #endif
     using scan_word_t = unsigned long long;
+    auto scan_mask_words = cuda_conf.mask_size / sizeof(scan_word_t);
     for (size_t i = 0; i < cuda_conf.batch_size && (bf + i) < rrr_sets.size();
          ++i) {
       auto &rrr_set = rrr_sets[bf + i];
       rrr_set.reserve(cuda_conf.res_sizes[i]);
-      auto scan_mask_words = cuda_conf.mask_size / sizeof(scan_word_t);
       auto res_mask =
           (scan_word_t *)cuda_conf.res_masks + (i * scan_mask_words);
       for (size_t j = 0; j < scan_mask_words; ++j) {
@@ -307,17 +320,23 @@ cuda_res_t CudaGenerateRRRSets(const cuda_GraphTy &G, size_t theta,
           ++offset;
         }
       }
-      check_lt(rrr_set, G, bf + i);
     }
 #if CUDA_PROFILE
     postproc_time = std::chrono::duration_cast<std::chrono::nanoseconds>(
         std::chrono::high_resolution_clock::now() - start);
+#endif
+
+    // print profiling
+#if CUDA_PROFILE
     printf("*** [host] breakdown #%d ***\n", bf / cuda_conf.batch_size);
     std::cout << "*** kernel          : " << kernel_time.count() << " ns\n";
     std::cout << "*** copy-back       : " << copyback_time.count() << " ns\n";
     std::cout << "*** post-processing : " << postproc_time.count() << " ns\n";
 #endif
   }
+
+  // TODO check
+  // check_lt(rrr_set, G, bf + i);
 
   return rrr_sets;
 }  // namespace im
