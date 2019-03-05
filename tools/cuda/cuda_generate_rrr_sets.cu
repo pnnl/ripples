@@ -39,6 +39,7 @@ struct cuda_conf_t {
   cudaDeviceProp cuda_prop;
   cuda_graph<cuda_GraphTy> *d_graph = nullptr;
   uint8_t *res_masks = nullptr, *d_res_masks = nullptr;
+  size_t *res_sizes = nullptr, *d_res_sizes = nullptr;
   curandState *d_rng_states = nullptr;
   size_t grid_size = 0, block_size = 0, n_blocks = 0;
   size_t warp_step = 0;   // 1: per-thread, warp-size: per-warp
@@ -89,11 +90,14 @@ void cuda_init(const cuda_GraphTy &G, unsigned long long seed,
   CUDA_LOG("g-mem size = %d\n", cuda_conf.grid_size * cuda_conf.mask_size);
   CUDA_LOG("shmem size = %d\n", cuda_conf.block_size * cuda_conf.mask_size);
 
-  // allocate memory for result-masks
+  // allocate memory for result masks and sizes
   cuda_conf.res_masks =
       (uint8_t *)malloc(cuda_conf.batch_size * cuda_conf.mask_size);
   e = cudaMalloc(&cuda_conf.d_res_masks,
                  cuda_conf.batch_size * cuda_conf.mask_size);
+  cuda_check(e, __FILE__, __LINE__);
+  cuda_conf.res_sizes = (size_t *)malloc(cuda_conf.batch_size * sizeof(size_t));
+  e = cudaMalloc(&cuda_conf.d_res_sizes, cuda_conf.batch_size * sizeof(size_t));
   cuda_check(e, __FILE__, __LINE__);
 
   // init rng
@@ -118,6 +122,8 @@ void cuda_fini(im::linear_threshold_tag &&) {
   // cleanup
   if (cuda_conf.res_masks) free(cuda_conf.res_masks);
   if (cuda_conf.d_res_masks) cudaFree(cuda_conf.d_res_masks);
+  if (cuda_conf.res_sizes) free(cuda_conf.res_sizes);
+  if (cuda_conf.d_res_sizes) cudaFree(cuda_conf.d_res_sizes);
   if (cuda_conf.d_rng_states) cudaFree(cuda_conf.d_rng_states);
   destroy_cuda_graph(cuda_conf.d_graph);
 #if CUDA_PROFILE
@@ -132,7 +138,7 @@ template <typename HostGraphTy>
 __global__ void kernel_lt_per_thread(
     typename HostGraphTy::DestinationTy **index, size_t num_nodes,
     size_t mask_size, size_t warp_size, curandState *d_rng_states,
-    uint8_t *d_res_masks
+    uint8_t *d_res_masks, size_t *d_res_sizes
 #if CUDA_PROFILE
     ,
     cuda_profile *d_profile
@@ -145,6 +151,7 @@ __global__ void kernel_lt_per_thread(
   if (tid % warp_size == 0) {
     int wid = tid / warp_size;
     uint8_t mask_word = 0;
+    size_t res_size = 0;
 
     // init res memory
     uint8_t *d_res_mask = d_res_masks + wid * mask_size;
@@ -157,6 +164,7 @@ __global__ void kernel_lt_per_thread(
     vertex_type src = curand(rng_state) % num_nodes;
     set_in_word(mask_word, src);
     write_mask_word(d_res_mask, src, mask_word);
+    ++res_size;
 
     float threshold;
     destination_type *first, *last;
@@ -190,6 +198,7 @@ __global__ void kernel_lt_per_thread(
             src = v;
             set_in_word(mask_word, src);
             write_mask_word(d_res_mask, v, mask_word);
+            ++res_size;
           }
           break;
         }
@@ -199,11 +208,13 @@ __global__ void kernel_lt_per_thread(
 #endif
     }
 
+    d_res_sizes[wid] = res_size;
+
 #if CUDA_PROFILE
     d_profile[wid].rng = rng_time;
     d_profile[wid].el = el_time;
 #endif
-  }
+  }  // end if active warp
 }
 
 cuda_res_t CudaGenerateRRRSets(const cuda_GraphTy &G, size_t theta,
@@ -225,7 +236,8 @@ cuda_res_t CudaGenerateRRRSets(const cuda_GraphTy &G, size_t theta,
     kernel_lt_per_thread<cuda_GraphTy>
         <<<cuda_conf.n_blocks, cuda_conf.block_size>>>(
             cuda_conf.d_graph->d_index_, G.num_nodes(), cuda_conf.mask_size,
-            cuda_conf.warp_step, cuda_conf.d_rng_states, cuda_conf.d_res_masks
+            cuda_conf.warp_step, cuda_conf.d_rng_states, cuda_conf.d_res_masks,
+            cuda_conf.d_res_sizes
 #if CUDA_PROFILE
             ,
             d_profile
@@ -255,13 +267,15 @@ cuda_res_t CudaGenerateRRRSets(const cuda_GraphTy &G, size_t theta,
            cuda_conf.batch_size - el_prof.size());
 #endif
 
-    // copy masks back to host
+    // copy results back to host
 #if CUDA_PROFILE
     start = std::chrono::high_resolution_clock::now();
 #endif
     cudaMemcpy(cuda_conf.res_masks, cuda_conf.d_res_masks,
                cuda_conf.batch_size * cuda_conf.mask_size,
                cudaMemcpyDeviceToHost);
+    cudaMemcpy(cuda_conf.res_sizes, cuda_conf.d_res_sizes,
+               cuda_conf.batch_size * sizeof(size_t), cudaMemcpyDeviceToHost);
 #if CUDA_PROFILE
     copyback_time = std::chrono::duration_cast<std::chrono::nanoseconds>(
         std::chrono::high_resolution_clock::now() - start);
@@ -275,9 +289,11 @@ cuda_res_t CudaGenerateRRRSets(const cuda_GraphTy &G, size_t theta,
     for (size_t i = 0; i < cuda_conf.batch_size && (bf + i) < rrr_sets.size();
          ++i) {
       auto &rrr_set = rrr_sets[bf + i];
-      auto iw_mask_size = cuda_conf.mask_size / sizeof(scan_word_t);
-      auto res_mask = (scan_word_t *)cuda_conf.res_masks + (i * iw_mask_size);
-      for (size_t j = 0; j < iw_mask_size; ++j) {
+      rrr_set.reserve(cuda_conf.res_sizes[i]);
+      auto scan_mask_words = cuda_conf.mask_size / sizeof(scan_word_t);
+      auto res_mask =
+          (scan_word_t *)cuda_conf.res_masks + (i * scan_mask_words);
+      for (size_t j = 0; j < scan_mask_words; ++j) {
         vertex_type offset = sizeof(scan_word_t) * j;
         // scan a word from the res mask
         auto w = res_mask[j];
