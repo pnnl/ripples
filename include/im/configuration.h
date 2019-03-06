@@ -25,7 +25,7 @@ struct GraphInputConfiguration {
 
   //! \brief Add command line options for the input grah.
   //!
-  //! \parm app The command-line parser object.
+  //! \param app The command-line parser object.
   void addCmdOptions(CLI::App & app) {
     app.add_option("-i,--input-graph", IFileName,
                    "The input file with the edge-list.")
@@ -52,7 +52,7 @@ struct OutputConfiguration {
 
   //! \brief Add command line options for the output of the tool.
   //!
-  //! \parm app The command-line parser object.
+  //! \param app The command-line parser object.
   void addCmdOptions(CLI::App & app) {
     app.add_option("-o,--output", OutputFile, "The file name of the log.")
         ->group("Output Options");
@@ -68,7 +68,7 @@ struct OutputConfiguration {
 //! run.
 //! \tparam OutputConfiguration Configuration descriptor for the output of the
 //! tool.
-//! \tparm InputConfiguration Configuration descriptor for the input of the
+//! \tparam InputConfiguration Configuration descriptor for the input of the
 //! tool.
 template <
   typename AlgorithmConfiguration,

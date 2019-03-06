@@ -14,7 +14,7 @@
 
 namespace im {
 
-//! \brif Forward Direction Graph loading policy.
+//! \brief Forward Direction Graph loading policy.
 //!
 //! \tparam VertexTy The type of the vertex in the graph.
 template <typename VertexTy>
@@ -39,7 +39,7 @@ struct ForwardDirection {
 };
 
 
-//! \brif Backward Direction Graph loading policy.
+//! \brief Backward Direction Graph loading policy.
 //!
 //! \tparam VertexTy The type of the vertex in the graph.
 template <typename VertexTy>
@@ -66,8 +66,8 @@ struct BackwardDirection {
 
 //! \brief A weighted edge.
 //!
-//! \tparm VertexTy The integer type representing a vertex of the graph.
-//! \tparm WeightTy The type representing the weight on the edge.
+//! \tparam VertexTy The integer type representing a vertex of the graph.
+//! \tparam WeightTy The type representing the weight on the edge.
 template <typename VertexTy, typename WeightTy>
 struct Edge {
   //! The integer type representing vertices in the graph.
@@ -89,8 +89,8 @@ struct Edge {
 //! in order to build the CSR representation.  However, the data structure
 //! stores a map that allows to project back the IDs into the original space.
 //!
-//! \tparm VertexTy The integer type representing a vertex of the graph.
-//! \tparm WeightTy The type representing the weight on the edge.
+//! \tparam VertexTy The integer type representing a vertex of the graph.
+//! \tparam WeightTy The type representing the weight on the edge.
 template <typename VertexTy, typename WeightTy,
           typename DirectionPolicy = ForwardDirection<VertexTy> >
 class Graph {
@@ -106,8 +106,8 @@ class Graph {
 
   //! \brief The edges stored in the CSR.
   struct DestinationTy {
-    VertexTy vertex;
-    WeightTy weight;
+    VertexTy vertex; //!< The destination of an edges.
+    WeightTy weight; //!< The edge weight.
   };
 
   //! \brief The neighborhood of a vertex.
@@ -157,6 +157,7 @@ class Graph {
     std::swap(edges, O.edges);
     idMap = std::move(O.idMap);
     reverseMap = std::move(O.reverseMap);
+    return *this;
   }
 
   //! Reload from binary constructor.

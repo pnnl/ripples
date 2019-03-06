@@ -27,10 +27,9 @@ namespace im {
 //! \param out_begin The begin of the sequence storing the counters for each
 //! vertex.
 //! \param out_end The end of the sequence storing the counters for each vertex.
-//! \param e The execution policy tag.
 template <typename InItr, typename OutItr>
 void CountOccurrencies(InItr in_begin, InItr in_end, OutItr out_begin,
-                       OutItr out_end, sequential_tag &&e) {
+                       OutItr out_end, sequential_tag &&) {
   using rrr_set_type = typename std::iterator_traits<InItr>::value_type;
   using vertex_type = typename rrr_set_type::value_type;
   for (; in_begin != in_end; ++in_begin) {
@@ -49,7 +48,6 @@ void CountOccurrencies(InItr in_begin, InItr in_end, OutItr out_begin,
 //! \param out_begin The begin of the sequence storing the counters for each
 //! vertex.
 //! \param out_end The end of the sequence storing the counters for each vertex.
-//! \param e The execution policy tag.
 template <typename InItr, typename OutItr>
 void CountOccurrencies(InItr in_begin, InItr in_end, OutItr out_begin,
                        OutItr out_end, omp_parallel_tag &&) {
@@ -98,7 +96,6 @@ void CountOccurrencies(InItr in_begin, InItr in_end, OutItr out_begin,
 //! \param in_end The end of the sequence of vertex counters.
 //! \param out_begin The begin of the sequence used as storage in the Heap.
 //! \param out_end The end of the sequence used as storage in the Heap.
-//! \param e The execution policy tag.
 template <typename InItr, typename OutItr>
 void InitHeapStorage(InItr in_begin, InItr in_end, OutItr out_begin,
                      OutItr out_end, sequential_tag &&) {
@@ -119,7 +116,6 @@ void InitHeapStorage(InItr in_begin, InItr in_end, OutItr out_begin,
 //! \param in_end The end of the sequence of vertex counters.
 //! \param out_begin The begin of the sequence used as storage in the Heap.
 //! \param out_end The end of the sequence used as storage in the Heap.
-//! \param e The execution policy tag.
 template <typename InItr, typename OutItr>
 void InitHeapStorage(InItr in_begin, InItr in_end, OutItr out_begin,
                      OutItr out_end, omp_parallel_tag &&) {
@@ -236,6 +232,7 @@ void UpdateCounters(const VertexTy v, const RRRsetsTy &RRRsets,
 //! \param G The input graph.
 //! \param k The size of the seed set.
 //! \param RRRsets A vector of Random Reverse Reachability sets.
+//! \param ex_tag The execution policy tag.
 //!
 //! \return a pair where the size_t is the number of RRRset covered and
 //! the set of vertices selected as seeds.
