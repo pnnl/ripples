@@ -7,7 +7,7 @@ APPNAME = 'ripples'
 
 def options(opt):
     opt.load('compiler_cxx')
-    opt.load('doxygen')
+    opt.load('sphinx', tooldir='waftools')
 
     cfg_options = opt.get_option_group('Configuration options')
 
@@ -59,11 +59,12 @@ def build(bld):
 
 
 def build_docs(bld):
-    bld(features='sphinx',
-        sources='docs')
-
+    if bld.env.ENABLE_DOCS:
+        bld(features='sphinx', sources='docs')
+    else:
+        bld.fatal('Please configure with --enable-docs')
 
 from waflib import Build
-class doxygen(Build.BuildContext):
+class docs(Build.BuildContext):
     fun = 'build_docs'
     cmd = 'docs'

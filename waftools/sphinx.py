@@ -30,12 +30,22 @@ def process_sphinx(self):
 
 def configure(conf):
     '''Check for doxygen and sphinx'''
-    conf.load('doxygen')
-    conf.load('python')
+    if conf.options.enable_docs:
+        conf.load('doxygen')
+        conf.load('python')
 
-    conf.find_program('sphinx-build', var='SPHINX_BUILD', mandatory=False)
+        conf.find_program('sphinx-build', var='SPHINX_BUILD')
 
-    # check for breathe exhale and sphinx_rtd_theme
-    conf.check_python_module('breathe')
-    conf.check_python_module('exhale')
-    conf.check_python_module('sphinx_rtd_theme')
+        # check for breathe exhale and sphinx_rtd_theme
+        conf.check_python_module('breathe')
+        conf.check_python_module('exhale')
+        conf.check_python_module('sphinx_rtd_theme')
+        conf.env.ENABLE_DOCS = True
+
+
+def options(opt):
+    opt.load('doxygen')
+    opt.load('python')
+
+    opt.add_option('--enable-docs', default=False, action='store_true',
+                   help='Enable commands to build documentation.')
