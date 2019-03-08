@@ -44,11 +44,13 @@ auto GetExperimentRecord(const ToolConfiguration<IMMConfiguration> &CFG,
       {"Rank", world_rank},
       {"WorldSize", world_size},
       {"NumThreads", R.NumThreads},
-      {"Total", R.Total.count()},
-      {"ThetaEstimation", R.ThetaEstimation.count()},
+      {"Total", R.Total},
+      {"ThetaEstimation", R.ThetaEstimationTotal},
+      {"ThetaEstimationGenerateRRR", R.ThetaEstimationGenerateRRR},
+      {"ThetaEstimationMostInfluential", R.ThetaEstimationMostInfluential},
       {"Theta", R.Theta},
-      {"GenerateRRRSets", R.GenerateRRRSets.count()},
-      {"FindMostInfluentialSet", R.FindMostInfluentialSet.count()},
+      {"GenerateRRRSets", R.GenerateRRRSets},
+      {"FindMostInfluentialSet", R.FindMostInfluentialSet},
       {"Seeds", seeds}};
   return experiment;
 }
