@@ -49,9 +49,9 @@ bool check_lt_from(const rrr_t &r,
 #if CUDA_CHECK
 template <typename rrr_t, typename graph_t>
 void check_lt(const rrr_t &r, const graph_t &g, size_t id) {
-  printf("> checking set %d: ", id);
-  for (auto &v : r) printf("%d ", v);
-  printf("\n");
+  CUDA_LOG("> checking set %d: ", id);
+  for (auto &v : r) CUDA_LOG("%d ", v);
+  CUDA_LOG("\n");
 
   bool res = false;
   for (auto it = r.begin(); it != r.end(); ++it) {

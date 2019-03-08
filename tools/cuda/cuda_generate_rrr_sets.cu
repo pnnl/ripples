@@ -8,26 +8,41 @@
 #include <chrono>
 #include <cstring>
 #include <iostream>
+#include <unordered_map>
 
 #include "im/cuda/cuda_generate_rrr_sets.h"
 #include "im/cuda/cuda_graph.cuh"
 #include "im/cuda/cuda_utils.h"
 
-// macros for 32-bit mask encoding
-#define is_set_in_word(w, v) ((w) & ((uint32_t)1 << ((v) & (vertex_type)31)))
-
-#define set_in_word(w, v) \
-  { (w) |= ((uint32_t)1 << ((v) & (vertex_type)31)); }
-
-#define read_mask_word(m, v) (m)[(v) >> 5]
-
-#define write_mask_word(m, v, w) \
-  { (m)[(v) >> 5] = (w); }
-
 namespace im {
 
 using mask_word_t = unsigned long long;
+
+// macros for n-bit mask encoding
+#if 1
+// 32-bit
 using d_mask_word_t = uint32_t;
+#define word_t uint32_t
+#define n_bits_minus1 31
+#define log2_bits 5
+#else
+// 8-bit
+using d_mask_word_t = uint8_t;
+#define word_t uint8_t
+#define n_bits_minus1 7
+#define log2_bits 3
+#endif
+
+#define is_set_in_word(w, v) \
+  ((w) & ((word_t)1 << ((v) & (vertex_type)(n_bits_minus1))))
+
+#define set_in_word(w, v) \
+  { (w) |= ((word_t)1 << ((v) & (vertex_type)(n_bits_minus1))); }
+
+#define read_mask_word(m, v) (m)[(v) >> (log2_bits)]
+
+#define write_mask_word(m, v, w) \
+  { (m)[(v) >> (log2_bits)] = (w); }
 
 // tested configurations:
 // + 1 walk per thread:
@@ -65,6 +80,22 @@ __global__ void kernel_rng_setup(curandState *d_rng_states,
 struct cuda_profile {
   clock_t rng, el;
 } * profile, *d_profile;
+enum breakdown_tag { KERNEL, COPY, POSTPROC };
+std::unordered_map<breakdown_tag, std::vector<std::chrono::nanoseconds>>
+    profile_breakdown;
+
+void print_profile(breakdown_tag tag, const std::string &label) {
+  std::sort(profile_breakdown[tag].begin(), profile_breakdown[tag].end());
+  auto &sample(profile_breakdown[tag]);
+  std::chrono::microseconds tot{0};
+  for (auto &x : sample)
+    tot += std::chrono::duration_cast<std::chrono::microseconds>(x);
+  std::cout << "*** tag: " << label << "\n*** "
+            << "cnt=" << sample.size() << "\tmin=" << sample[0].count()
+            << "\tmed=" << sample[sample.size() / 2].count()
+            << "\tmax=" << sample.back().count() << "\ttot=" << tot.count()
+            << "us\n";
+}
 #endif
 
 void cuda_init(const cuda_GraphTy &G, unsigned long long seed,
@@ -87,7 +118,7 @@ void cuda_init(const cuda_GraphTy &G, unsigned long long seed,
   cuda_conf.warp_step = 1;  // per thread
   // cuda_conf.warp_step = cuda_conf.cuda_prop.warpSize;  // per warp
   cuda_conf.block_size = cuda_conf.warp_step * (1 << 0);
-  cuda_conf.n_blocks = 1 << 10;
+  cuda_conf.n_blocks = 1 << 13;
   cuda_conf.grid_size = cuda_conf.n_blocks * cuda_conf.block_size;
   cuda_conf.batch_size = cuda_conf.grid_size / cuda_conf.warp_step;
   auto bits_per_word = 8 * sizeof(mask_word_t);
@@ -132,6 +163,25 @@ void cuda_init(const cuda_GraphTy &G, unsigned long long seed,
                im::independent_cascade_tag &&) {}
 
 void cuda_fini(im::linear_threshold_tag &&) {
+// print profiling
+#if CUDA_PROFILE
+  printf("*** profiling summary (time unit: ns) ***\n");
+
+  // print sizing info
+  printf("> *** CUDA_BATCHED sizing ***\n");
+  printf("block-size = %d\n", cuda_conf.block_size);
+  printf("n. blocks  = %d\n", cuda_conf.n_blocks);
+  printf("warp size  = %d\n", cuda_conf.cuda_prop.warpSize);
+  printf("grid size  = %d\n", cuda_conf.grid_size);
+  printf("batch size = %d\n", cuda_conf.batch_size);
+  printf("g-mem size = %d\n",
+         cuda_conf.grid_size * cuda_conf.mask_words * sizeof(mask_word_t));
+
+  print_profile(breakdown_tag::KERNEL, "kernel");
+  print_profile(breakdown_tag::COPY, "device-to-host copy");
+  print_profile(breakdown_tag::POSTPROC, "post-processing");
+#endif
+
   // cleanup
   if (cuda_conf.res_masks) free(cuda_conf.res_masks);
   if (cuda_conf.d_res_masks) cudaFree(cuda_conf.d_res_masks);
@@ -234,6 +284,10 @@ __global__ void kernel_lt_per_thread(
 }
 
 void batch_kernel(const cuda_GraphTy &G) {
+#if CUDA_PROFILE
+  auto start = std::chrono::high_resolution_clock::now();
+#endif
+
   kernel_lt_per_thread<cuda_GraphTy>
       <<<cuda_conf.n_blocks, cuda_conf.block_size>>>(
           cuda_conf.d_graph->d_index_, G.num_nodes(),
@@ -246,10 +300,18 @@ void batch_kernel(const cuda_GraphTy &G) {
 #endif
       );
   cuda_check(__FILE__, __LINE__);
+
+#if CUDA_PROFILE
+  cudaDeviceSynchronize();
+  auto elapsed = std::chrono::duration_cast<std::chrono::nanoseconds>(
+      std::chrono::high_resolution_clock::now() - start);
+  profile_breakdown[breakdown_tag::KERNEL].push_back(elapsed);
+  // batch_kernel_profile();
+#endif
 }
 
-void batch_kernel_profile() {
 #if CUDA_PROFILE
+void batch_kernel_profile() {
   cudaMemcpy(profile, d_profile, cuda_conf.batch_size * sizeof(cuda_profile),
              cudaMemcpyDeviceToHost);
   std::vector<clock_t> rng_prof, el_prof;
@@ -265,15 +327,23 @@ void batch_kernel_profile() {
   printf("*** el :\tmin =%10d\tmed =%10d\tmax =%10d\t(#zeros=%d)\n", el_prof[0],
          el_prof[el_prof.size() / 2], el_prof.back(),
          cuda_conf.batch_size - el_prof.size());
-#endif
 }
+#endif
 
 void batch_d2h() {
+#if CUDA_PROFILE
+  auto start = std::chrono::high_resolution_clock::now();
+#endif
   cudaMemcpy(cuda_conf.res_masks, cuda_conf.d_res_masks,
              cuda_conf.batch_size * cuda_conf.mask_words * sizeof(mask_word_t),
              cudaMemcpyDeviceToHost);
   cudaMemcpy(cuda_conf.res_sizes, cuda_conf.d_res_sizes,
              cuda_conf.batch_size * sizeof(size_t), cudaMemcpyDeviceToHost);
+#if CUDA_PROFILE
+  auto elapsed = std::chrono::duration_cast<std::chrono::nanoseconds>(
+      std::chrono::high_resolution_clock::now() - start);
+  profile_breakdown[breakdown_tag::COPY].push_back(elapsed);
+#endif
 }
 
 cuda_res_t CudaGenerateRRRSets(const cuda_GraphTy &G, size_t theta,
@@ -281,41 +351,18 @@ cuda_res_t CudaGenerateRRRSets(const cuda_GraphTy &G, size_t theta,
   CUDA_LOG("> *** CudaGenerateRRRSets theta=%d ***\n", theta);
 
   using vertex_type = typename cuda_GraphTy::vertex_type;
-#if CUDA_PROFILE
-  std::chrono::nanoseconds kernel_time, copyback_time, postproc_time;
-#endif
-
   cuda_res_t rrr_sets(theta);
 
   for (size_t bf = 0; bf < rrr_sets.size(); bf += cuda_conf.batch_size) {
     // execute a batch
-#if CUDA_PROFILE
-    printf("*** [kernel_lt_per_thread] profile #%d ***\n",
-           bf / cuda_conf.batch_size);
-    auto start = std::chrono::high_resolution_clock::now();
-#endif
     batch_kernel(G);
-#if CUDA_PROFILE
-    // TODO wait
-    kernel_time = std::chrono::duration_cast<std::chrono::nanoseconds>(
-        std::chrono::high_resolution_clock::now() - start);
-#endif
-
-    batch_kernel_profile();
 
     // copy results back to host
-#if CUDA_PROFILE
-    start = std::chrono::high_resolution_clock::now();
-#endif
     batch_d2h();
-#if CUDA_PROFILE
-    copyback_time = std::chrono::duration_cast<std::chrono::nanoseconds>(
-        std::chrono::high_resolution_clock::now() - start);
-#endif
 
     // convert masks to results
 #if CUDA_PROFILE
-    start = std::chrono::high_resolution_clock::now();
+    auto start = std::chrono::high_resolution_clock::now();
 #endif
     for (size_t i = 0; i < cuda_conf.batch_size && (bf + i) < rrr_sets.size();
          ++i) {
@@ -341,8 +388,9 @@ cuda_res_t CudaGenerateRRRSets(const cuda_GraphTy &G, size_t theta,
 #endif
     }
 #if CUDA_PROFILE
-    postproc_time = std::chrono::duration_cast<std::chrono::nanoseconds>(
+    auto elapsed = std::chrono::duration_cast<std::chrono::nanoseconds>(
         std::chrono::high_resolution_clock::now() - start);
+    profile_breakdown[breakdown_tag::POSTPROC].push_back(elapsed);
 #endif
 
 #if CUDA_CHECK
@@ -350,18 +398,7 @@ cuda_res_t CudaGenerateRRRSets(const cuda_GraphTy &G, size_t theta,
          ++i)
       check_lt(rrr_sets[bf + i], G, bf + i);
 #endif
-
-      // print profiling
-#if CUDA_PROFILE
-    printf("*** [host] breakdown #%d ***\n", bf / cuda_conf.batch_size);
-    std::cout << "*** kernel          : " << kernel_time.count() << " ns\n";
-    std::cout << "*** copy-back       : " << copyback_time.count() << " ns\n";
-    std::cout << "*** post-processing : " << postproc_time.count() << " ns\n";
-#endif
   }
-
-  // TODO check
-  // check_lt(rrr_set, G, bf + i);
 
   return rrr_sets;
 }  // namespace im
