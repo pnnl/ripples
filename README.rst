@@ -33,8 +33,8 @@ Quickstart with Docker
 
    $ git clone <url-to-github>
    $ cd ripples
-   $ docker-compose -f docker/docker-compose.xml pull head worker
-   $ docker-compose -f docker/docker-compose.xml up -d --scale worker=2
+   $ docker-compose -f docker/docker-compose.yml pull head worker
+   $ docker-compose -f docker/docker-compose.yml up -d --scale worker=2
    $ docker exec -u mpi -it docker_head_1 /bin/bash
    $ cd $HOME/ripples
    $ ./waf configure --enable-mpi build

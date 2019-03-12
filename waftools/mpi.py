@@ -28,7 +28,7 @@ def configure(self):
 
 mpi_cc_sample_snippet = """#include <mpi.h>
 int main(int argc, char ** argv) {
-  MPI_Init(argc, argv);
+  MPI_Init(&argc, &argv);
   MPI_Finalize();
   return 0;
 }
@@ -52,6 +52,7 @@ def check_builtin_support(self):
             msg = "Checking for MPI compiler builtin support")
     else:
         self.fatal("One between a C and a C++ compiler must be present")
+    self.env.HAVE_MPI = result
     return result
 
 

@@ -72,15 +72,23 @@ auto Sampling(const GraphTy &G, std::size_t k, double epsilon, double l,
     ssize_t thetaPrime = ThetaPrime(x, epsilonPrime, l, k, G.num_nodes(),
                                     ex_tag);
 
-    auto deltaRR = GenerateRRRSets(G, thetaPrime - RR.size(), generator,
-                                   std::forward<diff_model_tag>(model_tag),
-                                   omp_parallel_tag{});
+    auto timeRRRSets = measure<>::exec_time([&](){
+      auto deltaRR = GenerateRRRSets(G, thetaPrime - RR.size(), generator,
+                                     std::forward<diff_model_tag>(model_tag),
+                                     omp_parallel_tag{});
 
-    RR.insert(RR.end(), std::make_move_iterator(deltaRR.begin()),
-              std::make_move_iterator(deltaRR.end()));
+      RR.insert(RR.end(), std::make_move_iterator(deltaRR.begin()),
+                std::make_move_iterator(deltaRR.end()));
+    });
+    record.ThetaEstimationGenerateRRR.push_back(timeRRRSets);
 
-    const auto &S = FindMostInfluentialSet(G, k, RR, ex_tag);
-    double f = S.first;
+    double f;
+    auto timeMostInfluential = measure<>::exec_time([&](){
+      const auto &S = FindMostInfluentialSet(G, k, RR, ex_tag);
+      f = S.first;
+    });
+    record.ThetaEstimationMostInfluential.push_back(timeMostInfluential);
+
 
     if (f >= std::pow(2, -x)) {
       LB = (G.num_nodes() * f) / (1 + epsilonPrime);
@@ -95,7 +103,7 @@ auto Sampling(const GraphTy &G, std::size_t k, double epsilon, double l,
   size_t thetaLocal = (theta / world_size) + 1;
   auto end = std::chrono::high_resolution_clock::now();
 
-  record.ThetaEstimation = end - start;
+  record.ThetaEstimationTotal = end - start;
 
   record.Theta = theta;
 

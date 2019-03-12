@@ -11,6 +11,7 @@
 #include <cstddef>
 #include <vector>
 
+#include "nlohmann/json.hpp"
 #include "trng/lcg64.hpp"
 #include "trng/uniform01_dist.hpp"
 #include "trng/uniform_int_dist.hpp"
@@ -27,18 +28,23 @@ struct IMMConfiguration : public TIMConfiguration {};
 
 //! IMM execution record.
 struct IMMExecutionRecord {
+  using ex_time_ms = std::chrono::duration<double, std::milli>;
   //! Number of threads used during the execution.
   size_t NumThreads;
   //! Number of RRR sets generated.
   size_t Theta;
   //! Execution time of the Theta estimation phase.
-  std::chrono::duration<double, std::milli> ThetaEstimation;
+  ex_time_ms ThetaEstimationTotal;
+  //! Execution times of the GenerateRRRSets steps in Theta estimation.
+  std::vector<ex_time_ms> ThetaEstimationGenerateRRR;
+  //! Execution times of the FindMostInfluentialSet steps in Theta estimation.
+  std::vector<ex_time_ms> ThetaEstimationMostInfluential;
   //! Execution time of the RRR sets generation phase.
-  std::chrono::duration<double, std::milli> GenerateRRRSets;
+  ex_time_ms GenerateRRRSets;
   //! Execution time of the maximum coverage phase.
-  std::chrono::duration<double, std::milli> FindMostInfluentialSet;
+  ex_time_ms FindMostInfluentialSet;
   //! Total execution time.
-  std::chrono::duration<double, std::milli> Total;
+  ex_time_ms Total;
 };
 
 //! Approximate logarithm of n chose k.
@@ -123,17 +129,27 @@ auto Sampling(const GraphTy &G, std::size_t k, double epsilon, double l,
     ssize_t thetaPrime = ThetaPrime(x, epsilonPrime, l, k, G.num_nodes(),
                                     std::forward<execution_tag>(ex_tag));
 
-    auto deltaRR = GenerateRRRSets(G, thetaPrime - RR.size(), generator,
-                                   std::forward<diff_model_tag>(model_tag),
-                                   std::forward<execution_tag>(ex_tag));
+    auto timeRRRSets = measure<>::exec_time([&](){
+      auto deltaRR = GenerateRRRSets(G, thetaPrime - RR.size(), generator,
+                                     std::forward<diff_model_tag>(model_tag),
+                                     std::forward<execution_tag>(ex_tag));
 
-    RR.insert(RR.end(), std::make_move_iterator(deltaRR.begin()),
-              std::make_move_iterator(deltaRR.end()));
+      RR.insert(RR.end(), std::make_move_iterator(deltaRR.begin()),
+                std::make_move_iterator(deltaRR.end()));
+    });
+    record.ThetaEstimationGenerateRRR.push_back(timeRRRSets);
 
-    const auto &S =
-        FindMostInfluentialSet(G, k, RR, std::forward<execution_tag>(ex_tag));
+    double f;
 
-    double f = S.first;
+    auto timeMostInfluential = measure<>::exec_time([&](){
+      const auto &S =
+          FindMostInfluentialSet(G, k, RR, std::forward<execution_tag>(ex_tag));
+
+
+      f = S.first;
+    });
+
+    record.ThetaEstimationMostInfluential.push_back(timeMostInfluential);
 
     if (f >= std::pow(2, -x)) {
       LB = (G.num_nodes() * f) / (1 + epsilonPrime);
@@ -144,22 +160,21 @@ auto Sampling(const GraphTy &G, std::size_t k, double epsilon, double l,
   size_t theta = Theta(epsilon, l, k, LB, G.num_nodes());
   auto end = std::chrono::high_resolution_clock::now();
 
-  record.ThetaEstimation = end - start;
+  record.ThetaEstimationTotal = end - start;
 
   record.Theta = theta;
 
-  start = std::chrono::high_resolution_clock::now();
-  if (theta > RR.size()) {
-    auto deltaRR = GenerateRRRSets(G, theta - RR.size(), generator,
-                                   std::forward<diff_model_tag>(model_tag),
-                                   std::forward<execution_tag>(ex_tag));
 
-    RR.insert(RR.end(), std::make_move_iterator(deltaRR.begin()),
-              std::make_move_iterator(deltaRR.end()));
-  }
-  end = std::chrono::high_resolution_clock::now();
+  record.GenerateRRRSets = measure<>::exec_time([&](){
+    if (theta > RR.size()) {
+      auto deltaRR = GenerateRRRSets(G, theta - RR.size(), generator,
+                                     std::forward<diff_model_tag>(model_tag),
+                                     std::forward<execution_tag>(ex_tag));
 
-  record.GenerateRRRSets = end - start;
+      RR.insert(RR.end(), std::make_move_iterator(deltaRR.begin()),
+                std::make_move_iterator(deltaRR.end()));
+    }
+  });
 
   return RR;
 }
