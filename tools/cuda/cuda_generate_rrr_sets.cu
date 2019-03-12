@@ -16,33 +16,8 @@
 
 namespace im {
 
-using mask_word_t = unsigned long long;
-
-// macros for n-bit mask encoding
-#if 1
-// 32-bit
-using d_mask_word_t = uint32_t;
-#define word_t uint32_t
-#define n_bits_minus1 31
-#define log2_bits 5
-#else
-// 8-bit
-using d_mask_word_t = uint8_t;
-#define word_t uint8_t
-#define n_bits_minus1 7
-#define log2_bits 3
-#endif
-
-#define is_set_in_word(w, v) \
-  ((w) & ((word_t)1 << ((v) & (vertex_type)(n_bits_minus1))))
-
-#define set_in_word(w, v) \
-  { (w) |= ((word_t)1 << ((v) & (vertex_type)(n_bits_minus1))); }
-
-#define read_mask_word(m, v) (m)[(v) >> (log2_bits)]
-
-#define write_mask_word(m, v, w) \
-  { (m)[(v) >> (log2_bits)] = (w); }
+using mask_word_t = typename cuda_GraphTy::vertex_type;
+constexpr size_t MAX_SET_SIZE = 32;
 
 // tested configurations:
 // + 1 walk per thread:
@@ -57,9 +32,7 @@ using d_mask_word_t = uint8_t;
 struct cuda_conf_t {
   cudaDeviceProp cuda_prop;
   cuda_graph<cuda_GraphTy> *d_graph = nullptr;
-  mask_word_t *res_masks = nullptr;
-  d_mask_word_t *d_res_masks = nullptr;
-  size_t *res_sizes = nullptr, *d_res_sizes = nullptr;
+  mask_word_t *res_masks = nullptr, *d_res_masks = nullptr;
   curandState *d_rng_states = nullptr;
   size_t grid_size = 0, block_size = 0, n_blocks = 0;
   size_t warp_step = 0;   // 1: per-thread, warp-size: per-warp
@@ -100,29 +73,20 @@ void print_profile(breakdown_tag tag, const std::string &label) {
 
 void cuda_init(const cuda_GraphTy &G, unsigned long long seed,
                im::linear_threshold_tag &&model_tag) {
-  static_assert(
-      sizeof(mask_word_t) == sizeof(unsigned long long),
-      "host-side mask-word must have the same size as unsigned long long");
-  static_assert(sizeof(mask_word_t) % sizeof(d_mask_word_t) == 0,
-                "host-side mask-word size must be multiple of device-side "
-                "mask-word size");
-
   cudaError_t e;
-
   cudaGetDeviceProperties(&cuda_conf.cuda_prop, 0);
 
   // copy graph to device
   cuda_conf.d_graph = make_cuda_graph(G);
 
   // sizing
-  cuda_conf.warp_step = 1;  // per thread
-  // cuda_conf.warp_step = cuda_conf.cuda_prop.warpSize;  // per warp
+  // cuda_conf.warp_step = 1;  // per thread
+  cuda_conf.warp_step = cuda_conf.cuda_prop.warpSize;  // per warp
   cuda_conf.block_size = cuda_conf.warp_step * (1 << 0);
   cuda_conf.n_blocks = 1 << 13;
   cuda_conf.grid_size = cuda_conf.n_blocks * cuda_conf.block_size;
   cuda_conf.batch_size = cuda_conf.grid_size / cuda_conf.warp_step;
-  auto bits_per_word = 8 * sizeof(mask_word_t);
-  cuda_conf.mask_words = (G.num_nodes() + bits_per_word - 1) / bits_per_word;
+  cuda_conf.mask_words = MAX_SET_SIZE;
 
   // print sizing info
   CUDA_LOG("> *** CUDA_BATCHED sizing ***\n");
@@ -139,9 +103,6 @@ void cuda_init(const cuda_GraphTy &G, unsigned long long seed,
       cuda_conf.batch_size * cuda_conf.mask_words * sizeof(mask_word_t);
   cuda_conf.res_masks = (mask_word_t *)malloc(batch_mask_size);
   e = cudaMalloc(&cuda_conf.d_res_masks, batch_mask_size);
-  cuda_check(e, __FILE__, __LINE__);
-  cuda_conf.res_sizes = (size_t *)malloc(cuda_conf.batch_size * sizeof(size_t));
-  e = cudaMalloc(&cuda_conf.d_res_sizes, cuda_conf.batch_size * sizeof(size_t));
   cuda_check(e, __FILE__, __LINE__);
 
   // init rng
@@ -185,8 +146,6 @@ void cuda_fini(im::linear_threshold_tag &&) {
   // cleanup
   if (cuda_conf.res_masks) free(cuda_conf.res_masks);
   if (cuda_conf.d_res_masks) cudaFree(cuda_conf.d_res_masks);
-  if (cuda_conf.res_sizes) free(cuda_conf.res_sizes);
-  if (cuda_conf.d_res_sizes) cudaFree(cuda_conf.d_res_sizes);
   if (cuda_conf.d_rng_states) cudaFree(cuda_conf.d_rng_states);
   destroy_cuda_graph(cuda_conf.d_graph);
 #if CUDA_PROFILE
@@ -200,8 +159,7 @@ void cuda_fini(im::independent_cascade_tag &&) {}
 template <typename HostGraphTy>
 __global__ void kernel_lt_per_thread(
     typename HostGraphTy::DestinationTy **index, size_t num_nodes,
-    size_t d_mask_words, size_t warp_size, curandState *d_rng_states,
-    d_mask_word_t *d_res_masks, size_t *d_res_sizes
+    size_t warp_size, curandState *d_rng_states, mask_word_t *d_res_masks
 #if CUDA_PROFILE
     ,
     cuda_profile *d_profile
@@ -213,12 +171,11 @@ __global__ void kernel_lt_per_thread(
   int tid = blockIdx.x * blockDim.x + threadIdx.x;
   if (tid % warp_size == 0) {
     int wid = tid / warp_size;
-    d_mask_word_t mask_word = 0;
     size_t res_size = 0;
 
     // init res memory
-    auto d_res_mask = d_res_masks + wid * d_mask_words;
-    memset(d_res_mask, 0, d_mask_words * sizeof(d_mask_word_t));
+    auto d_res_mask = d_res_masks + wid * MAX_SET_SIZE;
+    memset(d_res_mask, 0, MAX_SET_SIZE * sizeof(mask_word_t));
 
     // cache rng state
     auto rng_state = d_rng_states + wid;
@@ -226,10 +183,7 @@ __global__ void kernel_lt_per_thread(
     // select source node
     vertex_type src = curand(rng_state) % num_nodes;
     CUDA_LOG("> [kernel] root=%d\n", src);
-    set_in_word(mask_word, src);
-    write_mask_word(d_res_mask, src, mask_word);
-    CUDA_LOG("> [kernel] word=%d @mask-pos=%d\n", mask_word, src >> 5);
-    ++res_size;
+    d_res_mask[res_size++] = src;
 
     float threshold;
     destination_type *first, *last;
@@ -257,14 +211,16 @@ __global__ void kernel_lt_per_thread(
       for (; first != last; ++first) {
         threshold -= first->weight;
         if (threshold <= 0) {
+          // found candidate vertex
           v = first->vertex;
-          mask_word = read_mask_word(d_res_mask, v);
-          if (!is_set_in_word(mask_word, v)) {
-            src = v;
+
+          // insert if not visited
+          size_t i = 0;
+          while (i < res_size && d_res_mask[i] != v) ++i;
+          if (i == res_size) {
             CUDA_LOG("> [kernel] marking v=%d\n", v);
-            set_in_word(mask_word, src);
-            write_mask_word(d_res_mask, v, mask_word);
-            ++res_size;
+            src = v;
+            d_res_mask[res_size++] = v;
           }
           break;
         }
@@ -274,14 +230,15 @@ __global__ void kernel_lt_per_thread(
 #endif
     }
 
-    d_res_sizes[wid] = res_size;
+    // mark end-of-set
+    if (res_size < MAX_SET_SIZE) d_res_mask[res_size] = num_nodes;
 
 #if CUDA_PROFILE
     d_profile[wid].rng = rng_time;
     d_profile[wid].el = el_time;
 #endif
   }  // end if active warp
-}
+}  // namespace im
 
 void batch_kernel(const cuda_GraphTy &G) {
 #if CUDA_PROFILE
@@ -290,10 +247,8 @@ void batch_kernel(const cuda_GraphTy &G) {
 
   kernel_lt_per_thread<cuda_GraphTy>
       <<<cuda_conf.n_blocks, cuda_conf.block_size>>>(
-          cuda_conf.d_graph->d_index_, G.num_nodes(),
-          cuda_conf.mask_words * (sizeof(mask_word_t) / sizeof(d_mask_word_t)),
-          cuda_conf.warp_step, cuda_conf.d_rng_states, cuda_conf.d_res_masks,
-          cuda_conf.d_res_sizes
+          cuda_conf.d_graph->d_index_, G.num_nodes(), cuda_conf.warp_step,
+          cuda_conf.d_rng_states, cuda_conf.d_res_masks
 #if CUDA_PROFILE
           ,
           d_profile
@@ -337,8 +292,6 @@ void batch_d2h() {
   cudaMemcpy(cuda_conf.res_masks, cuda_conf.d_res_masks,
              cuda_conf.batch_size * cuda_conf.mask_words * sizeof(mask_word_t),
              cudaMemcpyDeviceToHost);
-  cudaMemcpy(cuda_conf.res_sizes, cuda_conf.d_res_sizes,
-             cuda_conf.batch_size * sizeof(size_t), cudaMemcpyDeviceToHost);
 #if CUDA_PROFILE
   auto elapsed = std::chrono::duration_cast<std::chrono::nanoseconds>(
       std::chrono::high_resolution_clock::now() - start);
@@ -367,25 +320,17 @@ cuda_res_t CudaGenerateRRRSets(const cuda_GraphTy &G, size_t theta,
     for (size_t i = 0; i < cuda_conf.batch_size && (bf + i) < rrr_sets.size();
          ++i) {
       auto &rrr_set = rrr_sets[bf + i];
-      rrr_set.reserve(cuda_conf.res_sizes[i]);
+      rrr_set.reserve(MAX_SET_SIZE);
       auto res_mask = cuda_conf.res_masks + (i * cuda_conf.mask_words);
-      for (size_t j = 0; j < cuda_conf.mask_words; ++j) {
-        vertex_type offset = sizeof(mask_word_t) * 8 * j;
-        // scan a word from the res mask
-        auto w = res_mask[j];
-        while (w != 0) {
-          auto delta = __builtin_ffsll(w);
-          w >>= delta - 1;
-          offset += delta - 1;
-          auto v = vertex_type(offset);
-          rrr_set.push_back(v);
-          w >>= 1;
-          ++offset;
-        }
+      for (size_t j = 0;
+           j < cuda_conf.mask_words && res_mask[j] != G.num_nodes(); ++j) {
+        rrr_set.push_back(res_mask[j]);
       }
-#if CUDA_CHECK
-      assert(rrr_set.size() == cuda_conf.res_sizes[i]);
-#endif
+
+      if (rrr_set.size() == MAX_SET_SIZE) {
+        fprintf(stderr, "> an RRR set hit the maximum size %d\n", MAX_SET_SIZE);
+        exit(1);
+      }
     }
 #if CUDA_PROFILE
     auto elapsed = std::chrono::duration_cast<std::chrono::nanoseconds>(
