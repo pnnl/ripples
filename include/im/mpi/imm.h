@@ -72,6 +72,8 @@ auto Sampling(const GraphTy &G, std::size_t k, double epsilon, double l,
     ssize_t thetaPrime = ThetaPrime(x, epsilonPrime, l, k, G.num_nodes(),
                                     ex_tag);
 
+    record.ThetaPrimeDeltas.push_back(thetaPrime - RR.size());
+
     auto timeRRRSets = measure<>::exec_time([&](){
       auto deltaRR = GenerateRRRSets(G, thetaPrime - RR.size(), generator,
                                      std::forward<diff_model_tag>(model_tag),
