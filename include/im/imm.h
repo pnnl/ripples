@@ -33,6 +33,8 @@ struct IMMExecutionRecord {
   size_t NumThreads;
   //! Number of RRR sets generated.
   size_t Theta;
+  //! The list of how many RRR sets are produced during the estimation phase.
+  std::vector<size_t> ThetaPrimeDeltas;
   //! Execution time of the Theta estimation phase.
   ex_time_ms ThetaEstimationTotal;
   //! Execution times of the GenerateRRRSets steps in Theta estimation.
@@ -128,6 +130,8 @@ auto Sampling(const GraphTy &G, std::size_t k, double epsilon, double l,
     // Equation 9
     ssize_t thetaPrime = ThetaPrime(x, epsilonPrime, l, k, G.num_nodes(),
                                     std::forward<execution_tag>(ex_tag));
+
+    record.ThetaPrimeDeltas.push_back(thetaPrime - RR.size());
 
     auto timeRRRSets = measure<>::exec_time([&](){
       auto deltaRR = GenerateRRRSets(G, thetaPrime - RR.size(), generator,
