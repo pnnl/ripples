@@ -31,28 +31,44 @@ constexpr size_t MAX_SET_SIZE = 32;
 // - block_size = 1
 struct cuda_conf_t {
   cudaDeviceProp cuda_prop;
+  const cuda_GraphTy *graph = nullptr;
+
+  // host-side buffers
+  mask_word_t **res_masks = nullptr;
+  size_t *active_batch_sizes = nullptr;
+
+  // device-side buffers
   cuda_graph<cuda_GraphTy> *d_graph = nullptr;
-  mask_word_t *res_masks = nullptr, *d_res_masks = nullptr;
-  curandState *d_rng_states = nullptr;
+  mask_word_t **d_res_masks = nullptr;
+  curandState **d_rng_states = nullptr;
+
+  // sizing
   size_t grid_size = 0, block_size = 0, n_blocks = 0;
   size_t warp_step = 0;   // 1: per-thread, warp-size: per-warp
   size_t batch_size = 0;  // walks per batch
   size_t mask_words = 0;
+
+  // CUDA streams
+  cudaStream_t *streams = nullptr;
+  size_t n_streams = 0;
 } cuda_conf;
 
+size_t next_stream_id(size_t s) { return (s + 1) % cuda_conf.n_streams; }
+size_t prev_stream_id(size_t s) {
+  return (s > 0 ? s : cuda_conf.n_streams) - 1;
+}
+
 __global__ void kernel_rng_setup(curandState *d_rng_states,
-                                 unsigned long long seed, int warp_size) {
+                                 unsigned long long seed, size_t base,
+                                 size_t warp_size) {
   int tid = blockIdx.x * blockDim.x + threadIdx.x;
   if (tid % warp_size == 0) {
     int wid = tid / warp_size;
-    curand_init(seed, wid, 0, d_rng_states + wid);
+    curand_init(seed, base + wid, 0, d_rng_states + wid);
   }
 }
 
 #if CUDA_PROFILE
-struct cuda_profile {
-  clock_t rng, el;
-} * profile, *d_profile;
 enum breakdown_tag { KERNEL, COPY, POSTPROC };
 std::unordered_map<breakdown_tag, std::vector<std::chrono::nanoseconds>>
     profile_breakdown;
@@ -75,8 +91,8 @@ void cuda_init(const cuda_GraphTy &G, unsigned long long seed,
                im::linear_threshold_tag &&model_tag) {
   cudaError_t e;
   cudaGetDeviceProperties(&cuda_conf.cuda_prop, 0);
-
   // copy graph to device
+  cuda_conf.graph = &G;
   cuda_conf.d_graph = make_cuda_graph(G);
 
   // sizing
@@ -98,26 +114,44 @@ void cuda_init(const cuda_GraphTy &G, unsigned long long seed,
   CUDA_LOG("g-mem size = %d\n",
            cuda_conf.grid_size * cuda_conf.mask_words * sizeof(mask_word_t));
 
-  // allocate memory for result masks and sizes
+  // init streams
+  cuda_conf.n_streams = 2;
+  cuda_conf.streams =
+      (cudaStream_t *)malloc(cuda_conf.n_streams * sizeof(cudaStream_t));
+  for (size_t i = 0; i < cuda_conf.n_streams; ++i)
+    cudaStreamCreate(&cuda_conf.streams[i]);
+
+  // allocate host-side memory for result masks
   auto batch_mask_size =
       cuda_conf.batch_size * cuda_conf.mask_words * sizeof(mask_word_t);
-  cuda_conf.res_masks = (mask_word_t *)malloc(batch_mask_size);
-  e = cudaMalloc(&cuda_conf.d_res_masks, batch_mask_size);
-  cuda_check(e, __FILE__, __LINE__);
+  cuda_conf.res_masks =
+      (mask_word_t **)malloc(cuda_conf.n_streams * sizeof(mask_word_t *));
+  for (size_t i = 0; i < cuda_conf.n_streams; ++i)
+    cuda_conf.res_masks[i] = (mask_word_t *)malloc(batch_mask_size);
+  cuda_conf.active_batch_sizes =
+      (size_t *)malloc(cuda_conf.n_streams * sizeof(size_t));
+
+  // allocate device-side memory for results masks
+  cuda_conf.d_res_masks =
+      (mask_word_t **)malloc(cuda_conf.n_streams * sizeof(mask_word_t *));
+  for (size_t i = 0; i < cuda_conf.n_streams; ++i) {
+    e = cudaMalloc(&cuda_conf.d_res_masks[i], batch_mask_size);
+    cuda_check(e, __FILE__, __LINE__);
+  }
 
   // init rng
-  cudaMalloc(&cuda_conf.d_rng_states,
-             cuda_conf.batch_size * sizeof(curandState));
-  cuda_check(e, __FILE__, __LINE__);
+  cuda_conf.d_rng_states =
+      (curandState **)malloc(cuda_conf.n_streams * sizeof(curandState));
+  for (size_t i = 0; i < cuda_conf.n_streams; ++i) {
+    cudaMalloc(&cuda_conf.d_rng_states[i],
+               cuda_conf.batch_size * sizeof(curandState));
+    cuda_check(e, __FILE__, __LINE__);
 
-  kernel_rng_setup<<<cuda_conf.n_blocks, cuda_conf.block_size>>>(
-      cuda_conf.d_rng_states, seed, cuda_conf.warp_step);
-  cuda_check(__FILE__, __LINE__);
-
-#if CUDA_PROFILE
-  profile = (cuda_profile *)malloc(cuda_conf.batch_size * sizeof(cuda_profile));
-  cudaMalloc(&d_profile, cuda_conf.batch_size * sizeof(cuda_profile));
-#endif
+    kernel_rng_setup<<<cuda_conf.n_blocks, cuda_conf.block_size>>>(
+        cuda_conf.d_rng_states[i], seed, i * cuda_conf.batch_size,
+        cuda_conf.warp_step);
+    cuda_check(__FILE__, __LINE__);
+  }
 }
 
 void cuda_init(const cuda_GraphTy &G, unsigned long long seed,
@@ -143,15 +177,30 @@ void cuda_fini(im::linear_threshold_tag &&) {
   print_profile(breakdown_tag::POSTPROC, "post-processing");
 #endif
 
+  // finalize streams and free memory
+  for (size_t i = 0; i < cuda_conf.n_streams; ++i) {
+    cudaStreamDestroy(cuda_conf.streams[i]);
+    assert(cuda_conf.res_masks[i]);
+    free(cuda_conf.res_masks[i]);
+    assert(cuda_conf.active_batch_sizes[i]);
+    assert(cuda_conf.d_res_masks[i]);
+    cudaFree(cuda_conf.d_res_masks[i]);
+    assert(cuda_conf.d_rng_states[i]);
+    cudaFree(cuda_conf.d_rng_states[i]);
+  }
+  assert(cuda_conf.streams);
+  free(cuda_conf.streams);
+  assert(cuda_conf.res_masks);
+  free(cuda_conf.res_masks);
+  assert(cuda_conf.active_batch_sizes);
+  free(cuda_conf.active_batch_sizes);
+  assert(cuda_conf.d_res_masks);
+  free(cuda_conf.d_res_masks);
+  assert(cuda_conf.d_rng_states);
+  free(cuda_conf.d_rng_states);
+
   // cleanup
-  if (cuda_conf.res_masks) free(cuda_conf.res_masks);
-  if (cuda_conf.d_res_masks) cudaFree(cuda_conf.d_res_masks);
-  if (cuda_conf.d_rng_states) cudaFree(cuda_conf.d_rng_states);
   destroy_cuda_graph(cuda_conf.d_graph);
-#if CUDA_PROFILE
-  if (profile) free(profile);
-  if (d_profile) cudaFree(d_profile);
-#endif
 }
 
 void cuda_fini(im::independent_cascade_tag &&) {}
@@ -159,12 +208,7 @@ void cuda_fini(im::independent_cascade_tag &&) {}
 template <typename HostGraphTy>
 __global__ void kernel_lt_per_thread(
     size_t bs, typename HostGraphTy::DestinationTy **index, size_t num_nodes,
-    size_t warp_size, curandState *d_rng_states, mask_word_t *d_res_masks
-#if CUDA_PROFILE
-    ,
-    cuda_profile *d_profile
-#endif
-) {
+    size_t warp_size, curandState *d_rng_states, mask_word_t *d_res_masks) {
   using destination_type = typename HostGraphTy::DestinationTy;
   using vertex_type = typename HostGraphTy::vertex_type;
 
@@ -183,29 +227,16 @@ __global__ void kernel_lt_per_thread(
 
       // select source node
       vertex_type src = curand(rng_state) % num_nodes;
-      CUDA_LOG("> [kernel] root=%d\n", src);
       d_res_mask[res_size++] = src;
 
       float threshold;
       destination_type *first, *last;
       vertex_type v;
-#if CUDA_PROFILE
-      clock_t rng_time = 0, el_time = 0, timer;
-#endif
       while (src != num_nodes) {
         // rng
-#if CUDA_PROFILE
-        timer = clock();
-#endif
         threshold = curand_uniform(rng_state);
-#if CUDA_PROFILE
-        rng_time += clock() - timer;
-#endif
 
         // scan neighbor list
-#if CUDA_PROFILE
-        timer = clock();
-#endif
         first = index[src];
         last = index[src + 1];
         src = num_nodes;
@@ -219,43 +250,33 @@ __global__ void kernel_lt_per_thread(
             size_t i = 0;
             while (i < res_size && d_res_mask[i] != v) ++i;
             if (i == res_size) {
-              CUDA_LOG("> [kernel] marking v=%d\n", v);
               src = v;
               d_res_mask[res_size++] = v;
             }
             break;
           }
         }
-#if CUDA_PROFILE
-        el_time += clock() - timer;
-#endif
       }
 
       // mark end-of-set
       if (res_size < MAX_SET_SIZE) d_res_mask[res_size] = num_nodes;
-
-#if CUDA_PROFILE
-      d_profile[wid].rng = rng_time;
-      d_profile[wid].el = el_time;
-#endif
     }  // end if active warp
   }    // end if active thread-in-warp
 }  // namespace im
 
-void batch_kernel(const cuda_GraphTy &G, size_t bs) {
+void batch_kernel(size_t stream_id) {
+  CUDA_LOG("> [batch_kernel] stream_id=%d size=%d\n", stream_id,
+           cuda_conf.active_batch_sizes[stream_id]);
+
 #if CUDA_PROFILE
   auto start = std::chrono::high_resolution_clock::now();
 #endif
 
-  kernel_lt_per_thread<cuda_GraphTy>
-      <<<cuda_conf.n_blocks, cuda_conf.block_size>>>(
-          bs, cuda_conf.d_graph->d_index_, G.num_nodes(), cuda_conf.warp_step,
-          cuda_conf.d_rng_states, cuda_conf.d_res_masks
-#if CUDA_PROFILE
-          ,
-          d_profile
-#endif
-      );
+  kernel_lt_per_thread<cuda_GraphTy><<<cuda_conf.n_blocks, cuda_conf.block_size,
+                                       0, cuda_conf.streams[stream_id]>>>(
+      cuda_conf.active_batch_sizes[stream_id], cuda_conf.d_graph->d_index_,
+      cuda_conf.graph->num_nodes(), cuda_conf.warp_step,
+      cuda_conf.d_rng_states[stream_id], cuda_conf.d_res_masks[stream_id]);
   cuda_check(__FILE__, __LINE__);
 
 #if CUDA_PROFILE
@@ -263,37 +284,22 @@ void batch_kernel(const cuda_GraphTy &G, size_t bs) {
   auto elapsed = std::chrono::duration_cast<std::chrono::nanoseconds>(
       std::chrono::high_resolution_clock::now() - start);
   profile_breakdown[breakdown_tag::KERNEL].push_back(elapsed);
-  // batch_kernel_profile();
 #endif
 }
 
-#if CUDA_PROFILE
-void batch_kernel_profile() {
-  cudaMemcpy(profile, d_profile, cuda_conf.batch_size * sizeof(cuda_profile),
-             cudaMemcpyDeviceToHost);
-  std::vector<clock_t> rng_prof, el_prof;
-  for (size_t i = 0; i < cuda_conf.batch_size; ++i) {
-    if (profile[i].rng) rng_prof.push_back(profile[i].rng);
-    if (profile[i].el) el_prof.push_back(profile[i].el);
-  }
-  std::sort(rng_prof.begin(), rng_prof.end());
-  std::sort(el_prof.begin(), el_prof.end());
-  printf("*** rng:\tmin =%10d\tmed =%10d\tmax =%10d\t(#zeros=%d)\n",
-         rng_prof[0], rng_prof[rng_prof.size() / 2], rng_prof.back(),
-         cuda_conf.batch_size - rng_prof.size());
-  printf("*** el :\tmin =%10d\tmed =%10d\tmax =%10d\t(#zeros=%d)\n", el_prof[0],
-         el_prof[el_prof.size() / 2], el_prof.back(),
-         cuda_conf.batch_size - el_prof.size());
-}
-#endif
+void batch_d2h(size_t stream_id) {
+  CUDA_LOG("> [batch_d2h] stream_id=%d size=%d\n", stream_id,
+           cuda_conf.active_batch_sizes[stream_id]);
 
-void batch_d2h(size_t bs) {
 #if CUDA_PROFILE
   auto start = std::chrono::high_resolution_clock::now();
 #endif
-  cudaMemcpy(cuda_conf.res_masks, cuda_conf.d_res_masks,
-             bs * cuda_conf.mask_words * sizeof(mask_word_t),
-             cudaMemcpyDeviceToHost);
+  cudaMemcpyAsync(cuda_conf.res_masks[stream_id],
+                  cuda_conf.d_res_masks[stream_id],
+                  cuda_conf.active_batch_sizes[stream_id] *
+                      cuda_conf.mask_words * sizeof(mask_word_t),
+                  cudaMemcpyDeviceToHost, cuda_conf.streams[stream_id]);
+
 #if CUDA_PROFILE
   auto elapsed = std::chrono::duration_cast<std::chrono::nanoseconds>(
       std::chrono::high_resolution_clock::now() - start);
@@ -301,60 +307,82 @@ void batch_d2h(size_t bs) {
 #endif
 }
 
-cuda_res_t CudaGenerateRRRSets(const cuda_GraphTy &G, size_t theta,
+void batch_build(uint8_t stream_id, cuda_res_t &rrr_sets, size_t bf) {
+  CUDA_LOG("> [batch_build] waiting stream_id=%d\n", stream_id);
+  cudaStreamSynchronize(cuda_conf.streams[stream_id]);
+
+  CUDA_LOG("> [batch_build] stream_id=%d size=%d first=%d\n", stream_id,
+           cuda_conf.active_batch_sizes[stream_id], bf);
+
+#if CUDA_PROFILE
+  auto start = std::chrono::high_resolution_clock::now();
+#endif
+  for (size_t i = 0; i < cuda_conf.active_batch_sizes[stream_id]; ++i) {
+    auto &rrr_set = rrr_sets[bf + i];
+    rrr_set.reserve(MAX_SET_SIZE);
+    auto res_mask = cuda_conf.res_masks[stream_id] + (i * cuda_conf.mask_words);
+    for (size_t j = 0; j < cuda_conf.mask_words &&
+                       res_mask[j] != cuda_conf.graph->num_nodes();
+         ++j) {
+      rrr_set.push_back(res_mask[j]);
+    }
+
+#if CUDA_CHECK
+    check_lt(rrr_set, *cuda_conf.graph, bf + i);
+#endif
+
+    if (rrr_set.size() == MAX_SET_SIZE) {
+      fprintf(stderr, "> an RRR set hit the maximum size %d\n", MAX_SET_SIZE);
+      exit(1);
+    }
+  }
+#if CUDA_PROFILE
+  auto elapsed = std::chrono::duration_cast<std::chrono::nanoseconds>(
+      std::chrono::high_resolution_clock::now() - start);
+  profile_breakdown[breakdown_tag::POSTPROC].push_back(elapsed);
+#endif
+}
+
+cuda_res_t CudaGenerateRRRSets(size_t theta,
                                im::linear_threshold_tag &&model_tag) {
   CUDA_LOG("> *** CudaGenerateRRRSets theta=%d ***\n", theta);
 
-  using vertex_type = typename cuda_GraphTy::vertex_type;
   cuda_res_t rrr_sets(theta);
 
   auto remainder = rrr_sets.size();
-  size_t bf = 0;
+  size_t batch_first = 0, stream_id = 0;
+
+  cuda_conf.active_batch_sizes[stream_id] =
+      std::min(remainder, cuda_conf.batch_size);
+
+  // async execute+copy first batch
+  batch_kernel(stream_id);
+  batch_d2h(stream_id);
+  remainder -= cuda_conf.active_batch_sizes[stream_id];
+
   while (remainder) {
-    auto bs = std::min(remainder, cuda_conf.batch_size);
+    stream_id = next_stream_id(stream_id);
+    cuda_conf.active_batch_sizes[stream_id] =
+        std::min(remainder, cuda_conf.batch_size);
 
-    // execute a batch
-    batch_kernel(G, bs);
+    // async execute+copy batch i
+    batch_kernel(stream_id);
+    batch_d2h(stream_id);
+    remainder -= cuda_conf.active_batch_sizes[stream_id];
 
-    // copy results back to host
-    batch_d2h(bs);
-
-    // convert masks to results
-#if CUDA_PROFILE
-    auto start = std::chrono::high_resolution_clock::now();
-#endif
-    for (size_t i = 0; i < bs; ++i) {
-      auto &rrr_set = rrr_sets[bf + i];
-      rrr_set.reserve(MAX_SET_SIZE);
-      auto res_mask = cuda_conf.res_masks + (i * cuda_conf.mask_words);
-      for (size_t j = 0;
-           j < cuda_conf.mask_words && res_mask[j] != G.num_nodes(); ++j) {
-        rrr_set.push_back(res_mask[j]);
-      }
-
-#if CUDA_CHECK
-      check_lt(rrr_sets[bf + i], G, bf + i);
-#endif
-
-      if (rrr_set.size() == MAX_SET_SIZE) {
-        fprintf(stderr, "> an RRR set hit the maximum size %d\n", MAX_SET_SIZE);
-        exit(1);
-      }
-    }
-#if CUDA_PROFILE
-    auto elapsed = std::chrono::duration_cast<std::chrono::nanoseconds>(
-        std::chrono::high_resolution_clock::now() - start);
-    profile_breakdown[breakdown_tag::POSTPROC].push_back(elapsed);
-#endif
-
-    remainder -= bs;
-    bf += bs;
+    // build sets for batch i-1 to sets
+    auto prev = prev_stream_id(stream_id);
+    batch_build(prev, rrr_sets, batch_first);
+    batch_first += cuda_conf.active_batch_sizes[prev];
   }
+
+  // build sets for last batch
+  batch_build(stream_id, rrr_sets, batch_first);
 
   return rrr_sets;
 }  // namespace im
 
-cuda_res_t CudaGenerateRRRSets(const cuda_GraphTy &G, size_t theta,
+cuda_res_t CudaGenerateRRRSets(size_t theta,
                                im::independent_cascade_tag &&model_tag) {
   assert(false);
   return cuda_res_t{};

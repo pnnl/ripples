@@ -173,7 +173,7 @@ std::vector<RRRset<GraphTy>> GenerateRRRSets(GraphTy &G, size_t theta,
                                              PRNGeneratorTy &generator,
                                              diff_model_tag &&model_tag,
                                              cuda_parallel_tag &&ex_tag) {
-  return CudaGenerateRRRSets(G, theta, std::forward<diff_model_tag>(model_tag));
+  return CudaGenerateRRRSets(theta, std::forward<diff_model_tag>(model_tag));
 }
 
 }  // namespace im

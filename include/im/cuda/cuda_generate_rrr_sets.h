@@ -58,23 +58,21 @@ void cuda_fini(im::independent_cascade_tag &&model_tag);
 //! \brief Generate Random Reverse Reachability Sets according to Linear
 //! Threshold model - CUDA.
 //!
-//! \param G The original graph.
 //! \param theta The number of RRR sets to be generated.
 //! \param model_tag The diffusion model tag.
 //!
 //! \return A list of theta Random Reverse Rachability Sets.
-cuda_res_t CudaGenerateRRRSets(const cuda_GraphTy &G, size_t theta,
+cuda_res_t CudaGenerateRRRSets(size_t theta,
                                im::linear_threshold_tag &&model_tag);
 
 //! \brief Generate Random Reverse Reachability Sets according to Independent
 //! Cascade model - CUDA.
 //!
-//! \param G The original graph.
 //! \param theta The number of RRR sets to be generated.
 //! \param model_tag The diffusion model tag.
 //!
 //! \return A list of theta Random Reverse Rachability Sets.
-cuda_res_t CudaGenerateRRRSets(const cuda_GraphTy &G, size_t theta,
+cuda_res_t CudaGenerateRRRSets(size_t theta,
                                im::independent_cascade_tag &&model_tag);
 }  // namespace im
 
