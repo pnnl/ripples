@@ -12,6 +12,8 @@
 #include <map>
 #include <vector>
 
+#include <im/utility.h>
+
 namespace im {
 
 //! \brief Forward Direction Graph loading policy.
@@ -304,17 +306,23 @@ class Graph {
   //! \param FS The ouput file stream.
   template <typename FStream>
   void dump_binary(FStream & FS) const {
-    FS.write(reinterpret_cast<const char *>(&numNodes), sizeof(numNodes));
-    FS.write(reinterpret_cast<const char *>(&numEdges), sizeof(numEdges));
+    uint64_t num_nodes = htole64(numNodes);
+    uint64_t num_edges = htole64(numEdges);
+    FS.write(reinterpret_cast<const char *>(&num_nodes), sizeof(uint64_t));
+    FS.write(reinterpret_cast<const char *>(&num_edges), sizeof(uint64_t));
 
-    FS.write(reinterpret_cast<const char *>(reverseMap.data()), reverseMap.size() * sizeof(VertexTy));
+    sequence_of<VertexTy>::dump(FS, reverseMap.begin(), reverseMap.end());
 
-    std::vector<ptrdiff_t> relIndex(numNodes + 1, 0);
-    std::transform(index, index + numNodes + 1, relIndex.begin(),
-                   [=](DestinationTy * const v) -> ptrdiff_t { return std::distance(edges, v); });
-    
-    FS.write(reinterpret_cast<char *>(relIndex.data()), relIndex.size() * sizeof(ptrdiff_t));
-    FS.write(reinterpret_cast<char *>(edges), numEdges * sizeof(DestinationTy));
+    using relative_index =
+        typename std::iterator_traits<DestinationTy *>::difference_type;
+    std::vector<relative_index> relIndex(numNodes + 1, 0);
+    std::transform(
+        index, index + numNodes + 1, relIndex.begin(),
+        [=](DestinationTy * v) -> relative_index {
+          return std::distance(edges, v);
+        });
+    sequence_of<relative_index>::dump(FS, relIndex.begin(), relIndex.end());
+    sequence_of<DestinationTy>::dump(FS, edges, edges + numEdges);
   }
 
  private:
@@ -325,8 +333,15 @@ class Graph {
     FS.read(reinterpret_cast<char *>(&numNodes), sizeof(numNodes));
     FS.read(reinterpret_cast<char *>(&numEdges), sizeof(numEdges));
 
+    numNodes = le64toh(numNodes);
+    numEdges = le64toh(numEdges);
+
     reverseMap.resize(numNodes);
-    FS.read(reinterpret_cast<char *>(reverseMap.data()), reverseMap.size() * sizeof(VertexTy));
+    FS.read(reinterpret_cast<char *>(reverseMap.data()),
+            reverseMap.size() * sizeof(VertexTy));
+
+    sequence_of<VertexTy>::load(reverseMap.begin(), reverseMap.end(),
+                                reverseMap.begin());
 
     for (VertexTy i = 0; i < numNodes; ++i)
       idMap[reverseMap[i]] = i;
@@ -336,11 +351,14 @@ class Graph {
 
     FS.read(reinterpret_cast<char *>(index), (numNodes + 1) * sizeof(ptrdiff_t));
 
+    sequence_of<DestinationTy *>::load(index, index + numNodes + 1, index);
+
     std::transform(index, index + numNodes + 1, index,
                    [=](DestinationTy * v) -> DestinationTy * {
                      return reinterpret_cast<ptrdiff_t>(v) + edges; });
 
     FS.read(reinterpret_cast<char *>(edges), numEdges * sizeof(DestinationTy));
+    sequence_of<DestinationTy>::load(edges, edges + numEdges, edges);
   }
 
   DestinationTy **index;

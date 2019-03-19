@@ -28,6 +28,7 @@ struct edge_list_tsv {};
 //! Weighted Edge List in TSV format tag.
 struct weighted_edge_list_tsv {};
 
+namespace {
 
 //! Load an Edge List in TSV format and generate the weights.
 //!
@@ -137,6 +138,8 @@ std::vector<EdgeTy> load(const std::string &inputFile, const bool undirected,
   return result;
 }
 
+}
+
 
 //! Load an Edge List.
 //!
@@ -170,6 +173,33 @@ std::vector<EdgeTy> loadEdgeList(const Configuration &CFG, PRNG &weightGen) {
     }
   }
   return edgeList;
+}
+
+//! Load Graphs.
+//!
+//! \tparam GraphTy The type of the graph to be loaded.
+//! \tparam ConfTy  The type of the configuration object.
+//! \tparam PrngTy  The type of the parallel random number generator object.
+//!
+//! \param CFG The configuration object.
+//! \param PRNG The parallel random number generator.
+//! \return The GraphTy graph loaded from the input file.
+template <typename GraphTy, typename ConfTy, typename PrngTy>
+GraphTy loadGraph(ConfTy & CFG, PrngTy & PRNG) {
+  GraphTy G;
+
+  if (!CFG.reload) {
+    using edge_type = typename GraphTy::edge_type;
+    auto edgeList = im::loadEdgeList<edge_type>(CFG, PRNG);
+    GraphTy tmpG(edgeList.begin(), edgeList.end());
+    G = std::move(tmpG);
+  } else {
+    std::ifstream binaryDump(CFG.IFileName, std::ios::binary);
+    GraphTy tmpG(binaryDump);
+    G = std::move(tmpG);
+  }
+
+  return G;
 }
 
 }  // namespace im

@@ -9,6 +9,7 @@
 
 #include <chrono>
 #include <utility>
+#include <endian.h>
 
 #include "nlohmann/json.hpp"
 
@@ -51,6 +52,113 @@ template <typename T1, typename T2>
 void to_json(nlohmann::json &j, const std::chrono::duration<T1, T2> & d) {
   j = d.count();
 }
+
+}
+
+namespace im {
+
+//! Dump a value of size N in binary format.
+template <size_t N> struct dump_v;
+
+
+//! Dump a value of 4 bytes in binary format (little-endian).
+template <> struct dump_v<sizeof(uint32_t)> {
+  //! Dump 4 bytes in little-endian format.
+  //! \param v The input value
+  //! \return v in little-endian format.
+  static uint32_t value(uint32_t v) {
+    return htole32(v);
+  }
+};
+
+
+//! Dump a value of 8 bytes in binary format (little-endian).
+template <> struct dump_v<sizeof(uint64_t)> {
+  //! Dump 8 bytes in little-endian format.
+  //! \param v The input value
+  //! \return v in little-endian format.
+  static uint64_t value(uint64_t v) {
+    return htole64(v);
+  }
+};
+
+
+//! Load values in little-endian format into the host format.
+template <size_t N> struct load_v;
+
+
+//! Load 4 bytes in little-endian format into the host format.
+template <> struct load_v<sizeof(uint32_t)> {
+  //! Dump 4 bytes in little-endian format.
+  //! \param v The input value
+  //! \return v in little-endian format.
+  static uint32_t value(uint32_t v) {
+    return le32toh(v);
+  }
+};
+
+
+//! Load 8 bytes in little-endian format into the host format.
+template <> struct load_v<sizeof(uint64_t)> {
+  //! Dump 8 bytes in little-endian format.
+  //! \param v The input value
+  //! \return v in little-endian format.
+  static uint64_t value(uint64_t v) {
+    return le64toh(v);
+  }
+};
+
+
+//! Dump and load sequences of types into/from little-endian format to the host
+//! format.
+template <typename T> struct sequence_of : public dump_v<sizeof(T)> {
+  //! The type of the value to be used.
+  using value_type =
+      typename std::conditional<sizeof(T) == 4, uint32_t, uint64_t>::type;
+
+  //! Dump values into little-endian binary format.
+  //!
+  //! \tparam FStream The type of the output stream.
+  //! \tparam Itr The type of the Iterators.
+  //!
+  //! \param FS The binary output stream to write to.
+  //! \param B The begin of the sequence to dump.
+  //! \param E The end of the sequence to dump.
+  template <typename FStream, typename Itr>
+  static void dump(FStream & FS, Itr B, Itr E) {
+    std::vector<value_type> tmp(std::distance(B, E));
+    std::transform(
+        B, E, tmp.begin(),
+        [](const T & V) ->  value_type {
+          const value_type v = *reinterpret_cast<const value_type *>(&V);
+          return dump_v<sizeof(value_type)>::value(v);
+        });
+
+    FS.write(reinterpret_cast<char *>(tmp.data()),
+             sizeof(value_type) * tmp.size());
+  }
+
+  //! Load a binary sequence in little-endian format into an output sequence in
+  //! host format.
+  //!
+  //! \tparam Itr The type of the iterator in input.
+  //! \tparam OItr The type of the iterator in output.
+  //!
+  //! \param B The begin of the sequence to load.
+  //! \param E The end of the sequence to load.
+  //! \param O the begin of the output sequence.
+  template <typename Itr, typename OItr>
+  static void load(Itr B, Itr E, OItr O) {
+    std::transform(B, E, O,
+                   [](const T & V) -> T {
+                     value_type v = *reinterpret_cast<const value_type *>(&V);
+                     T tmp;
+                     *reinterpret_cast<value_type *>(&tmp) =
+                         load_v<sizeof(T)>::value(v);
+                     return tmp;
+                   });
+  }
+};
 
 }
 
