@@ -72,9 +72,6 @@ int main(int argc, char **argv) {
   Configuration CFG;
   CFG.ParseCmdOptions(argc, argv);
 
-  auto console = spdlog::stdout_color_st("console");
-  console->info("Loading...");
-
   auto simRecord = spdlog::basic_logger_st("simRecord", CFG.OutputFile);
   simRecord->set_pattern("%v");
 
@@ -82,10 +79,11 @@ int main(int argc, char **argv) {
   weightGen.seed(0UL);
   weightGen.split(2, 0);
 
-  auto edgeList = im::loadEdgeList<im::Edge<uint32_t, float>>(CFG, weightGen);
+  using Graph = im::Graph<uint32_t, float>;
+  auto console = spdlog::stdout_color_st("console");
+  console->info("Loading...");
+  Graph G = im::loadGraph<Graph>(CFG, weightGen);
   console->info("Loading Done!");
-
-  im::Graph<uint32_t, float> G(edgeList.begin(), edgeList.end());
   console->info("Number of Nodes : {}", G.num_nodes());
   console->info("Number of Edges : {}", G.num_edges());
 
@@ -97,7 +95,7 @@ int main(int argc, char **argv) {
 
   nlohmann::json simRecordLog;
   for (auto &record : experimentRecord) {
-    using vertex_type = typename im::Graph<uint32_t, float>::vertex_type;
+    using vertex_type = typename Graph::vertex_type;
 
     std::vector<std::vector<std::pair<size_t, size_t>>> experiments(
         CFG.Replicas, std::vector<std::pair<size_t, size_t>>(CFG.Tries));
@@ -122,9 +120,17 @@ int main(int argc, char **argv) {
 #pragma omp parallel for schedule(dynamic)
       for (size_t i = 0; i < experiments.size(); ++i) {
         for (auto &v : experiments[i]) {
-          v = simulate(G, seeds.begin(), itr,
-                       generator[omp_get_thread_num()],
-                       im::independent_cascade_tag{});
+          if (CFG.diffusionModel == "IC") {
+            v = simulate(G, seeds.begin(), itr,
+                         generator[omp_get_thread_num()],
+                         im::independent_cascade_tag{});
+          } else if (CFG.diffusionModel == "LT") {
+            v = simulate(G, seeds.begin(), itr,
+                         generator[omp_get_thread_num()],
+                         im::linear_threshold_tag{});
+          } else {
+            throw std::string("Not Yet Implemented");
+          }
         }
       }
       simRecordLog.push_back(

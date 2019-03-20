@@ -325,7 +325,57 @@ class Graph {
     sequence_of<DestinationTy>::dump(FS, edges, edges + numEdges);
   }
 
+  //! Get the transposed graph.
+  //! \return the transposed graph.
+  auto get_transpose() const {
+    using out_dest_type = typename transposed_type::DestinationTy;
+    transposed_type G;
+    G.numEdges = numEdges;
+    G.numNodes = numNodes;
+    G.reverseMap = reverseMap;
+    G.idMap = idMap;
+    G.index = new out_dest_type *[numNodes + 1];
+    G.edges = new out_dest_type[numEdges];
+
+    std::fill(G.index, G.index + numNodes + 1, nullptr);
+
+    std::for_each(edges, edges + numEdges,
+                  [&](const DestinationTy & d) {
+                    ++G.index[d.vertex + 1];
+                  });
+
+    G.index[0] = G.edges;
+    std::partial_sum(G.index, G.index + numNodes + 1, G.index,
+                     [](out_dest_type * a, out_dest_type * b)
+                     -> out_dest_type * {
+                       size_t sum =
+                           reinterpret_cast<size_t>(a) +
+                           reinterpret_cast<size_t>(b);
+                       return reinterpret_cast<out_dest_type *>(sum);
+                     });
+
+    std::vector<out_dest_type *> destPointers(G.index, G.index + numNodes);
+
+    for (vertex_type v = 0; v < numNodes; ++v) {
+      for (auto u : neighbors(v)) {
+        *destPointers[u.vertex] = { v, u.weight };
+        destPointers[u.vertex]++;
+      }
+    }
+
+    return G;
+  }
+
  private:
+  static constexpr bool isForward =
+      std::is_same<DirectionPolicy, ForwardDirection<VertexTy>>::value;
+  using transposed_direction = typename std::conditional<
+    isForward, BackwardDirection<VertexTy>, ForwardDirection<VertexTy>>::type;
+  using transposed_type =
+      Graph<vertex_type, edge_weight_type, transposed_direction>;
+
+  friend transposed_type;
+
   template <typename FStream>
   void load_binary(FStream & FS) {
     if (!FS.is_open()) throw "Bad things happened!!!";
