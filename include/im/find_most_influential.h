@@ -17,6 +17,118 @@
 
 namespace im {
 
+template <typename ItrTy1, typename ItrTy2>
+ItrTy2 swap_ranges(ItrTy1 B, ItrTy1 E, ItrTy2 O, sequential_tag) {
+  return std::swap_ranges(B, E, O);
+}
+
+template <typename ItrTy1, typename ItrTy2>
+ItrTy2 swap_ranges(ItrTy1 B, ItrTy1 E, ItrTy2 O, omp_parallel_tag) {
+  size_t toBeSwaped = std::distance(B, E);
+#pragma omp parallel for
+  for (size_t i = 0; i < toBeSwaped; ++i) {
+    std::iter_swap(B + i, O + i);
+  }
+  return O + toBeSwaped;
+}
+
+template <typename ItrTy, typename UnaryPredicate>
+ItrTy partition(ItrTy B, ItrTy E, UnaryPredicate P, sequential_tag) {
+  return std::partition(B, E, P);
+}
+
+namespace {
+
+template <typename ItrTy, typename ex_tag = omp_parallel_tag>
+struct PartitionIndices {
+  ItrTy begin;
+  ItrTy end;
+  ItrTy pivot;
+
+  PartitionIndices() : begin{0}, end{0}, pivot{0} {}
+
+  bool operator==(const PartitionIndices &O) const {
+    return this->begin == O.begin && this->end == O.end &&
+           this->pivot == O.pivot;
+  }
+
+  PartitionIndices &operator+=(const PartitionIndices &O) {
+    if (*this == PartitionIndices()) {
+      this->begin = O.begin;
+      this->end = O.end;
+      this->pivot = O.pivot;
+      return *this;
+    }
+
+    if (O == PartitionIndices()) {
+      return *this;
+    }
+
+    if (this->pivot == this->begin && O.pivot == O.begin) {
+      this->end = O.end;
+      return *this;
+    } else if (this->pivot == this->end && O.pivot == O.end) {
+      this->end = O.end;
+      this->pivot = O.pivot;
+      return *this;
+    }
+
+    if (std::distance(this->pivot, this->end) <
+        std::distance(O.begin, O.pivot)) {
+      size_t toBeMoved = std::distance(this->pivot, this->end);
+      swap_ranges(this->pivot, this->end, std::prev(O.pivot, toBeMoved),
+                  ex_tag{});
+      this->pivot = std::prev(O.pivot, toBeMoved);
+    } else {
+      this->pivot = std::swap_ranges(O.begin, O.pivot, this->pivot);
+    }
+    this->end = O.end;
+
+    return *this;
+  }
+};
+
+}  // namespace
+
+template <typename ItrTy, typename UnaryPredicate>
+ItrTy partition(ItrTy B, ItrTy E, UnaryPredicate P, omp_parallel_tag) {
+  size_t num_threads(1);
+
+#pragma omp single
+  num_threads = omp_get_max_threads();
+
+  std::vector<PartitionIndices<ItrTy>> indices(num_threads);
+
+#pragma omp parallel
+  {
+    size_t num_elements = std::distance(B, E);
+    size_t threadnum = omp_get_thread_num(), numthreads = omp_get_num_threads();
+    size_t low = num_elements * threadnum / numthreads,
+           high = num_elements * (threadnum + 1) / numthreads;
+
+    indices[threadnum].begin = B + low;
+    indices[threadnum].end = std::min(E, B + high);
+    indices[threadnum].pivot =
+        std::partition(indices[threadnum].begin, indices[threadnum].end, P);
+  }
+
+#pragma omp parallel
+  {
+#pragma omp single
+    {
+      for (size_t j = 1; j < num_threads; j <<= 1) {
+        for (size_t i = 0; (i + j) < num_threads; i += j * 2) {
+#pragma omp task
+          { indices[i] += indices[i + j]; }
+        }
+#pragma omp taskwait
+      }
+    }
+  }
+
+  return indices[0].pivot;
+}
+
 //! \brief Count the occurrencies of vertices in the RRR sets.
 //!
 //! \tparam InItr The input sequence iterator type.
