@@ -16,9 +16,54 @@
 #include "trng/uniform_int_dist.hpp"
 
 
+SCENARIO("Swap two sequences", "[pivoting]") {
+  GIVEN("Two random sequence of elements") {
+    std::vector<uint32_t> A(50);
+    std::vector<uint32_t> B(50);
+
+    trng::lcg64 generator;
+    trng::uniform_int_dist rnd_vertex(0, 100);
+
+    std::generate(A.begin(), A.end(),
+                  [&]() -> auto {
+                   return rnd_vertex(generator);
+                  });
+
+    std::generate(B.begin(), B.end(),
+                  [&]() -> auto {
+                    return rnd_vertex(generator);
+                  });
+    WHEN("I swap squentially two copies of A and B") {
+      auto Acopy(A);
+      auto Bcopy(B);
+
+      im::swap_ranges(Acopy.begin(), Acopy.end(), Bcopy.begin(),
+                      im::sequential_tag{});
+
+      THEN("The copies are now swapped") {
+        REQUIRE(Acopy == B);
+        REQUIRE(Bcopy == A);
+      }
+    }
+
+    WHEN("I swap in parallel two copies of A and B") {
+      auto Acopy(A);
+      auto Bcopy(B);
+
+      im::swap_ranges(Acopy.begin(), Acopy.end(), Bcopy.begin(),
+                      im::omp_parallel_tag{});
+
+      THEN("The copies are now swapped") {
+        REQUIRE(Acopy == B);
+        REQUIRE(Bcopy == A);
+      }
+    }
+}
+}
+
+
 SCENARIO("RRR set can grouped in covered and uncovered", "[pivoting]") {
   GIVEN("A random sequence of RRR sets") {
-    
     std::vector<std::set<uint32_t>> rrr_sets(50);
 
     trng::lcg64 generator;

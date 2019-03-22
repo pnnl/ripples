@@ -16,12 +16,30 @@
 #include "im/utility.h"
 
 namespace im {
-
+//! Sequential swap ranges.
+//!
+//! \tparam ItrTy1 The iterator type of the first sequence.
+//! \tparam ItrTy2 The iterator type of the second sequence.
+//!
+//! \param B The begin of the first sequence.
+//! \param E The end of the second sequence.
+//! \param O The begin of the second sequence.
+//! \return The iterator to the one-past last element swapped.
 template <typename ItrTy1, typename ItrTy2>
 ItrTy2 swap_ranges(ItrTy1 B, ItrTy1 E, ItrTy2 O, sequential_tag) {
   return std::swap_ranges(B, E, O);
 }
 
+
+//! Parallel swap ranges.
+//!
+//! \tparam ItrTy1 The iterator type of the first sequence.
+//! \tparam ItrTy2 The iterator type of the second sequence.
+//!
+//! \param B The begin of the first sequence.
+//! \param E The end of the second sequence.
+//! \param O The begin of the second sequence.
+//! \return The iterator to the one-past last element swapped.
 template <typename ItrTy1, typename ItrTy2>
 ItrTy2 swap_ranges(ItrTy1 B, ItrTy1 E, ItrTy2 O, omp_parallel_tag) {
   size_t toBeSwaped = std::distance(B, E);
@@ -32,6 +50,16 @@ ItrTy2 swap_ranges(ItrTy1 B, ItrTy1 E, ItrTy2 O, omp_parallel_tag) {
   return O + toBeSwaped;
 }
 
+//! Reorder a sequence in such a way that all the element for which a predicate
+//! is true preceed the one for which the predicate is false.
+//!
+//! \tparam ItrTy The type of the iterator of the input sequence.
+//! \tparam UnaryPredicate The type of a unary predicate object.
+//!
+//! \param B The start of the sequence to be partitioned.
+//! \param E The end of the sequence to be partitioned.
+//! \param P A C++ collable object implementing the predicate.
+//! \return An iterator to the first element for which the predicate is false.
 template <typename ItrTy, typename UnaryPredicate>
 ItrTy partition(ItrTy B, ItrTy E, UnaryPredicate P, sequential_tag) {
   return std::partition(B, E, P);
@@ -90,6 +118,16 @@ struct PartitionIndices {
 
 }  // namespace
 
+//! Reorder a sequence in such a way that all the element for which a predicate
+//! is true preceed the one for which the predicate is false.
+
+//! \tparam ItrTy The type of the iterator of the input sequence.
+//! \tparam UnaryPredicate The type of a unary predicate object.
+//!
+//! \param B The start of the sequence to be partitioned.
+//! \param E The end of the sequence to be partitioned.
+//! \param P A C++ collable object implementing the predicate.
+//! \return An iterator to the first element for which the predicate is false.
 template <typename ItrTy, typename UnaryPredicate>
 ItrTy partition(ItrTy B, ItrTy E, UnaryPredicate P, omp_parallel_tag) {
   size_t num_threads(1);
@@ -225,62 +263,45 @@ void InitHeapStorage(InItr in_begin, InItr in_end, OutItr out_begin,
 
 //! \brief Update the coverage counters.
 //!
-//! \tparam VertexTy The type of the vertices.
-//! \tparam RRRsetsTy The type storing RRR sets.
-//! \tparam RemovedVectorTy The type of the vector storing removed RRR sets.
+//! \tparam RRRsetsItrTy The iterator type of the sequence of RRR sets.
 //! \tparam VertexCoverageVectorTy The type of the vector storing counters.
 //!
-//! \param v The chosen vertex.
-//! \param RRRsets The sequence of RRRsets.
-//! \param removed The vector storing covered/uncovered flags for the RRRsets.
+//! \param B The start sequence of RRRsets covered by the just selected seed.
+//! \param E The start sequence of RRRsets covered by the just selected seed.
 //! \param vertexCoverage The vector storing the counters to be updated.
-template <typename VertexTy, typename RRRsetsTy, typename RemovedVectorTy,
+template <typename RRRsetsItrTy,
           typename VertexCoverageVectorTy>
-void UpdateCounters(const VertexTy v, const RRRsetsTy &RRRsets,
-                    RemovedVectorTy &removed,
+void UpdateCounters(RRRsetsItrTy B, RRRsetsItrTy E,
                     VertexCoverageVectorTy &vertexCoverage, sequential_tag &&) {
-  for (size_t i = 0; i < RRRsets.size(); ++i) {
-    if (removed[i]) continue;
-
-    if (std::binary_search(RRRsets[i].begin(), RRRsets[i].end(), v)) {
-      removed[i] = true;
-      for (size_t j = 0; j < RRRsets[i].size(); ++j) {
-        vertexCoverage[RRRsets[i][j]] -= 1;
-      }
+  for (;B != E; ++B) {
+    for (auto v : *B) {
+      vertexCoverage[v] -= 1;
     }
   }
 }
+
 
 //! \brief Update the coverage counters.
 //!
-//! \tparam VertexTy The type of the vertices.
-//! \tparam RRRsetsTy The type storing RRR sets.
-//! \tparam RemovedVectorTy The type of the vector storing removed RRR sets.
+//! \tparam RRRsetsItrTy The iterator type of the sequence of RRR sets.
 //! \tparam VertexCoverageVectorTy The type of the vector storing counters.
 //!
-//! \param v The chosen vertex.
-//! \param RRRsets The sequence of RRRsets.
-//! \param removed The vector storing covered/uncovered flags for the RRRsets.
+//! \param B The start sequence of RRRsets covered by the just selected seed.
+//! \param E The start sequence of RRRsets covered by the just selected seed.
 //! \param vertexCoverage The vector storing the counters to be updated.
-template <typename VertexTy, typename RRRsetsTy, typename RemovedVectorTy,
+template <typename RRRsetsItrTy,
           typename VertexCoverageVectorTy>
-void UpdateCounters(const VertexTy v, const RRRsetsTy &RRRsets,
-                    RemovedVectorTy &removed,
+void UpdateCounters(RRRsetsItrTy B, RRRsetsItrTy E,
                     VertexCoverageVectorTy &vertexCoverage,
                     omp_parallel_tag &&) {
-  for (size_t i = 0; i < RRRsets.size(); ++i) {
-    if (removed[i]) continue;
-
-    if (std::binary_search(RRRsets[i].begin(), RRRsets[i].end(), v)) {
-      removed[i] = true;
-
+  for (;B != E; ++B) {
 #pragma omp parallel for
-      for (size_t j = 0; j < RRRsets[i].size(); ++j) {
-        vertexCoverage[RRRsets[i][j]] -= 1;
-      }
+    for (size_t j = 0; j < (*B).size(); ++j) {
+      vertexCoverage[(*B)[j]] -= 1;
     }
   }
 }
+
 
 //! \brief Select k seeds starting from the a list of Random Reverse
 //! Reachability Sets.
@@ -298,7 +319,7 @@ void UpdateCounters(const VertexTy v, const RRRsetsTy &RRRsets,
 //! the set of vertices selected as seeds.
 template <typename GraphTy, typename RRRset, typename execution_tag>
 auto FindMostInfluentialSet(const GraphTy &G, size_t k,
-                            const std::vector<RRRset> &RRRsets,
+                            std::vector<RRRset> &RRRsets,
                             execution_tag &&ex_tag) {
   using vertex_type = typename GraphTy::vertex_type;
 
@@ -327,8 +348,9 @@ auto FindMostInfluentialSet(const GraphTy &G, size_t k,
   std::vector<typename GraphTy::vertex_type> result;
   result.reserve(k);
 
-  std::vector<char> removed(RRRsets.size(), false);
   size_t uncovered = RRRsets.size();
+
+  auto end = RRRsets.end();
 
   while (result.size() < k && uncovered != 0) {
     auto element = queue.top();
@@ -342,9 +364,30 @@ auto FindMostInfluentialSet(const GraphTy &G, size_t k,
 
     uncovered -= element.second;
 
-    UpdateCounters(element.first, RRRsets, removed, vertexCoverage,
-                   std::forward<execution_tag>(ex_tag));
+    auto cmp = [=](const RRRset & a) -> auto {
+                 return !std::binary_search(a.begin(), a.end(), element.first);
+               };
 
+    auto itr = partition(RRRsets.begin(), end, cmp);
+
+    if (std::distance(itr, end) < std::distance(RRRsets.begin(), itr)) {
+      UpdateCounters(itr, end, vertexCoverage,
+                     std::forward<execution_tag>(ex_tag));
+    } else {
+      if (std::is_same<execution_tag, omp_parallel_tag>::value) {
+#pragma omp parallel for simd
+        for (size_t i = 0; i < vertexCoverage.size(); ++i)
+          vertexCoverage[i] = 0;
+      } else {
+        std::fill(vertexCoverage.begin(), vertexCoverage.end(), 0);
+      }
+      CountOccurrencies(
+          RRRsets.begin(), itr,
+          vertexCoverage.begin(), vertexCoverage.end(),
+          std::forward<execution_tag>(ex_tag));
+    }
+
+    end = itr;
     result.push_back(element.first);
   }
 

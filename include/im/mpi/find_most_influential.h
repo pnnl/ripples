@@ -29,7 +29,7 @@ namespace im {
 //! the set of vertices selected as seeds.
 template <typename GraphTy, typename RRRset>
 auto FindMostInfluentialSet(const GraphTy &G, size_t k,
-                            const std::vector<RRRset> &RRRsets,
+                            std::vector<RRRset> &RRRsets,
                             mpi_omp_parallel_tag &ex_tag) {
   using vertex_type = typename GraphTy::vertex_type;
   std::vector<uint32_t> vertexCoverage(G.num_nodes(), 0);
@@ -74,7 +74,7 @@ auto FindMostInfluentialSet(const GraphTy &G, size_t k,
   std::vector<typename GraphTy::vertex_type> result;
   result.reserve(k);
 
-  std::vector<char> removed(RRRsets.size(), false);
+  auto end = RRRsets.end();
   uint32_t coveredAndSelected[2] = { 0, 0 };
 
   while (result.size() < k) {
@@ -93,13 +93,32 @@ auto FindMostInfluentialSet(const GraphTy &G, size_t k,
 
     MPI_Bcast(&coveredAndSelected, 2, MPI_UINT32_T, 0, MPI_COMM_WORLD);
 
-    UpdateCounters(coveredAndSelected[1], RRRsets, removed, vertexCoverage,
-                   omp_parallel_tag{});
+    vertex_type v = coveredAndSelected[1];
+    auto cmp = [=](const RRRset & a) -> auto {
+                 return !std::binary_search(a.begin(), a.end(), v);
+               };
+
+    auto itr = partition(RRRsets.begin(), end, cmp);
+
+    if (std::distance(itr, end) < std::distance(RRRsets.begin(), itr)) {
+      UpdateCounters(itr, end, vertexCoverage, omp_parallel_tag{});
+    } else {
+      #pragma omp parallel for simd
+      for (size_t i = 0; i < vertexCoverage.size(); ++i)
+        vertexCoverage[i] = 0;
+
+      CountOccurrencies(
+          RRRsets.begin(), itr,
+          vertexCoverage.begin(), vertexCoverage.end(),
+          omp_parallel_tag{});
+    }
+
+    end = itr;
 
     MPI_Reduce(vertexCoverage.data(), reduceCoverageInfo.data(), G.num_nodes(),
                MPI_UINT32_T, MPI_SUM, 0, MPI_COMM_WORLD);
 
-    result.push_back(coveredAndSelected[1]);
+    result.push_back(v);
   }
 
   int world_size = 0;
