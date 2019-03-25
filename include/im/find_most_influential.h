@@ -12,7 +12,6 @@
 #include <vector>
 
 #include <omp.h>
-
 #include "im/utility.h"
 
 namespace im {
@@ -108,7 +107,8 @@ struct PartitionIndices {
                   ex_tag{});
       this->pivot = std::prev(O.pivot, toBeMoved);
     } else {
-      this->pivot = std::swap_ranges(O.begin, O.pivot, this->pivot);
+      this->pivot = swap_ranges(O.begin, O.pivot, this->pivot,
+                                omp_parallel_tag{});
     }
     this->end = O.end;
 
