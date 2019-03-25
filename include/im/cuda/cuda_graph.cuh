@@ -4,8 +4,8 @@
 //
 //===----------------------------------------------------------------------===//
 
-#ifndef IM_CUDA_CUDA_COMMON_CUH
-#define IM_CUDA_CUDA_COMMON_CUH
+#ifndef IM_CUDA_CUDA_GRAPH_CUH
+#define IM_CUDA_CUDA_GRAPH_CUH
 
 #include <cassert>
 
@@ -59,4 +59,4 @@ void destroy_cuda_graph(cuda_graph *g) {
   delete g;
 }
 
-#endif  // IM_CUDA_CUDA_COMMON_CUH
+#endif  // IM_CUDA_CUDA_GRAPH_CUH

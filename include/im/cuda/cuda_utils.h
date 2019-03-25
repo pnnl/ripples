@@ -13,7 +13,7 @@ namespace im {
 
 #define CUDA_DBG 0
 #define CUDA_CHECK 0
-#define CUDA_PROFILE 0
+#define CUDA_PROFILE 1
 
 #if CUDA_DBG
 #define CUDA_LOG(...) printf(__VA_ARGS__)
