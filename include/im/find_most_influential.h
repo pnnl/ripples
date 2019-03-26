@@ -72,32 +72,52 @@ struct PartitionIndices {
   ItrTy end;
   ItrTy pivot;
 
-  PartitionIndices() : begin{}, end{}, pivot{} {}
+  PartitionIndices(PartitionIndices && O)
+      : begin{std::move(O.begin)},
+        end{std::move(O.end)},
+        pivot{std::move(O.pivot)}
+  {}
+
+  PartitionIndices & operator=(PartitionIndices && O) {
+    this->begin = std::move(O.begin);
+    this->end = std::move(O.end);
+    this->pivot = std::move(O.pivot);
+    return *this;
+  }
+
+  PartitionIndices(const PartitionIndices & O)
+      : begin{O.begin},
+        end{O.end},
+        pivot{O.pivot}
+  {}
+
+  PartitionIndices & operator=(const PartitionIndices &O) {
+    this->begin = O.begin;
+    this->end = O.end;
+    this->pivot = O.pivot;
+    return *this;
+  }
+
+  PartitionIndices(ItrTy B, ItrTy E, ItrTy P)
+      : begin{B}, end{E}, pivot{P} {}
+
+  PartitionIndices(ItrTy B, ItrTy E) : PartitionIndices(B, E, E) {}
 
   bool operator==(const PartitionIndices &O) const {
     return this->begin == O.begin && this->end == O.end &&
            this->pivot == O.pivot;
   }
 
-  PartitionIndices &operator+=(const PartitionIndices &O) {
-    if (*this == PartitionIndices()) {
-      this->begin = O.begin;
-      this->end = O.end;
-      this->pivot = O.pivot;
-      return *this;
-    }
-
-    if (O == PartitionIndices()) {
-      return *this;
-    }
+  PartitionIndices operator+(const PartitionIndices &O) {
+    PartitionIndices result(*this);
 
     if (this->pivot == this->begin && O.pivot == O.begin) {
-      this->end = O.end;
-      return *this;
+      result.end = O.end;
+      return result;
     } else if (this->pivot == this->end && O.pivot == O.end) {
-      this->end = O.end;
-      this->pivot = O.pivot;
-      return *this;
+      result.end = O.end;
+      result.pivot = O.pivot;
+      return result;
     }
 
     if (std::distance(this->pivot, this->end) <
@@ -105,14 +125,14 @@ struct PartitionIndices {
       size_t toBeMoved = std::distance(this->pivot, this->end);
       swap_ranges(this->pivot, this->end, std::prev(O.pivot, toBeMoved),
                   ex_tag{});
-      this->pivot = std::prev(O.pivot, toBeMoved);
+      result.pivot = std::prev(O.pivot, toBeMoved);
     } else {
       this->pivot = swap_ranges(O.begin, O.pivot, this->pivot,
                                 omp_parallel_tag{});
     }
-    this->end = O.end;
+    result.end = O.end;
 
-    return *this;
+    return result;
   }
 };
 
@@ -133,9 +153,10 @@ ItrTy partition(ItrTy B, ItrTy E, UnaryPredicate P, omp_parallel_tag) {
   size_t num_threads(1);
 
 #pragma omp single
-  num_threads = omp_get_max_threads();
+  { num_threads = omp_get_max_threads(); }
 
-  std::vector<PartitionIndices<ItrTy>> indices(num_threads);
+  std::vector<PartitionIndices<ItrTy>> indices(num_threads,
+                                               PartitionIndices<ItrTy>(B, E));
 
 #pragma omp parallel
   {
@@ -150,16 +171,13 @@ ItrTy partition(ItrTy B, ItrTy E, UnaryPredicate P, omp_parallel_tag) {
         std::partition(indices[threadnum].begin, indices[threadnum].end, P);
   }
 
-#pragma omp parallel
-  {
-#pragma omp single
+  for (size_t j = 1; j < num_threads; j <<= 1) {
+    #pragma omp parallel
     {
-      for (size_t j = 1; j < num_threads; j <<= 1) {
-        for (size_t i = 0; (i + j) < num_threads; i += j * 2) {
-#pragma omp task
-          { indices[i] += indices[i + j]; }
-        }
-#pragma omp taskwait
+      #pragma omp single nowait
+      for (size_t i = 0; (i + j) < num_threads; i += j * 2) {
+        #pragma omp task firstprivate(i, j)
+        { indices[i] = indices[i] + indices[i + j]; }
       }
     }
   }
