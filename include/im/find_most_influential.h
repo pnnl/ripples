@@ -42,7 +42,7 @@ ItrTy2 swap_ranges(ItrTy1 B, ItrTy1 E, ItrTy2 O, sequential_tag) {
 template <typename ItrTy1, typename ItrTy2>
 ItrTy2 swap_ranges(ItrTy1 B, ItrTy1 E, ItrTy2 O, omp_parallel_tag) {
   size_t toBeSwaped = std::distance(B, E);
-#pragma omp parallel for
+  #pragma omp parallel for
   for (size_t i = 0; i < toBeSwaped; ++i) {
     std::iter_swap(B + i, O + i);
   }
@@ -111,10 +111,10 @@ struct PartitionIndices {
   PartitionIndices operator+(const PartitionIndices &O) {
     PartitionIndices result(*this);
 
-    if (this->pivot == this->begin && O.pivot == O.begin) {
+    if (this->pivot == this->begin && O.pivot == O.begin ) {
       result.end = O.end;
       return result;
-    } else if (this->pivot == this->end && O.pivot == O.end) {
+    } else if (this->pivot == this->end) {
       result.end = O.end;
       result.pivot = O.pivot;
       return result;
@@ -127,8 +127,8 @@ struct PartitionIndices {
                   ex_tag{});
       result.pivot = std::prev(O.pivot, toBeMoved);
     } else {
-      this->pivot = swap_ranges(O.begin, O.pivot, this->pivot,
-                                omp_parallel_tag{});
+      result.pivot = swap_ranges(O.begin, O.pivot, this->pivot,
+                                 ex_tag{});
     }
     result.end = O.end;
 
