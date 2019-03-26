@@ -20,16 +20,12 @@
 
 
 struct DumpOutputConfiguration {
-  std::string OName{"."};
-  bool binary{false};
+  std::string OName{"output.bin"};
 
   void addCmdOptions(CLI::App &app) {
     app.add_option("-o,--output", OName,
-                   "The name of the output file/directory")
+                   "The name of the output file name")
         ->required()
-        ->group("Output Options");
-    app.add_flag("--binary", binary,
-                 "Dump in binary format")
         ->group("Output Options");
   }
 };
@@ -55,43 +51,23 @@ int main(int argc, char **argv) {
   Configuration CFG;
   CFG.ParseCmdOptions(argc, argv);
 
-  namespace fs = std::experimental::filesystem;
-
   trng::lcg64 weightGen;
   weightGen.seed(0UL);
   weightGen.split(2, 0);
 
   spdlog::set_level(spdlog::level::info);
 
+  using Graph = im::Graph<uint32_t, float, im::BackwardDirection<uint32_t>>;
   auto console = spdlog::stdout_color_st("console");
   console->info("Loading...");
-
-  auto edgeList = im::loadEdgeList<im::Edge<uint32_t, float>>(CFG, weightGen);
+  Graph G = im::loadGraph<Graph>(CFG, weightGen);
   console->info("Loading Done!");
-
-  im::Graph<uint32_t, float> G(edgeList.begin(), edgeList.end());
-  im::Graph<uint32_t, float,im::BackwardDirection<uint32_t>> GBackward(edgeList.begin(), edgeList.end());
   console->info("Number of Nodes : {}", G.num_nodes());
   console->info("Number of Edges : {}", G.num_edges());
-  if (!CFG.binary) {
-    {
-      std::ofstream attribute(CFG.OName + "/attribute.txt");
-      attribute << "n=" << G.num_nodes() << std::endl;
-      attribute << "m=" << G.num_edges() << std::endl;
-    }
-
-    {
-      std::ofstream graph_ic(CFG.OName + "/graph_ic.inf");
-      for (uint32_t v = 0; v < G.num_nodes(); ++v)
-        for (auto &e : G.neighbors(v))
-          graph_ic << v << " " << e.vertex << " " << e.weight << std::endl;
-    }
-    return EXIT_SUCCESS;
-  }
 
   // Dump in binary format
   auto file = std::fstream(CFG.OName, std::ios::out | std::ios::binary);
-  GBackward.dump_binary(file);
+  G.dump_binary(file);
   file.close();
 
   return EXIT_SUCCESS;

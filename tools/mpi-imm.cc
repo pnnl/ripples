@@ -67,31 +67,21 @@ int main(int argc, char *argv[]) {
 
   spdlog::set_level(spdlog::level::info);
 
-  auto console = spdlog::stdout_color_st("console");
-  console->info("Loading...");
-
   trng::lcg64 weightGen;
   weightGen.seed(0UL);
   weightGen.split(2, 0);
-  im::Graph<uint32_t, float, im::BackwardDirection<uint32_t>> G;
-  if (!CFG.reload) {
-    auto edgeList = im::loadEdgeList<im::Edge<uint32_t, float>>(CFG, weightGen);
-    console->info("Loading Done!");
-    im::Graph<uint32_t, float, im::BackwardDirection<uint32_t>> tmpG(edgeList.begin(), edgeList.end());
-    edgeList.clear();
 
-    G = std::move(tmpG);
-  } else {
-    std::ifstream binaryDump(CFG.IFileName, std::ios::binary);
-    im::Graph<uint32_t, float, im::BackwardDirection<uint32_t>> tmpG(binaryDump);
-    G = std::move(tmpG);
-  }
+  using Graph = im::Graph<uint32_t, float, im::BackwardDirection<uint32_t>>;
+  auto console = spdlog::stdout_color_st("console");
+  console->info("Loading...");
+  Graph G = im::loadGraph<Graph>(CFG, weightGen);
+  console->info("Loading Done!");
   console->info("Number of Nodes : {}", G.num_nodes());
   console->info("Number of Edges : {}", G.num_edges());
 
   nlohmann::json executionLog;
 
-  std::vector<typename im::Graph<uint32_t, float>::vertex_type> seeds;
+  std::vector<typename Graph::vertex_type> seeds;
   im::IMMExecutionRecord R;
 
   trng::lcg64 generator;
