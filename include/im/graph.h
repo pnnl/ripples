@@ -10,6 +10,7 @@
 #include <algorithm>
 #include <cstddef>
 #include <map>
+#include <numeric>
 #include <vector>
 
 #include <im/utility.h>
