@@ -73,7 +73,7 @@ struct PartitionIndices {
   ItrTy end;
   ItrTy pivot;
 
-  PartitionIndices() : begin{0}, end{0}, pivot{0} {}
+  PartitionIndices() : begin{}, end{}, pivot{} {}
 
   bool operator==(const PartitionIndices &O) const {
     return this->begin == O.begin && this->end == O.end &&
