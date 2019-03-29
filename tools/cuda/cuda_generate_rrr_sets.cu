@@ -236,7 +236,7 @@ void batch_kernel(size_t batch_size) {
 #if CUDA_PROFILE
   // un-comment the following line to measure effective kernel run-time (rather
   // than launch-time)
-  // cudaStreamSynchronize(cuda_conf.streams[stream_id]);
+  // cudaDeviceSynchronize();
   auto elapsed = std::chrono::duration_cast<std::chrono::nanoseconds>(
       std::chrono::high_resolution_clock::now() - start);
   profile_breakdown[breakdown_tag::KERNEL].push_back(elapsed);
@@ -254,9 +254,6 @@ void batch_d2h(size_t batch_size) {
              cudaMemcpyDeviceToHost);
 
 #if CUDA_PROFILE
-  // un-comment the following line to measure effective kernel run-time (rather
-  // than launch-time)
-  // cudaStreamSynchronize(cuda_conf.streams[stream_id]);
   auto elapsed = std::chrono::duration_cast<std::chrono::nanoseconds>(
       std::chrono::high_resolution_clock::now() - start);
   profile_breakdown[breakdown_tag::COPY].push_back(elapsed);
