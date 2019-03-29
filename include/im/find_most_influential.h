@@ -9,6 +9,7 @@
 
 #include <algorithm>
 #include <queue>
+#include <unordered_set>
 #include <vector>
 
 #include <omp.h>
@@ -70,23 +71,6 @@ void CountOccurrencies(InItr in_begin, InItr in_end, OutItr out_begin,
   }
 }
 
-//! \brief Count the occurrencies of vertices in the RRR sets.
-//!
-//! \tparam InItr The input sequence iterator type.
-//! \tparam OutItr The output sequence iterator type.
-//!
-//! \param in_begin The begin of the sequence of RRR sets.
-//! \param in_end The end of the sequence of RRR sets.
-//! \param out_begin The begin of the sequence storing the counters for each
-//! vertex.
-//! \param out_end The end of the sequence storing the counters for each vertex.
-//! \param e The execution policy tag.
-template <typename InItr, typename OutItr>
-void CountOccurrencies(InItr in_begin, InItr in_end, OutItr out_begin,
-                       OutItr out_end, cuda_parallel_tag &&e) {
-	CountOccurrencies(in_begin, in_end, out_begin, out_end, sequential_tag{});
-}
-
 //! \brief Initialize the Heap storage.
 //!
 //! \tparam InItr The input sequence iterator type.
@@ -126,22 +110,6 @@ void InitHeapStorage(InItr in_begin, InItr in_end, OutItr out_begin,
   for (vertex_type v = 0; v < std::distance(in_begin, in_end); ++v) {
     *(out_begin + v) = {v, *(in_begin + v)};
   }
-}
-
-//! \brief Initialize the Heap storage.
-//!
-//! \tparam InItr The input sequence iterator type.
-//! \tparam OutItr The output sequence iterator type.
-//!
-//! \param in_begin The begin of the sequence of vertex counters.
-//! \param in_end The end of the sequence of vertex counters.
-//! \param out_begin The begin of the sequence used as storage in the Heap.
-//! \param out_end The end of the sequence used as storage in the Heap.
-//! \param e The execution policy tag.
-template <typename InItr, typename OutItr>
-void InitHeapStorage(InItr in_begin, InItr in_end, OutItr out_begin,
-                     OutItr out_end, cuda_parallel_tag &&e) {
-	InitHeapStorage(in_begin, in_end, out_begin, out_end, sequential_tag{});
 }
 
 //! \brief Update the coverage counters.
@@ -201,25 +169,6 @@ void UpdateCounters(const VertexTy v, const RRRsetsTy &RRRsets,
       }
     }
   }
-}
-
-//! \brief Update the coverage counters.
-//!
-//! \tparam VertexTy The type of the vertices.
-//! \tparam RRRsetsTy The type storing RRR sets.
-//! \tparam RemovedVectorTy The type of the vector storing removed RRR sets.
-//! \tparam VertexCoverageVectorTy The type of the vector storing counters.
-//!
-//! \param v The chosen vertex.
-//! \param RRRsets The sequence of RRRsets.
-//! \param removed The vector storing covered/uncovered flags for the RRRsets.
-//! \param vertexCoverage The vector storing the counters to be updated.
-template <typename VertexTy, typename RRRsetsTy, typename RemovedVectorTy,
-          typename VertexCoverageVectorTy>
-void UpdateCounters(const VertexTy v, const RRRsetsTy &RRRsets,
-                    RemovedVectorTy &removed,
-                    VertexCoverageVectorTy &vertexCoverage, cuda_parallel_tag &&) {
-	UpdateCounters(v, RRRsets, removed, vertexCoverage, sequential_tag{});
 }
 
 //! \brief Select k seeds starting from the a list of Random Reverse
@@ -289,6 +238,101 @@ auto FindMostInfluentialSet(const GraphTy &G, size_t k,
   }
 
   double f = double(RRRsets.size() - uncovered) / RRRsets.size();
+
+  return std::make_pair(f, result);
+}
+
+//! \brief Specialization of FindMostInfluentialSet() for CUDA execution.
+//!
+//! \tparam GraphTy The graph type.
+//! \tparam RRRset The type storing Random Reverse Reachability Sets.
+//! \tparam execution_tag The execution policy.
+//!
+//! \param G The input graph.
+//! \param k The size of the seed set.
+//! \param RRRsets A vector of Random Reverse Reachability sets.
+//! \param ex_tag The execution policy tag.
+//!
+//! \return a pair where the size_t is the number of RRRset covered and
+//! the set of vertices selected as seeds.
+template <typename GraphTy, typename RRRset>
+auto FindMostInfluentialSet(const GraphTy &G, size_t k,
+                            const std::vector<RRRset> &RRRsets,
+                            cuda_parallel_tag &&ex_tag) {
+  using vertex_type = typename GraphTy::vertex_type;
+
+  static std::chrono::nanoseconds elapsed_count{0}, elapsed_csr{0},
+      elapsed_core{0};
+  std::vector<uint32_t> occurrences(G.num_nodes(), 0);
+
+  // build CSR
+  auto start = std::chrono::high_resolution_clock::now();
+  std::vector<vertex_type *> rrr_csr_index(RRRsets.size() + 1);
+  std::vector<bool> rrr_csr_active(RRRsets.size(), true);
+  uint64_t n = 0;
+  for (auto &r : RRRsets) n += r.size();
+  std::vector<vertex_type> rrr_csr_sets(n);
+  size_t si = 0, vi = 0;
+  for (auto &r : RRRsets) {
+    rrr_csr_index[si++] = rrr_csr_sets.data() + vi;
+    for (auto &v : r) rrr_csr_sets[vi++] = v;
+  }
+  rrr_csr_index[si] = rrr_csr_sets.data() + vi;
+  elapsed_csr += std::chrono::duration_cast<std::chrono::nanoseconds>(
+      std::chrono::high_resolution_clock::now() - start);
+
+  // init counters
+  start = std::chrono::high_resolution_clock::now();
+  for (auto &v : rrr_csr_sets) ++occurrences[v];
+  elapsed_count += std::chrono::duration_cast<std::chrono::nanoseconds>(
+      std::chrono::high_resolution_clock::now() - start);
+
+  std::vector<vertex_type> result;
+  result.reserve(k);
+  size_t uncovered = RRRsets.size();
+
+  start = std::chrono::high_resolution_clock::now();
+  while (result.size() < k && uncovered != 0) {
+    // find most occurring
+    auto most_occ_it = std::max_element(occurrences.begin(), occurrences.end());
+    auto most_occ = std::distance(occurrences.begin(), most_occ_it);
+    result.push_back(most_occ);
+
+    // update active sets + counters
+    for (size_t ri = 0; ri < rrr_csr_active.size(); ++ri) {
+      if (rrr_csr_active[ri]) {
+        vertex_type *begin = rrr_csr_index[ri];
+        vertex_type *end = rrr_csr_index[ri + 1];
+        for (auto b = begin; b != end; ++b) {
+          if (*b == most_occ) {
+            // update counters
+            for (auto bb = begin; bb != end; ++bb) {
+              assert(occurrences[*bb]);
+              --occurrences[*bb];
+            }
+            // deactivate
+            rrr_csr_active[ri] = false;
+            --uncovered;
+            break;
+          }
+        }
+      }
+    }
+
+    assert(occurrences[most_occ] == 0);
+  }
+  elapsed_core += std::chrono::duration_cast<std::chrono::nanoseconds>(
+      std::chrono::high_resolution_clock::now() - start);
+
+  std::cout << "> [FindMostInfluentialSet] CSR(ns)   :" << elapsed_csr.count()
+            << std::endl;
+  std::cout << "> [FindMostInfluentialSet] count(ns) :" << elapsed_count.count()
+            << std::endl;
+  std::cout << "> [FindMostInfluentialSet] core(ns)  :" << elapsed_core.count()
+            << std::endl;
+
+  double f = double(RRRsets.size() - uncovered) / RRRsets.size();
+  printf("> [FindMostInfluentialSet] f=%f\n", f);
 
   return std::make_pair(f, result);
 }
