@@ -386,7 +386,8 @@ auto FindMostInfluentialSet(const GraphTy &G, size_t k,
                  return !std::binary_search(a.begin(), a.end(), element.first);
                };
 
-    auto itr = partition(RRRsets.begin(), end, cmp);
+    auto itr = partition(RRRsets.begin(), end, cmp,
+                         std::forward<execution_tag>(ex_tag));
 
     if (std::distance(itr, end) < std::distance(RRRsets.begin(), itr)) {
       UpdateCounters(itr, end, vertexCoverage,
