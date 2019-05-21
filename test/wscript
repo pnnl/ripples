@@ -7,7 +7,7 @@ def build(bld):
         target='test_main',
         use=['3rd-party'])
 
-    bld(features='cxx cxxprogram',
+    bld(features='cxx cxxprogram test',
         source='pivoting.cc',
         target='run_tests',
         use=['project-headers', '3rd-party', 'TRNG', 'OpenMP', 'JSON', 'test_main'])
