@@ -71,17 +71,19 @@ int main(int argc, char *argv[]) {
   weightGen.seed(0UL);
   weightGen.split(2, 0);
 
-  using Graph = im::Graph<uint32_t, float, im::BackwardDirection<uint32_t>>;
+  using GraphFwd = im::Graph<uint32_t, float, im::ForwardDirection<uint32_t>>;
+  using GraphBwd = im::Graph<uint32_t, float, im::BackwardDirection<uint32_t>>;
   auto console = spdlog::stdout_color_st("console");
   console->info("Loading...");
-  Graph G = im::loadGraph<Graph>(CFG, weightGen);
+  GraphFwd Gf = im::loadGraph<GraphFwd>(CFG, weightGen);
+  GraphBwd G = Gf.get_transpose();
   console->info("Loading Done!");
   console->info("Number of Nodes : {}", G.num_nodes());
   console->info("Number of Edges : {}", G.num_edges());
 
   nlohmann::json executionLog;
 
-  std::vector<typename Graph::vertex_type> seeds;
+  std::vector<typename GraphBwd::vertex_type> seeds;
   im::IMMExecutionRecord R;
 
   trng::lcg64 generator;

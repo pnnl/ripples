@@ -279,6 +279,15 @@ class Graph {
     });
   }
 
+  //! Convert a vertex from the interal representation to the original input
+  //! representation.
+  //!
+  //! \param v The input vertex ID.
+  //! \return The original vertex ID in the input representation.
+  vertex_type convertID(const vertex_type v) const {
+    return reverseMap[v];
+  }
+
   //! Convert a list of vertices from the original input edge list
   //! representation to the internal vertex representation.
   //!
