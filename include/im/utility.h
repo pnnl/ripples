@@ -11,6 +11,19 @@
 #include <chrono>
 #include <utility>
 
+#ifdef __APPLE__
+#include <machine/endian.h>
+#include <libkern/OSByteOrder.h>
+
+#define le64toh(x) OSSwapLittleToHostInt64(x)
+#define htole64(x) OSSwapHostToLittleInt64(x)
+
+#define le32toh(x) OSSwapLittleToHostInt32(x)
+#define htole32(x) OSSwapHostToLittleInt32(x)
+#else
+#include <endian.h>
+#endif
+
 #ifndef __CUDACC__
 #include "nlohmann/json.hpp"
 #endif

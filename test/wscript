@@ -1,0 +1,14 @@
+#! /usr/bin/env python
+# encoding: utf-8
+
+def build(bld):
+    bld(features='cxx cxxstlib',
+        source='test_main.cc',
+        target='test_main',
+        use=['3rd-party'])
+
+    bld(features='cxx cxxprogram test',
+        source='pivoting.cc',
+        target='run_tests',
+        use=['project-headers', '3rd-party', 'TRNG', 'OpenMP', 'JSON', 'test_main'])
+    

@@ -7,6 +7,7 @@ APPNAME = 'ripples'
 
 def options(opt):
     opt.load('compiler_cxx')
+    opt.load('waf_unit_test')
     opt.load('sphinx', tooldir='waftools')
 
     cfg_options = opt.get_option_group('Configuration options')
@@ -33,6 +34,7 @@ def options(opt):
 
 def configure(conf):
     conf.load('compiler_cxx')
+    conf.load('waf_unit_test')
     conf.load('sphinx', tooldir='waftools')
 
     conf.env.CXXFLAGS += ['-std=c++14', '-O3', '-march=native', '-pipe']
@@ -54,7 +56,8 @@ def configure(conf):
 
 
 def build(bld):
-    directories = ['3rd-party', 'include', 'tools']
+    directories = ['3rd-party', 'include', 'tools', 'test']
+
     bld.recurse(directories)
 
 

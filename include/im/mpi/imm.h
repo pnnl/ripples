@@ -168,9 +168,9 @@ auto IMM(const GraphTy &G, std::size_t k, double epsilon, double l, PRNG &gen,
 
   l = l * (1 + 1 / std::log2(G.num_nodes()));
 
-  const auto &R = Sampling(G, k, epsilon, l, generator, record,
-                           std::forward<diff_model_tag>(model_tag),
-                           ex_tag);
+  auto R = Sampling(G, k, epsilon, l, generator, record,
+                    std::forward<diff_model_tag>(model_tag),
+                    ex_tag);
 
   auto start = std::chrono::high_resolution_clock::now();
   const auto &S = FindMostInfluentialSet(G, k, R, ex_tag);

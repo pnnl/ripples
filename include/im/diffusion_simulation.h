@@ -7,6 +7,7 @@
 #pragma once
 
 #include <algorithm>
+#include <vector>
 #include <set>
 
 #include "trng/uniform01_dist.hpp"
