@@ -171,11 +171,8 @@ int main(int argc, char **argv) {
     perf << executionLog.dump(2);
   } else if (CFG.cuda_parallel) {
     std::ofstream perf(CFG.OutputFile);
-    trng::uniform_int_dist cuda_rng_seed_dist(
-        0, std::numeric_limits<unsigned long long>::max());
     if (CFG.diffusionModel == "IC") {
-      cuda_init(G, cuda_rng_seed_dist(generator),
-                im::independent_cascade_tag{});
+      cuda_init(G, generator, im::independent_cascade_tag{});
       auto start = std::chrono::high_resolution_clock::now();
       std::tie(seeds, R) =
           IMM(G, CFG.k, CFG.epsilon, 1, generator,
@@ -184,7 +181,7 @@ int main(int argc, char **argv) {
       cuda_fini(im::independent_cascade_tag{});
       R.Total = end - start;
     } else if (CFG.diffusionModel == "LT") {
-      cuda_init(G, cuda_rng_seed_dist(generator), im::linear_threshold_tag{});
+      cuda_init(G, generator, im::linear_threshold_tag{});
       auto start = std::chrono::high_resolution_clock::now();
       std::tie(seeds, R) =
           IMM(G, CFG.k, CFG.epsilon, 1, generator, im::linear_threshold_tag{},

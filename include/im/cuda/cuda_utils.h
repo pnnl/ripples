@@ -21,6 +21,8 @@ namespace im {
 #define CUDA_LOG(...)
 #endif
 
+constexpr size_t debug_walk_id = 1;
+
 //
 // check utilities
 //

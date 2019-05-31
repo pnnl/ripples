@@ -27,22 +27,22 @@ namespace im {
 using cuda_GraphTy =
     im::Graph<uint32_t, float, im::BackwardDirection<uint32_t>>;
 using cuda_res_t = std::vector<std::vector<typename cuda_GraphTy::vertex_type>>;
-using cuda_PRNGeneratorTy = std::vector<trng::lcg64>;
+using cuda_PRNGeneratorTy = trng::lcg64;
 
 //! \brief Initialize CUDA execution context for LT model.
 //!
 //! \param G The input host-side graph.
-//! \param seed The seed for the device-side generator.
 //! \param model_tag The diffusion model tag.
-void cuda_init(const cuda_GraphTy &G, unsigned long long seed,
+void cuda_init(const cuda_GraphTy &G,
+		       const cuda_PRNGeneratorTy &,
                im::linear_threshold_tag &&model_tag);
 
 //! \brief Initialize CUDA execution context for IC model.
 //!
 //! \param G The input host-side graph.
-//! \param seed The seed for the device-side generator.
 //! \param model_tag The diffusion model tag.
-void cuda_init(const cuda_GraphTy &G, unsigned long long seed,
+void cuda_init(const cuda_GraphTy &G,
+		       const cuda_PRNGeneratorTy &,
                im::independent_cascade_tag &&model_tag);
 
 //! \brief Finalize CUDA execution context for LT model.
