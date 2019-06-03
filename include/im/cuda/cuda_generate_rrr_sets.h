@@ -84,7 +84,7 @@ cuda_res_t CudaGenerateRRRSets(size_t theta,
 //
 using mask_word_t = typename cuda_GraphTy::vertex_type;
 constexpr size_t MAX_SET_SIZE = 256;
-constexpr size_t MAX_PARDEG = 20;
+constexpr size_t MAX_PARDEG = 10;
 
 #define CUDA_DBG 0
 #define CUDA_CHECK 0

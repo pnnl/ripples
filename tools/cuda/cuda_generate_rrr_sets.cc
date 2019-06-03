@@ -83,7 +83,7 @@ void cuda_init(const cuda_GraphTy &G,
   cuda_conf.warp_step = 1;  // per block
   //cuda_conf.warp_step = cuda_conf.cuda_prop.warpSize;  // per warp
   cuda_conf.block_size = cuda_conf.warp_step * (1 << 0);
-  cuda_conf.n_blocks = 1 << 12;
+  cuda_conf.n_blocks = 1 << 13;
   cuda_conf.grid_size = cuda_conf.n_blocks * cuda_conf.block_size;
   cuda_conf.max_batch_size = cuda_conf.grid_size / cuda_conf.warp_step;
   cuda_conf.mask_words = MAX_SET_SIZE;
@@ -284,7 +284,7 @@ cuda_res_t CudaGenerateRRRSets(size_t theta,
   auto num_batches = (rrr_sets.size() + cuda_conf.max_batch_size - 1) / cuda_conf.max_batch_size;
   printf("> [CudaGenerateRRRSets] BEGIN-phase batches=%d\n", num_batches);
 
-#pragma omp parallel for schedule(guided)
+#pragma omp parallel for schedule(guided), num_threads(MAX_PARDEG)
   for(size_t bi = 0; bi < num_batches; ++bi) {
 	  auto batch_first = bi * cuda_conf.max_batch_size;
 	  auto batch_size = std::min(rrr_sets.size() - batch_first, cuda_conf.max_batch_size);
