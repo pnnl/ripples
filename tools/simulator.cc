@@ -9,6 +9,7 @@
 #include "CLI11/CLI11.hpp"
 #include "nlohmann/json.hpp"
 #include "spdlog/sinks/basic_file_sink.h"
+#include "spdlog/sinks/rotating_file_sink.h"
 #include "spdlog/sinks/stdout_color_sinks.h"
 #include "spdlog/spdlog.h"
 #include "trng/lcg64.hpp"
@@ -64,7 +65,7 @@ int main(int argc, char **argv) {
   Configuration CFG;
   CFG.ParseCmdOptions(argc, argv);
 
-  auto simRecord = spdlog::basic_logger_st("simRecord", CFG.OutputFile);
+  auto simRecord = spdlog::rotating_logger_st("simRecord", CFG.OutputFile, 0, 3);
   simRecord->set_pattern("%v");
 
   trng::lcg64 weightGen;
@@ -78,7 +79,7 @@ int main(int argc, char **argv) {
   experimentRecordIS >> experimentRecord;
   CFG.diffusionModel = experimentRecord[0]["DiffusionModel"];
 
-  using Graph = im::Graph<uint32_t, float>;
+  using Graph = im::Graph<uint32_t, float, im::ForwardDirection<uint32_t>>;
   auto console = spdlog::stdout_color_st("console");
   console->info("Loading ...");
   Graph G = im::loadGraph<Graph>(CFG, weightGen);
