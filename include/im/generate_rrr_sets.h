@@ -74,9 +74,9 @@ void AddRRRSet(GraphTy &G, typename GraphTy::vertex_type r,
           queue.push(u.vertex);
           visited[u.vertex] = true;
           result.push_back(u.vertex);
-
-          break;
         }
+
+        break;
       }
     } else {
       throw;
