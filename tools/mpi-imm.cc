@@ -56,7 +56,6 @@
 #include "spdlog/sinks/stdout_color_sinks.h"
 #include "spdlog/spdlog.h"
 
-
 namespace ripples {
 
 template <typename SeedSet>
@@ -91,7 +90,6 @@ auto GetExperimentRecord(const ToolConfiguration<IMMConfiguration> &CFG,
 
 }  // namespace ripples
 
-
 int main(int argc, char *argv[]) {
   MPI_Init(NULL, NULL);
 
@@ -104,8 +102,10 @@ int main(int argc, char *argv[]) {
   weightGen.seed(0UL);
   weightGen.split(2, 0);
 
-  using GraphFwd = ripples::Graph<uint32_t, float, ripples::ForwardDirection<uint32_t>>;
-  using GraphBwd = ripples::Graph<uint32_t, float, ripples::BackwardDirection<uint32_t>>;
+  using GraphFwd =
+      ripples::Graph<uint32_t, float, ripples::ForwardDirection<uint32_t>>;
+  using GraphBwd =
+      ripples::Graph<uint32_t, float, ripples::BackwardDirection<uint32_t>>;
   auto console = spdlog::stdout_color_st("console");
   console->info("Loading...");
   GraphFwd Gf = ripples::loadGraph<GraphFwd>(CFG, weightGen);
@@ -125,16 +125,16 @@ int main(int argc, char *argv[]) {
 
   if (CFG.diffusionModel == "IC") {
     auto start = std::chrono::high_resolution_clock::now();
-    std::tie(seeds, R) =
-        IMM(G, CFG.k, CFG.epsilon, 1.0, generator,
-            ripples::independent_cascade_tag{}, ripples::mpi_omp_parallel_tag{});
+    std::tie(seeds, R) = IMM(G, CFG.k, CFG.epsilon, 1.0, generator,
+                             ripples::independent_cascade_tag{},
+                             ripples::mpi_omp_parallel_tag{});
     auto end = std::chrono::high_resolution_clock::now();
     R.Total = end - start;
   } else if (CFG.diffusionModel == "LT") {
     auto start = std::chrono::high_resolution_clock::now();
     std::tie(seeds, R) =
-        IMM(G, CFG.k, CFG.epsilon, 1, generator, ripples::linear_threshold_tag{},
-            ripples::mpi_omp_parallel_tag{});
+        IMM(G, CFG.k, CFG.epsilon, 1, generator,
+            ripples::linear_threshold_tag{}, ripples::mpi_omp_parallel_tag{});
     auto end = std::chrono::high_resolution_clock::now();
     R.Total = end - start;
   }

@@ -51,30 +51,27 @@ namespace ripples {
 //! The GraphInputConfiguration stores the command-line input describing the
 //! input graphs.
 struct GraphInputConfiguration {
-  std::string IFileName{""};       //!< The input file name
-  bool weighted{false};            //!< is Graph weighted?
-  bool undirected{false};          //!< is Graph undirected?
-  bool reload{false};              //!< are we reloading a binary dump?
+  std::string IFileName{""};  //!< The input file name
+  bool weighted{false};       //!< is Graph weighted?
+  bool undirected{false};     //!< is Graph undirected?
+  bool reload{false};         //!< are we reloading a binary dump?
 
   //! \brief Add command line options for the input grah.
   //!
   //! \param app The command-line parser object.
-  void addCmdOptions(CLI::App & app) {
+  void addCmdOptions(CLI::App &app) {
     app.add_option("-i,--input-graph", IFileName,
                    "The input file with the edge-list.")
         ->group("Input Options")
         ->required();
-    app.add_flag("--reload-binary", reload,
-                 "Reload a graph from binary input")
+    app.add_flag("--reload-binary", reload, "Reload a graph from binary input")
         ->group("Input Options");
-    app.add_flag("-u,--undirected", undirected,
-                 "The input graph is undirected")
+    app.add_flag("-u,--undirected", undirected, "The input graph is undirected")
         ->group("Input Options");
     app.add_flag("-w,--weighted", weighted, "The input graph is weighted")
         ->group("Input Options");
   }
 };
-
 
 //! \brief Descriptor for the output of the tool.
 //!
@@ -86,12 +83,11 @@ struct OutputConfiguration {
   //! \brief Add command line options for the output of the tool.
   //!
   //! \param app The command-line parser object.
-  void addCmdOptions(CLI::App & app) {
+  void addCmdOptions(CLI::App &app) {
     app.add_option("-o,--output", OutputFile, "The file name of the log.")
         ->group("Output Options");
   }
 };
-
 
 //! \brief Command-line configuration descriptor
 //!
@@ -103,16 +99,12 @@ struct OutputConfiguration {
 //! tool.
 //! \tparam InputConfiguration Configuration descriptor for the input of the
 //! tool.
-template <
-  typename AlgorithmConfiguration,
-  typename OutputConfiguration = OutputConfiguration,
-  typename InputConfiguration = GraphInputConfiguration
-  >
-struct ToolConfiguration :
-      public InputConfiguration,
-      public AlgorithmConfiguration,
-      public OutputConfiguration {
-
+template <typename AlgorithmConfiguration,
+          typename OutputConfiguration = OutputConfiguration,
+          typename InputConfiguration = GraphInputConfiguration>
+struct ToolConfiguration : public InputConfiguration,
+                           public AlgorithmConfiguration,
+                           public OutputConfiguration {
   //! \brief Parse command-line options.
   //!
   //! \param argc Length of the command-line options vector.

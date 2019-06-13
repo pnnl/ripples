@@ -37,13 +37,12 @@
 //
 //===----------------------------------------------------------------------===//
 
-
 #ifndef RIPPLES_DIFFUSION_SIMULATION_H
 #define RIPPLES_DIFFUSION_SIMULATION_H
 
 #include <algorithm>
-#include <vector>
 #include <set>
+#include <vector>
 
 #include "trng/uniform01_dist.hpp"
 
@@ -110,7 +109,6 @@ auto run_simulation(const GraphTy &G, Iterator begin, Iterator end,
                         level);
 }
 
-
 //! Run the simulation for the Linear Threshold Model.
 //!
 //! \tparam GraphTy The type of the input graph.
@@ -134,10 +132,9 @@ auto run_simulation(const GraphTy &G, Iterator begin, Iterator end,
   trng::uniform01_dist<edge_weight_type> thresholds_generator;
 
   std::vector<edge_weight_type> thresholds(G.num_nodes());
-  std::generate(thresholds.begin(), thresholds.end(),
-                [&]() -> edge_weight_type {
-                  return thresholds_generator(generator);
-                });
+  std::generate(
+      thresholds.begin(), thresholds.end(),
+      [&]() -> edge_weight_type { return thresholds_generator(generator); });
 
   std::set<vertex_type> active(begin, end);
   std::set<vertex_type> tobe_activated;
@@ -176,7 +173,6 @@ auto run_simulation(const GraphTy &G, Iterator begin, Iterator end,
 }
 
 }  // namespace impl
-
 
 //! \brief Simulate the diffusion on the input graph.
 //!

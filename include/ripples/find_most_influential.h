@@ -62,7 +62,6 @@ ItrTy2 swap_ranges(ItrTy1 B, ItrTy1 E, ItrTy2 O, sequential_tag) {
   return std::swap_ranges(B, E, O);
 }
 
-
 //! Parallel swap ranges.
 //!
 //! \tparam ItrTy1 The iterator type of the first sequence.
@@ -75,7 +74,7 @@ ItrTy2 swap_ranges(ItrTy1 B, ItrTy1 E, ItrTy2 O, sequential_tag) {
 template <typename ItrTy1, typename ItrTy2>
 ItrTy2 swap_ranges(ItrTy1 B, ItrTy1 E, ItrTy2 O, omp_parallel_tag) {
   size_t toBeSwaped = std::distance(B, E);
-  #pragma omp parallel for
+#pragma omp parallel for
   for (size_t i = 0; i < toBeSwaped; ++i) {
     std::iter_swap(B + i, O + i);
   }
@@ -105,34 +104,29 @@ struct PartitionIndices {
   ItrTy end;
   ItrTy pivot;
 
-  PartitionIndices(PartitionIndices && O)
+  PartitionIndices(PartitionIndices &&O)
       : begin{std::move(O.begin)},
         end{std::move(O.end)},
-        pivot{std::move(O.pivot)}
-  {}
+        pivot{std::move(O.pivot)} {}
 
-  PartitionIndices & operator=(PartitionIndices && O) {
+  PartitionIndices &operator=(PartitionIndices &&O) {
     this->begin = std::move(O.begin);
     this->end = std::move(O.end);
     this->pivot = std::move(O.pivot);
     return *this;
   }
 
-  PartitionIndices(const PartitionIndices & O)
-      : begin{O.begin},
-        end{O.end},
-        pivot{O.pivot}
-  {}
+  PartitionIndices(const PartitionIndices &O)
+      : begin{O.begin}, end{O.end}, pivot{O.pivot} {}
 
-  PartitionIndices & operator=(const PartitionIndices &O) {
+  PartitionIndices &operator=(const PartitionIndices &O) {
     this->begin = O.begin;
     this->end = O.end;
     this->pivot = O.pivot;
     return *this;
   }
 
-  PartitionIndices(ItrTy B, ItrTy E, ItrTy P)
-      : begin{B}, end{E}, pivot{P} {}
+  PartitionIndices(ItrTy B, ItrTy E, ItrTy P) : begin{B}, end{E}, pivot{P} {}
 
   PartitionIndices(ItrTy B, ItrTy E) : PartitionIndices(B, E, E) {}
 
@@ -144,7 +138,7 @@ struct PartitionIndices {
   PartitionIndices operator+(const PartitionIndices &O) {
     PartitionIndices result(*this);
 
-    if (this->pivot == this->begin && O.pivot == O.begin ) {
+    if (this->pivot == this->begin && O.pivot == O.begin) {
       result.end = O.end;
       return result;
     } else if (this->pivot == this->end) {
@@ -160,8 +154,7 @@ struct PartitionIndices {
                   ex_tag{});
       result.pivot = std::prev(O.pivot, toBeMoved);
     } else {
-      result.pivot = swap_ranges(O.begin, O.pivot, this->pivot,
-                                 ex_tag{});
+      result.pivot = swap_ranges(O.begin, O.pivot, this->pivot, ex_tag{});
     }
     result.end = O.end;
 
@@ -205,11 +198,11 @@ ItrTy partition(ItrTy B, ItrTy E, UnaryPredicate P, omp_parallel_tag) {
   }
 
   for (size_t j = 1; j < num_threads; j <<= 1) {
-    #pragma omp parallel
+#pragma omp parallel
     {
-      #pragma omp single nowait
+#pragma omp single nowait
       for (size_t i = 0; (i + j) < num_threads; i += j * 2) {
-        #pragma omp task firstprivate(i, j)
+#pragma omp task firstprivate(i, j)
         { indices[i] = indices[i] + indices[i + j]; }
       }
     }
@@ -320,17 +313,15 @@ void InitHeapStorage(InItr in_begin, InItr in_end, OutItr out_begin,
 //! \param B The start sequence of RRRsets covered by the just selected seed.
 //! \param E The start sequence of RRRsets covered by the just selected seed.
 //! \param vertexCoverage The vector storing the counters to be updated.
-template <typename RRRsetsItrTy,
-          typename VertexCoverageVectorTy>
+template <typename RRRsetsItrTy, typename VertexCoverageVectorTy>
 void UpdateCounters(RRRsetsItrTy B, RRRsetsItrTy E,
                     VertexCoverageVectorTy &vertexCoverage, sequential_tag &&) {
-  for (;B != E; ++B) {
+  for (; B != E; ++B) {
     for (auto v : *B) {
       vertexCoverage[v] -= 1;
     }
   }
 }
-
 
 //! \brief Update the coverage counters.
 //!
@@ -340,19 +331,17 @@ void UpdateCounters(RRRsetsItrTy B, RRRsetsItrTy E,
 //! \param B The start sequence of RRRsets covered by the just selected seed.
 //! \param E The start sequence of RRRsets covered by the just selected seed.
 //! \param vertexCoverage The vector storing the counters to be updated.
-template <typename RRRsetsItrTy,
-          typename VertexCoverageVectorTy>
+template <typename RRRsetsItrTy, typename VertexCoverageVectorTy>
 void UpdateCounters(RRRsetsItrTy B, RRRsetsItrTy E,
                     VertexCoverageVectorTy &vertexCoverage,
                     omp_parallel_tag &&) {
-  for (;B != E; ++B) {
+  for (; B != E; ++B) {
 #pragma omp parallel for
     for (size_t j = 0; j < (*B).size(); ++j) {
       vertexCoverage[(*B)[j]] -= 1;
     }
   }
 }
-
 
 //! \brief Select k seeds starting from the a list of Random Reverse
 //! Reachability Sets.
@@ -415,9 +404,9 @@ auto FindMostInfluentialSet(const GraphTy &G, size_t k,
 
     uncovered -= element.second;
 
-    auto cmp = [=](const RRRset & a) -> auto {
-                 return !std::binary_search(a.begin(), a.end(), element.first);
-               };
+    auto cmp = [=](const RRRset &a) -> auto {
+      return !std::binary_search(a.begin(), a.end(), element.first);
+    };
 
     auto itr = partition(RRRsets.begin(), end, cmp,
                          std::forward<execution_tag>(ex_tag));
@@ -433,10 +422,9 @@ auto FindMostInfluentialSet(const GraphTy &G, size_t k,
       } else {
         std::fill(vertexCoverage.begin(), vertexCoverage.end(), 0);
       }
-      CountOccurrencies(
-          RRRsets.begin(), itr,
-          vertexCoverage.begin(), vertexCoverage.end(),
-          std::forward<execution_tag>(ex_tag));
+      CountOccurrencies(RRRsets.begin(), itr, vertexCoverage.begin(),
+                        vertexCoverage.end(),
+                        std::forward<execution_tag>(ex_tag));
     }
 
     end = itr;

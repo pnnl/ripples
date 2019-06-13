@@ -131,7 +131,6 @@ std::vector<EdgeTy> load(const std::string &inputFile, const bool undirected,
   return result;
 }
 
-
 //! Load a Weighted Edge List in TSV format.
 //!
 //! \tparam EdgeTy The type of edges.
@@ -171,8 +170,7 @@ std::vector<EdgeTy> load(const std::string &inputFile, const bool undirected,
   return result;
 }
 
-}
-
+}  // namespace
 
 //! Load an Edge List.
 //!
@@ -197,12 +195,13 @@ std::vector<EdgeTy> loadEdgeList(const Configuration &CFG, PRNG &weightGen) {
     }
   } else {
     if (CFG.diffusionModel == "IC") {
-      edgeList =
-          load<EdgeTy>(CFG.IFileName, CFG.undirected, weightGen,
-                       ripples::edge_list_tsv{}, ripples::independent_cascade_tag{});
+      edgeList = load<EdgeTy>(CFG.IFileName, CFG.undirected, weightGen,
+                              ripples::edge_list_tsv{},
+                              ripples::independent_cascade_tag{});
     } else if (CFG.diffusionModel == "LT") {
       edgeList = load<EdgeTy>(CFG.IFileName, CFG.undirected, weightGen,
-                              ripples::edge_list_tsv{}, ripples::linear_threshold_tag{});
+                              ripples::edge_list_tsv{},
+                              ripples::linear_threshold_tag{});
     }
   }
   return edgeList;
@@ -218,7 +217,7 @@ std::vector<EdgeTy> loadEdgeList(const Configuration &CFG, PRNG &weightGen) {
 //! \param PRNG The parallel random number generator.
 //! \return The GraphTy graph loaded from the input file.
 template <typename GraphTy, typename ConfTy, typename PrngTy>
-GraphTy loadGraph(ConfTy & CFG, PrngTy & PRNG) {
+GraphTy loadGraph(ConfTy &CFG, PrngTy &PRNG) {
   GraphTy G;
 
   if (!CFG.reload) {

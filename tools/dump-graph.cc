@@ -43,8 +43,8 @@
 
 #include "ripples/configuration.h"
 #include "ripples/graph.h"
-#include "ripples/loaders.h"
 #include "ripples/graph_dump.h"
+#include "ripples/loaders.h"
 
 #include "CLI11/CLI11.hpp"
 #include "spdlog/sinks/stdout_color_sinks.h"
@@ -52,14 +52,12 @@
 #include "trng/lcg64.hpp"
 #include "trng/uniform01_dist.hpp"
 
-
 struct DumpOutputConfiguration {
   std::string OName{"output"};
   bool binaryDump{false};
 
   void addCmdOptions(CLI::App &app) {
-    app.add_option("-o,--output", OName,
-                   "The name of the output file name")
+    app.add_option("-o,--output", OName, "The name of the output file name")
         ->required()
         ->group("Output Options");
     app.add_flag("--dump-binary", binaryDump,
@@ -67,7 +65,6 @@ struct DumpOutputConfiguration {
         ->group("Output Options");
   }
 };
-
 
 struct DumpConfiguration {
   std::string diffusionModel{"IC"};  //!< The diffusion model to use.
@@ -80,10 +77,8 @@ struct DumpConfiguration {
   }
 };
 
-
 using Configuration =
     ripples::ToolConfiguration<DumpConfiguration, DumpOutputConfiguration>;
-
 
 int main(int argc, char **argv) {
   Configuration CFG;
@@ -95,7 +90,8 @@ int main(int argc, char **argv) {
 
   spdlog::set_level(spdlog::level::info);
 
-  using Graph = ripples::Graph<uint32_t, float, ripples::ForwardDirection<uint32_t>>;
+  using Graph =
+      ripples::Graph<uint32_t, float, ripples::ForwardDirection<uint32_t>>;
   auto console = spdlog::stdout_color_st("console");
   console->info("Loading...");
   Graph G = ripples::loadGraph<Graph>(CFG, weightGen);

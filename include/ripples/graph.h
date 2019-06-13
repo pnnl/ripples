@@ -62,7 +62,9 @@ struct ForwardDirection {
   //! \param itr Iterator to the current edge.
   //! \return The source of the egde to be loaded in the graph.
   template <typename ItrTy>
-  static VertexTy Source(ItrTy itr) { return itr->source; }
+  static VertexTy Source(ItrTy itr) {
+    return itr->source;
+  }
 
   //! \brief Edge Destination
   //!
@@ -71,9 +73,10 @@ struct ForwardDirection {
   //! \param itr Iterator to the current edge.
   //! \return The destination of the egde to be loaded in the graph.
   template <typename ItrTy>
-  static VertexTy Destination(ItrTy itr) { return itr->destination; }
+  static VertexTy Destination(ItrTy itr) {
+    return itr->destination;
+  }
 };
-
 
 //! \brief Backward Direction Graph loading policy.
 //!
@@ -87,7 +90,9 @@ struct BackwardDirection {
   //! \param itr Iterator to the current edge.
   //! \return The source of the egde to be loaded in the graph.
   template <typename ItrTy>
-  static VertexTy Source(ItrTy itr) { return itr->destination; }
+  static VertexTy Source(ItrTy itr) {
+    return itr->destination;
+  }
 
   //! \brief Edge Destination
   //!
@@ -96,9 +101,10 @@ struct BackwardDirection {
   //! \param itr Iterator to the current edge.
   //! \return The destination of the egde to be loaded in the graph.
   template <typename ItrTy>
-  static VertexTy Destination(ItrTy itr) { return itr->source; }
+  static VertexTy Destination(ItrTy itr) {
+    return itr->source;
+  }
 };
-
 
 //! \brief A weighted edge.
 //!
@@ -128,7 +134,7 @@ struct Edge {
 //! \tparam VertexTy The integer type representing a vertex of the graph.
 //! \tparam WeightTy The type representing the weight on the edge.
 template <typename VertexTy, typename WeightTy,
-          typename DirectionPolicy = ForwardDirection<VertexTy> >
+          typename DirectionPolicy = ForwardDirection<VertexTy>>
 class Graph {
  public:
   //! The size type.
@@ -142,8 +148,8 @@ class Graph {
 
   //! \brief The edges stored in the CSR.
   struct DestinationTy {
-    VertexTy vertex; //!< The destination of an edges.
-    WeightTy weight; //!< The edge weight.
+    VertexTy vertex;  //!< The destination of an edges.
+    WeightTy weight;  //!< The edge weight.
   };
 
   //! \brief The neighborhood of a vertex.
@@ -169,12 +175,16 @@ class Graph {
 
   //! Empty Graph Constructor.
   Graph()
-      : numNodes(0), numEdges(0), index(nullptr), edges(nullptr)
-      , idMap(), reverseMap() {}
+      : numNodes(0),
+        numEdges(0),
+        index(nullptr),
+        edges(nullptr),
+        idMap(),
+        reverseMap() {}
 
   //! Move constructor.
   //! \param O The graph to be moved.
-  Graph(Graph && O) {
+  Graph(Graph &&O) {
     std::swap(numNodes, O.numNodes);
     std::swap(numEdges, O.numEdges);
     std::swap(index, O.index);
@@ -186,7 +196,7 @@ class Graph {
   //! Move assignment operator.
   //! \param O The graph to be moved.
   //! \return a reference to the destination graph.
-  Graph & operator=(Graph && O) {
+  Graph &operator=(Graph &&O) {
     std::swap(numNodes, O.numNodes);
     std::swap(numEdges, O.numEdges);
     std::swap(index, O.index);
@@ -201,8 +211,8 @@ class Graph {
   //! \tparam FStream The type of the input stream.
   //!
   //! \param FS The binary stream containing the graph dump.
-  template<typename FStream>
-  Graph(FStream & FS) {
+  template <typename FStream>
+  Graph(FStream &FS) {
     load_binary(FS);
   }
 
@@ -264,7 +274,8 @@ class Graph {
 
     std::vector<DestinationTy *> ptrEdge(index, index + num_nodes);
     for (auto itr = begin; itr != end; ++itr) {
-      *ptrEdge[DirectionPolicy::Source(itr)] = { DirectionPolicy::Destination(itr), itr->weight };
+      *ptrEdge[DirectionPolicy::Source(itr)] = {
+          DirectionPolicy::Destination(itr), itr->weight};
       ++ptrEdge[DirectionPolicy::Source(itr)];
     }
   }
@@ -317,9 +328,7 @@ class Graph {
   //!
   //! \param v The input vertex ID.
   //! \return The original vertex ID in the input representation.
-  vertex_type convertID(const vertex_type v) const {
-    return reverseMap[v];
-  }
+  vertex_type convertID(const vertex_type v) const { return reverseMap[v]; }
 
   //! Convert a list of vertices from the original input edge list
   //! representation to the internal vertex representation.
@@ -348,7 +357,7 @@ class Graph {
   //!
   //! \param FS The ouput file stream.
   template <typename FStream>
-  void dump_binary(FStream & FS) const {
+  void dump_binary(FStream &FS) const {
     uint64_t num_nodes = htole64(numNodes);
     uint64_t num_edges = htole64(numEdges);
     FS.write(reinterpret_cast<const char *>(&num_nodes), sizeof(uint64_t));
@@ -359,11 +368,10 @@ class Graph {
     using relative_index =
         typename std::iterator_traits<DestinationTy *>::difference_type;
     std::vector<relative_index> relIndex(numNodes + 1, 0);
-    std::transform(
-        index, index + numNodes + 1, relIndex.begin(),
-        [=](DestinationTy * v) -> relative_index {
-          return std::distance(edges, v);
-        });
+    std::transform(index, index + numNodes + 1, relIndex.begin(),
+                   [=](DestinationTy *v) -> relative_index {
+                     return std::distance(edges, v);
+                   });
     sequence_of<relative_index>::dump(FS, relIndex.begin(), relIndex.end());
     sequence_of<DestinationTy>::dump(FS, edges, edges + numEdges);
   }
@@ -383,17 +391,13 @@ class Graph {
     std::fill(G.index, G.index + numNodes + 1, nullptr);
 
     std::for_each(edges, edges + numEdges,
-                  [&](const DestinationTy & d) {
-                    ++G.index[d.vertex + 1];
-                  });
+                  [&](const DestinationTy &d) { ++G.index[d.vertex + 1]; });
 
     G.index[0] = G.edges;
     std::partial_sum(G.index, G.index + numNodes + 1, G.index,
-                     [](out_dest_type * a, out_dest_type * b)
-                     -> out_dest_type * {
-                       size_t sum =
-                           reinterpret_cast<size_t>(a) +
-                           reinterpret_cast<size_t>(b);
+                     [](out_dest_type *a, out_dest_type *b) -> out_dest_type * {
+                       size_t sum = reinterpret_cast<size_t>(a) +
+                                    reinterpret_cast<size_t>(b);
                        return reinterpret_cast<out_dest_type *>(sum);
                      });
 
@@ -401,7 +405,7 @@ class Graph {
 
     for (vertex_type v = 0; v < numNodes; ++v) {
       for (auto u : neighbors(v)) {
-        *destPointers[u.vertex] = { v, u.weight };
+        *destPointers[u.vertex] = {v, u.weight};
         destPointers[u.vertex]++;
       }
     }
@@ -412,15 +416,16 @@ class Graph {
  private:
   static constexpr bool isForward =
       std::is_same<DirectionPolicy, ForwardDirection<VertexTy>>::value;
-  using transposed_direction = typename std::conditional<
-    isForward, BackwardDirection<VertexTy>, ForwardDirection<VertexTy>>::type;
+  using transposed_direction =
+      typename std::conditional<isForward, BackwardDirection<VertexTy>,
+                                ForwardDirection<VertexTy>>::type;
   using transposed_type =
       Graph<vertex_type, edge_weight_type, transposed_direction>;
 
   friend transposed_type;
 
   template <typename FStream>
-  void load_binary(FStream & FS) {
+  void load_binary(FStream &FS) {
     if (!FS.is_open()) throw "Bad things happened!!!";
 
     FS.read(reinterpret_cast<char *>(&numNodes), sizeof(numNodes));
@@ -436,19 +441,20 @@ class Graph {
     sequence_of<VertexTy>::load(reverseMap.begin(), reverseMap.end(),
                                 reverseMap.begin());
 
-    for (VertexTy i = 0; i < numNodes; ++i)
-      idMap[reverseMap[i]] = i;
+    for (VertexTy i = 0; i < numNodes; ++i) idMap[reverseMap[i]] = i;
 
-    index = new DestinationTy * [numNodes + 1];
-    edges = new DestinationTy [numEdges];
+    index = new DestinationTy *[numNodes + 1];
+    edges = new DestinationTy[numEdges];
 
-    FS.read(reinterpret_cast<char *>(index), (numNodes + 1) * sizeof(ptrdiff_t));
+    FS.read(reinterpret_cast<char *>(index),
+            (numNodes + 1) * sizeof(ptrdiff_t));
 
     sequence_of<DestinationTy *>::load(index, index + numNodes + 1, index);
 
     std::transform(index, index + numNodes + 1, index,
-                   [=](DestinationTy * v) -> DestinationTy * {
-                     return reinterpret_cast<ptrdiff_t>(v) + edges; });
+                   [=](DestinationTy *v) -> DestinationTy * {
+                     return reinterpret_cast<ptrdiff_t>(v) + edges;
+                   });
 
     FS.read(reinterpret_cast<char *>(edges), numEdges * sizeof(DestinationTy));
     sequence_of<DestinationTy>::load(edges, edges + numEdges, edges);

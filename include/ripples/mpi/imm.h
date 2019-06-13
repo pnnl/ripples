@@ -42,9 +42,9 @@
 
 #include "mpi.h"
 
+#include <cstddef>
 #include <utility>
 #include <vector>
-#include <cstddef>
 
 #include "trng/lcg64.hpp"
 
@@ -68,9 +68,9 @@ inline size_t ThetaPrime(ssize_t x, double epsilonPrime, double l, size_t k,
   MPI_Comm_size(MPI_COMM_WORLD, &world_size);
 
   return (ThetaPrime(x, epsilonPrime, l, k, num_nodes, omp_parallel_tag{}) /
-          world_size) + 1;
+          world_size) +
+         1;
 }
-
 
 //! Collect a set of Random Reverse Reachable set.
 //!
@@ -102,12 +102,12 @@ auto Sampling(const GraphTy &G, std::size_t k, double epsilon, double l,
   size_t thetaPrime = 0;
   for (ssize_t x = 1; x < std::log2(G.num_nodes()); ++x) {
     // Equation 9
-    ssize_t thetaPrime = ThetaPrime(x, epsilonPrime, l, k, G.num_nodes(),
-                                    ex_tag);
+    ssize_t thetaPrime =
+        ThetaPrime(x, epsilonPrime, l, k, G.num_nodes(), ex_tag);
 
     record.ThetaPrimeDeltas.push_back(thetaPrime - RR.size());
 
-    auto timeRRRSets = measure<>::exec_time([&](){
+    auto timeRRRSets = measure<>::exec_time([&]() {
       auto deltaRR = GenerateRRRSets(G, thetaPrime - RR.size(), generator,
                                      std::forward<diff_model_tag>(model_tag),
                                      omp_parallel_tag{});
@@ -118,12 +118,11 @@ auto Sampling(const GraphTy &G, std::size_t k, double epsilon, double l,
     record.ThetaEstimationGenerateRRR.push_back(timeRRRSets);
 
     double f;
-    auto timeMostInfluential = measure<>::exec_time([&](){
+    auto timeMostInfluential = measure<>::exec_time([&]() {
       const auto &S = FindMostInfluentialSet(G, k, RR, ex_tag);
       f = S.first;
     });
     record.ThetaEstimationMostInfluential.push_back(timeMostInfluential);
-
 
     if (f >= std::pow(2, -x)) {
       LB = (G.num_nodes() * f) / (1 + epsilonPrime);
@@ -157,7 +156,6 @@ auto Sampling(const GraphTy &G, std::size_t k, double epsilon, double l,
 
   return RR;
 }
-
 
 //! The IMM algroithm for Influence Maximization (MPI specialization).
 //!
@@ -202,8 +200,7 @@ auto IMM(const GraphTy &G, std::size_t k, double epsilon, double l, PRNG &gen,
   l = l * (1 + 1 / std::log2(G.num_nodes()));
 
   auto R = Sampling(G, k, epsilon, l, generator, record,
-                    std::forward<diff_model_tag>(model_tag),
-                    ex_tag);
+                    std::forward<diff_model_tag>(model_tag), ex_tag);
 
   auto start = std::chrono::high_resolution_clock::now();
   const auto &S = FindMostInfluentialSet(G, k, R, ex_tag);

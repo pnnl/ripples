@@ -64,8 +64,10 @@ int main(int argc, char **argv) {
   weightGen.seed(0UL);
   weightGen.split(2, 0);
 
-  using GraphFwd = ripples::Graph<uint32_t, float, ripples::ForwardDirection<uint32_t>>;
-  using GraphBwd = ripples::Graph<uint32_t, float, ripples::BackwardDirection<uint32_t>>;
+  using GraphFwd =
+      ripples::Graph<uint32_t, float, ripples::ForwardDirection<uint32_t>>;
+  using GraphBwd =
+      ripples::Graph<uint32_t, float, ripples::BackwardDirection<uint32_t>>;
   auto console = spdlog::stdout_color_st("console");
   console->info("Loading...");
   GraphFwd Gf = ripples::loadGraph<GraphFwd>(CFG, weightGen);
@@ -95,16 +97,16 @@ int main(int argc, char **argv) {
 
         if (CFG.diffusionModel == "IC") {
           auto start = std::chrono::high_resolution_clock::now();
-          std::tie(seeds, R) =
-              TIM(G, CFG.k, CFG.epsilon, generator,
-                  ripples::independent_cascade_tag{}, ripples::omp_parallel_tag{});
+          std::tie(seeds, R) = TIM(G, CFG.k, CFG.epsilon, generator,
+                                   ripples::independent_cascade_tag{},
+                                   ripples::omp_parallel_tag{});
           auto end = std::chrono::high_resolution_clock::now();
           R.Total = end - start;
         } else if (CFG.diffusionModel == "LT") {
           auto start = std::chrono::high_resolution_clock::now();
           std::tie(seeds, R) =
-              TIM(G, CFG.k, CFG.epsilon, generator, ripples::linear_threshold_tag{},
-                  ripples::omp_parallel_tag{});
+              TIM(G, CFG.k, CFG.epsilon, generator,
+                  ripples::linear_threshold_tag{}, ripples::omp_parallel_tag{});
           auto end = std::chrono::high_resolution_clock::now();
           R.Total = end - start;
         }
@@ -133,16 +135,16 @@ int main(int argc, char **argv) {
       } else {
         if (CFG.diffusionModel == "IC") {
           auto start = std::chrono::high_resolution_clock::now();
-          std::tie(seeds, R) =
-              TIM(G, CFG.k, CFG.epsilon, generator,
-                  ripples::independent_cascade_tag{}, ripples::sequential_tag{});
+          std::tie(seeds, R) = TIM(G, CFG.k, CFG.epsilon, generator,
+                                   ripples::independent_cascade_tag{},
+                                   ripples::sequential_tag{});
           auto end = std::chrono::high_resolution_clock::now();
           R.Total = end - start;
         } else if (CFG.diffusionModel == "LT") {
           auto start = std::chrono::high_resolution_clock::now();
           std::tie(seeds, R) =
-              TIM(G, CFG.k, CFG.epsilon, generator, ripples::linear_threshold_tag{},
-                  ripples::sequential_tag{});
+              TIM(G, CFG.k, CFG.epsilon, generator,
+                  ripples::linear_threshold_tag{}, ripples::sequential_tag{});
           auto end = std::chrono::high_resolution_clock::now();
           R.Total = end - start;
         }
@@ -177,8 +179,8 @@ int main(int argc, char **argv) {
     if (CFG.diffusionModel == "IC") {
       auto start = std::chrono::high_resolution_clock::now();
       std::tie(seeds, R) =
-          TIM(G, CFG.k, CFG.epsilon, generator, ripples::independent_cascade_tag{},
-              ripples::omp_parallel_tag{});
+          TIM(G, CFG.k, CFG.epsilon, generator,
+              ripples::independent_cascade_tag{}, ripples::omp_parallel_tag{});
       auto end = std::chrono::high_resolution_clock::now();
       R.Total = end - start;
     } else if (CFG.diffusionModel == "LT") {
@@ -220,8 +222,8 @@ int main(int argc, char **argv) {
     if (CFG.diffusionModel == "IC") {
       auto start = std::chrono::high_resolution_clock::now();
       std::tie(seeds, R) =
-          TIM(G, CFG.k, CFG.epsilon, generator, ripples::independent_cascade_tag{},
-              ripples::sequential_tag{});
+          TIM(G, CFG.k, CFG.epsilon, generator,
+              ripples::independent_cascade_tag{}, ripples::sequential_tag{});
       auto end = std::chrono::high_resolution_clock::now();
       R.Total = end - start;
     } else if (CFG.diffusionModel == "LT") {

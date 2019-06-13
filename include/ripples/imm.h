@@ -108,7 +108,6 @@ ssize_t ThetaPrime(ssize_t x, double epsilonPrime, double l, size_t k,
          std::pow(2.0, x) / (epsilonPrime * epsilonPrime);
 }
 
-
 //! Compute Theta.
 //!
 //! \param epsilon Parameter controlling the approximation factor.
@@ -127,7 +126,6 @@ inline size_t Theta(double epsilon, double l, size_t k, double LB,
 
   return lamdaStar / LB;
 }
-
 
 //! Collect a set of Random Reverse Reachable set.
 //!
@@ -166,7 +164,7 @@ auto Sampling(const GraphTy &G, std::size_t k, double epsilon, double l,
 
     record.ThetaPrimeDeltas.push_back(thetaPrime - RR.size());
 
-    auto timeRRRSets = measure<>::exec_time([&](){
+    auto timeRRRSets = measure<>::exec_time([&]() {
       auto deltaRR = GenerateRRRSets(G, thetaPrime - RR.size(), generator,
                                      std::forward<diff_model_tag>(model_tag),
                                      std::forward<execution_tag>(ex_tag));
@@ -178,10 +176,9 @@ auto Sampling(const GraphTy &G, std::size_t k, double epsilon, double l,
 
     double f;
 
-    auto timeMostInfluential = measure<>::exec_time([&](){
+    auto timeMostInfluential = measure<>::exec_time([&]() {
       const auto &S =
           FindMostInfluentialSet(G, k, RR, std::forward<execution_tag>(ex_tag));
-
 
       f = S.first;
     });
@@ -201,8 +198,7 @@ auto Sampling(const GraphTy &G, std::size_t k, double epsilon, double l,
 
   record.Theta = theta;
 
-
-  record.GenerateRRRSets = measure<>::exec_time([&](){
+  record.GenerateRRRSets = measure<>::exec_time([&]() {
     if (theta > RR.size()) {
       auto deltaRR = GenerateRRRSets(G, theta - RR.size(), generator,
                                      std::forward<diff_model_tag>(model_tag),
@@ -215,7 +211,6 @@ auto Sampling(const GraphTy &G, std::size_t k, double epsilon, double l,
 
   return RR;
 }
-
 
 //! The IMM algroithm for Influence Maximization
 //!

@@ -96,7 +96,8 @@ void AddRRRSet(GraphTy &G, typename GraphTy::vertex_type r,
           result.push_back(u.vertex);
         }
       }
-    } else if (std::is_same<diff_model_tag, ripples::linear_threshold_tag>::value) {
+    } else if (std::is_same<diff_model_tag,
+                            ripples::linear_threshold_tag>::value) {
       float threshold = value(generator);
       for (auto u : G.neighbors(v)) {
         threshold -= u.weight;

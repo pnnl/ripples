@@ -86,8 +86,8 @@ auto FindMostInfluentialSet(const GraphTy &G, size_t k,
                     std::forward<omp_parallel_tag>(omp_parallel_tag{}));
 
   MPI_Win_fence(0, win);
-  MPI_Accumulate(vertexCoverage.data(), G.num_nodes(), MPI_UINT32_T, 0,
-                 0, G.num_nodes(), MPI_UINT32_T, MPI_SUM, win);
+  MPI_Accumulate(vertexCoverage.data(), G.num_nodes(), MPI_UINT32_T, 0, 0,
+                 G.num_nodes(), MPI_UINT32_T, MPI_SUM, win);
   MPI_Win_fence(0, win);
 
   MPI_Win_free(&win);
@@ -108,7 +108,7 @@ auto FindMostInfluentialSet(const GraphTy &G, size_t k,
   result.reserve(k);
 
   auto end = RRRsets.end();
-  uint32_t coveredAndSelected[2] = { 0, 0 };
+  uint32_t coveredAndSelected[2] = {0, 0};
 
   while (result.size() < k) {
     if (rank == 0) {
@@ -127,23 +127,20 @@ auto FindMostInfluentialSet(const GraphTy &G, size_t k,
     MPI_Bcast(&coveredAndSelected, 2, MPI_UINT32_T, 0, MPI_COMM_WORLD);
 
     vertex_type v = coveredAndSelected[1];
-    auto cmp = [=](const RRRset & a) -> auto {
-                 return !std::binary_search(a.begin(), a.end(), v);
-               };
+    auto cmp = [=](const RRRset &a) -> auto {
+      return !std::binary_search(a.begin(), a.end(), v);
+    };
 
     auto itr = partition(RRRsets.begin(), end, cmp, omp_parallel_tag{});
 
     if (std::distance(itr, end) < std::distance(RRRsets.begin(), itr)) {
       UpdateCounters(itr, end, vertexCoverage, omp_parallel_tag{});
     } else {
-      #pragma omp parallel for simd
-      for (size_t i = 0; i < vertexCoverage.size(); ++i)
-        vertexCoverage[i] = 0;
+#pragma omp parallel for simd
+      for (size_t i = 0; i < vertexCoverage.size(); ++i) vertexCoverage[i] = 0;
 
-      CountOccurrencies(
-          RRRsets.begin(), itr,
-          vertexCoverage.begin(), vertexCoverage.end(),
-          omp_parallel_tag{});
+      CountOccurrencies(RRRsets.begin(), itr, vertexCoverage.begin(),
+                        vertexCoverage.end(), omp_parallel_tag{});
     }
 
     end = itr;

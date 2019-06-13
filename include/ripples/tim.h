@@ -74,7 +74,6 @@ struct TIMConfiguration {
   std::string diffusionModel{"IC"};  //!< The diffusion model to use.
   bool OMPStrongScaling{false};      //!< OpenMP Strong Sclaing experiment?
 
-  
   //! \brief Add command line options to configure TIM+.
   //!
   //! \param app The command-line parser object.
@@ -116,7 +115,6 @@ struct TIMExecutionRecord {
   std::chrono::duration<double, std::milli> Total;
 };
 
-
 //! \brief Compute the number of elements in the RRR set starting at r.
 //!
 //! \tparam GraphTy The type of the Graph.
@@ -155,7 +153,8 @@ size_t WR(GraphTy &G, typename GraphTy::vertex_type r, PRNG &generator,
           visited[u.vertex] = true;
         }
       }
-    } else if (std::is_same<diff_model_tag, ripples::linear_threshold_tag>::value) {
+    } else if (std::is_same<diff_model_tag,
+                            ripples::linear_threshold_tag>::value) {
       float threshold = value(generator);
       for (auto u : G.neighbors(v)) {
         threshold -= u.weight;
