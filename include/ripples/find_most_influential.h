@@ -37,17 +37,17 @@
 //
 //===----------------------------------------------------------------------===//
 
-#ifndef IM_FIND_MOST_INFLUENTIAL_H
-#define IM_FIND_MOST_INFLUENTIAL_H
+#ifndef RIPPLES_FIND_MOST_INFLUENTIAL_H
+#define RIPPLES_FIND_MOST_INFLUENTIAL_H
 
 #include <algorithm>
 #include <queue>
 #include <vector>
 
 #include <omp.h>
-#include "im/utility.h"
+#include "ripples/utility.h"
 
-namespace im {
+namespace ripples {
 //! Sequential swap ranges.
 //!
 //! \tparam ItrTy1 The iterator type of the first sequence.
@@ -448,6 +448,6 @@ auto FindMostInfluentialSet(const GraphTy &G, size_t k,
   return std::make_pair(f, result);
 }
 
-}  // namespace im
+}  // namespace ripples
 
-#endif  // IM_FIND_MOST_INFLUENTIAL_H
+#endif  // RIPPLES_FIND_MOST_INFLUENTIAL_H

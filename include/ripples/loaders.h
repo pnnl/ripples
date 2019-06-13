@@ -37,8 +37,8 @@
 //
 //===----------------------------------------------------------------------===//
 
-#ifndef IM_LOADERS_H
-#define IM_LOADERS_H
+#ifndef RIPPLES_LOADERS_H
+#define RIPPLES_LOADERS_H
 
 #include <algorithm>
 #include <fstream>
@@ -51,10 +51,10 @@
 
 #include "trng/uniform01_dist.hpp"
 
-#include "im/diffusion_simulation.h"
-#include "im/graph.h"
+#include "ripples/diffusion_simulation.h"
+#include "ripples/graph.h"
 
-namespace im {
+namespace ripples {
 
 //! Edge List in TSV format tag.
 struct edge_list_tsv {};
@@ -104,7 +104,7 @@ std::vector<EdgeTy> load(const std::string &inputFile, const bool undirected,
     }
   }
 
-  if (std::is_same<diff_model_tag, im::linear_threshold_tag>::value) {
+  if (std::is_same<diff_model_tag, ripples::linear_threshold_tag>::value) {
     auto cmp = [](const EdgeTy &a, const EdgeTy &b) -> bool {
       return a.source < b.source;
     };
@@ -188,21 +188,21 @@ std::vector<EdgeTy> loadEdgeList(const Configuration &CFG, PRNG &weightGen) {
   if (CFG.weighted) {
     if (CFG.diffusionModel == "IC") {
       edgeList = load<EdgeTy>(CFG.IFileName, CFG.undirected, weightGen,
-                              im::weighted_edge_list_tsv{},
-                              im::independent_cascade_tag{});
+                              ripples::weighted_edge_list_tsv{},
+                              ripples::independent_cascade_tag{});
     } else if (CFG.diffusionModel == "LT") {
       edgeList = load<EdgeTy>(CFG.IFileName, CFG.undirected, weightGen,
-                              im::weighted_edge_list_tsv{},
-                              im::linear_threshold_tag{});
+                              ripples::weighted_edge_list_tsv{},
+                              ripples::linear_threshold_tag{});
     }
   } else {
     if (CFG.diffusionModel == "IC") {
       edgeList =
           load<EdgeTy>(CFG.IFileName, CFG.undirected, weightGen,
-                       im::edge_list_tsv{}, im::independent_cascade_tag{});
+                       ripples::edge_list_tsv{}, ripples::independent_cascade_tag{});
     } else if (CFG.diffusionModel == "LT") {
       edgeList = load<EdgeTy>(CFG.IFileName, CFG.undirected, weightGen,
-                              im::edge_list_tsv{}, im::linear_threshold_tag{});
+                              ripples::edge_list_tsv{}, ripples::linear_threshold_tag{});
     }
   }
   return edgeList;
@@ -223,7 +223,7 @@ GraphTy loadGraph(ConfTy & CFG, PrngTy & PRNG) {
 
   if (!CFG.reload) {
     using edge_type = typename GraphTy::edge_type;
-    auto edgeList = im::loadEdgeList<edge_type>(CFG, PRNG);
+    auto edgeList = ripples::loadEdgeList<edge_type>(CFG, PRNG);
     GraphTy tmpG(edgeList.begin(), edgeList.end());
     G = std::move(tmpG);
   } else {
@@ -235,6 +235,6 @@ GraphTy loadGraph(ConfTy & CFG, PrngTy & PRNG) {
   return G;
 }
 
-}  // namespace im
+}  // namespace ripples
 
 #endif /* LOADERS_H */

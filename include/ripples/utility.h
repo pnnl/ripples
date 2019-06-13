@@ -37,8 +37,8 @@
 //
 //===----------------------------------------------------------------------===//
 
-#ifndef IM_UTILITY_H
-#define IM_UTILITY_H
+#ifndef RIPPLES_UTILITY_H
+#define RIPPLES_UTILITY_H
 
 #include <chrono>
 #include <utility>
@@ -58,7 +58,7 @@
 
 #include "nlohmann/json.hpp"
 
-namespace im {
+namespace ripples {
 
 //! Execution tag for the sequential algorithms.
 struct sequential_tag {};
@@ -89,7 +89,7 @@ struct measure {
   }
 };
 
-}  // namespace im
+}  // namespace ripples
 
 namespace nlohmann {
 
@@ -100,7 +100,7 @@ void to_json(nlohmann::json &j, const std::chrono::duration<T1, T2> & d) {
 
 }
 
-namespace im {
+namespace ripples {
 
 //! Dump a value of size N in binary format.
 template <size_t N> struct dump_v;
@@ -207,4 +207,4 @@ template <typename T> struct sequence_of : public dump_v<sizeof(T)> {
 
 }
 
-#endif  // IM_UTILITY_H
+#endif  // RIPPLES_UTILITY_H

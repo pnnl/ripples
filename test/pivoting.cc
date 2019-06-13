@@ -44,7 +44,7 @@
 #include <set>
 
 #include "catch/catch.hpp"
-#include "im/find_most_influential.h"
+#include "ripples/find_most_influential.h"
 #include "trng/lcg64.hpp"
 #include "trng/uniform_int_dist.hpp"
 
@@ -70,8 +70,8 @@ SCENARIO("Swap two sequences", "[pivoting]") {
       auto Acopy(A);
       auto Bcopy(B);
 
-      im::swap_ranges(Acopy.begin(), Acopy.end(), Bcopy.begin(),
-                      im::sequential_tag{});
+      ripples::swap_ranges(Acopy.begin(), Acopy.end(), Bcopy.begin(),
+                      ripples::sequential_tag{});
 
       THEN("The copies are now swapped") {
         REQUIRE(Acopy == B);
@@ -83,8 +83,8 @@ SCENARIO("Swap two sequences", "[pivoting]") {
       auto Acopy(A);
       auto Bcopy(B);
 
-      im::swap_ranges(Acopy.begin(), Acopy.end(), Bcopy.begin(),
-                      im::omp_parallel_tag{});
+      ripples::swap_ranges(Acopy.begin(), Acopy.end(), Bcopy.begin(),
+                      ripples::omp_parallel_tag{});
 
       THEN("The copies are now swapped") {
         REQUIRE(Acopy == B);
@@ -116,8 +116,8 @@ SCENARIO("RRR set can grouped in covered and uncovered", "[pivoting]") {
       auto cmp = [=](const std::set<uint32_t> & a) -> auto {
                    return a.find(v) == a.end();
                  };
-      auto pivot = im::partition(rrr_sets.begin(), rrr_sets.end(),
-                                 cmp, im::sequential_tag{});
+      auto pivot = ripples::partition(rrr_sets.begin(), rrr_sets.end(),
+                                 cmp, ripples::sequential_tag{});
       THEN("The sequence becomes partitioned") {
         REQUIRE(rrr_sets.size() == 50);
         REQUIRE(pivot <= rrr_sets.end());
@@ -128,8 +128,8 @@ SCENARIO("RRR set can grouped in covered and uncovered", "[pivoting]") {
       }
     }
     WHEN("the sequence is partitioned in parallel with OpenMP") {
-      auto pivot = im::partition(rrr_sets.begin(), rrr_sets.end(),
-                                 cmp, im::omp_parallel_tag{});
+      auto pivot = ripples::partition(rrr_sets.begin(), rrr_sets.end(),
+                                 cmp, ripples::omp_parallel_tag{});
 
       THEN("The sequence becomes partitioned") {
         REQUIRE(rrr_sets.size() == 50);

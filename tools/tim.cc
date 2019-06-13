@@ -40,11 +40,11 @@
 #include <iostream>
 #include <string>
 
-#include "im/configuration.h"
-#include "im/graph.h"
-#include "im/loaders.h"
-#include "im/tim.h"
-#include "im/utility.h"
+#include "ripples/configuration.h"
+#include "ripples/graph.h"
+#include "ripples/loaders.h"
+#include "ripples/tim.h"
+#include "ripples/utility.h"
 
 #include "omp.h"
 
@@ -55,7 +55,7 @@
 #include "spdlog/spdlog.h"
 
 int main(int argc, char **argv) {
-  im::ToolConfiguration<im::TIMConfiguration> CFG;
+  ripples::ToolConfiguration<ripples::TIMConfiguration> CFG;
   CFG.ParseCmdOptions(argc, argv);
 
   spdlog::set_level(spdlog::level::info);
@@ -64,11 +64,11 @@ int main(int argc, char **argv) {
   weightGen.seed(0UL);
   weightGen.split(2, 0);
 
-  using GraphFwd = im::Graph<uint32_t, float, im::ForwardDirection<uint32_t>>;
-  using GraphBwd = im::Graph<uint32_t, float, im::BackwardDirection<uint32_t>>;
+  using GraphFwd = ripples::Graph<uint32_t, float, ripples::ForwardDirection<uint32_t>>;
+  using GraphBwd = ripples::Graph<uint32_t, float, ripples::BackwardDirection<uint32_t>>;
   auto console = spdlog::stdout_color_st("console");
   console->info("Loading...");
-  GraphFwd Gf = im::loadGraph<GraphFwd>(CFG, weightGen);
+  GraphFwd Gf = ripples::loadGraph<GraphFwd>(CFG, weightGen);
   GraphBwd G = Gf.get_transpose();
   console->info("Loading Done!");
   console->info("Number of Nodes : {}", G.num_nodes());
@@ -77,7 +77,7 @@ int main(int argc, char **argv) {
   nlohmann::json executionLog;
 
   std::vector<typename GraphBwd::vertex_type> seeds;
-  im::TIMExecutionRecord R;
+  ripples::TIMExecutionRecord R;
 
   trng::lcg64 generator;
   generator.seed(0UL);
@@ -97,14 +97,14 @@ int main(int argc, char **argv) {
           auto start = std::chrono::high_resolution_clock::now();
           std::tie(seeds, R) =
               TIM(G, CFG.k, CFG.epsilon, generator,
-                  im::independent_cascade_tag{}, im::omp_parallel_tag{});
+                  ripples::independent_cascade_tag{}, ripples::omp_parallel_tag{});
           auto end = std::chrono::high_resolution_clock::now();
           R.Total = end - start;
         } else if (CFG.diffusionModel == "LT") {
           auto start = std::chrono::high_resolution_clock::now();
           std::tie(seeds, R) =
-              TIM(G, CFG.k, CFG.epsilon, generator, im::linear_threshold_tag{},
-                  im::omp_parallel_tag{});
+              TIM(G, CFG.k, CFG.epsilon, generator, ripples::linear_threshold_tag{},
+                  ripples::omp_parallel_tag{});
           auto end = std::chrono::high_resolution_clock::now();
           R.Total = end - start;
         }
@@ -135,14 +135,14 @@ int main(int argc, char **argv) {
           auto start = std::chrono::high_resolution_clock::now();
           std::tie(seeds, R) =
               TIM(G, CFG.k, CFG.epsilon, generator,
-                  im::independent_cascade_tag{}, im::sequential_tag{});
+                  ripples::independent_cascade_tag{}, ripples::sequential_tag{});
           auto end = std::chrono::high_resolution_clock::now();
           R.Total = end - start;
         } else if (CFG.diffusionModel == "LT") {
           auto start = std::chrono::high_resolution_clock::now();
           std::tie(seeds, R) =
-              TIM(G, CFG.k, CFG.epsilon, generator, im::linear_threshold_tag{},
-                  im::sequential_tag{});
+              TIM(G, CFG.k, CFG.epsilon, generator, ripples::linear_threshold_tag{},
+                  ripples::sequential_tag{});
           auto end = std::chrono::high_resolution_clock::now();
           R.Total = end - start;
         }
@@ -177,15 +177,15 @@ int main(int argc, char **argv) {
     if (CFG.diffusionModel == "IC") {
       auto start = std::chrono::high_resolution_clock::now();
       std::tie(seeds, R) =
-          TIM(G, CFG.k, CFG.epsilon, generator, im::independent_cascade_tag{},
-              im::omp_parallel_tag{});
+          TIM(G, CFG.k, CFG.epsilon, generator, ripples::independent_cascade_tag{},
+              ripples::omp_parallel_tag{});
       auto end = std::chrono::high_resolution_clock::now();
       R.Total = end - start;
     } else if (CFG.diffusionModel == "LT") {
       auto start = std::chrono::high_resolution_clock::now();
       std::tie(seeds, R) =
-          TIM(G, CFG.k, CFG.epsilon, generator, im::linear_threshold_tag{},
-              im::omp_parallel_tag{});
+          TIM(G, CFG.k, CFG.epsilon, generator, ripples::linear_threshold_tag{},
+              ripples::omp_parallel_tag{});
       auto end = std::chrono::high_resolution_clock::now();
       R.Total = end - start;
     }
@@ -220,15 +220,15 @@ int main(int argc, char **argv) {
     if (CFG.diffusionModel == "IC") {
       auto start = std::chrono::high_resolution_clock::now();
       std::tie(seeds, R) =
-          TIM(G, CFG.k, CFG.epsilon, generator, im::independent_cascade_tag{},
-              im::sequential_tag{});
+          TIM(G, CFG.k, CFG.epsilon, generator, ripples::independent_cascade_tag{},
+              ripples::sequential_tag{});
       auto end = std::chrono::high_resolution_clock::now();
       R.Total = end - start;
     } else if (CFG.diffusionModel == "LT") {
       auto start = std::chrono::high_resolution_clock::now();
       std::tie(seeds, R) =
-          TIM(G, CFG.k, CFG.epsilon, generator, im::linear_threshold_tag{},
-              im::sequential_tag{});
+          TIM(G, CFG.k, CFG.epsilon, generator, ripples::linear_threshold_tag{},
+              ripples::sequential_tag{});
       auto end = std::chrono::high_resolution_clock::now();
       R.Total = end - start;
     }

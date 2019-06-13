@@ -37,95 +37,38 @@
 //
 //===----------------------------------------------------------------------===//
 
-#ifndef IM_IMM_H
-#define IM_IMM_H
+#ifndef RIPPLES_MPI_IMM_H
+#define RIPPLES_MPI_IMM_H
 
-#include <cmath>
-#include <cstddef>
+#include "mpi.h"
+
+#include <utility>
 #include <vector>
+#include <cstddef>
 
-#include "nlohmann/json.hpp"
 #include "trng/lcg64.hpp"
-#include "trng/uniform01_dist.hpp"
-#include "trng/uniform_int_dist.hpp"
 
-#include "im/find_most_influential.h"
-#include "im/generate_rrr_sets.h"
-#include "im/tim.h"
-#include "im/utility.h"
+#include "ripples/generate_rrr_sets.h"
+#include "ripples/imm.h"
+#include "ripples/mpi/find_most_influential.h"
+#include "ripples/utility.h"
 
-namespace im {
+namespace ripples {
 
-//! The IMM algorithm configuration descriptor.
-struct IMMConfiguration : public TIMConfiguration {};
-
-//! IMM execution record.
-struct IMMExecutionRecord {
-  using ex_time_ms = std::chrono::duration<double, std::milli>;
-  //! Number of threads used during the execution.
-  size_t NumThreads;
-  //! Number of RRR sets generated.
-  size_t Theta;
-  //! The list of how many RRR sets are produced during the estimation phase.
-  std::vector<size_t> ThetaPrimeDeltas;
-  //! Execution time of the Theta estimation phase.
-  ex_time_ms ThetaEstimationTotal;
-  //! Execution times of the GenerateRRRSets steps in Theta estimation.
-  std::vector<ex_time_ms> ThetaEstimationGenerateRRR;
-  //! Execution times of the FindMostInfluentialSet steps in Theta estimation.
-  std::vector<ex_time_ms> ThetaEstimationMostInfluential;
-  //! Execution time of the RRR sets generation phase.
-  ex_time_ms GenerateRRRSets;
-  //! Execution time of the maximum coverage phase.
-  ex_time_ms FindMostInfluentialSet;
-  //! Total execution time.
-  ex_time_ms Total;
-};
-
-//! Approximate logarithm of n chose k.
-//! \param n
-//! \param k
-//! \return an approximation of log(n choose k).
-inline double logBinomial(size_t n, size_t k) {
-  return n * log(n) - k * log(k) - (n - k) * log(n - k);
-}
-
-//! Compute ThetaPrime.
-//!
-//! \tparam execution_tag The execution policy
+//! Compute ThetaPrime for the MPI implementation.
 //!
 //! \param x The index of the current iteration.
 //! \param epsilonPrime Parameter controlling the approximation factor.
 //! \param l Parameter usually set to 1.
 //! \param k The size of the seed set.
 //! \param num_nodes The number of nodes in the input graph.
-template <typename execution_tag>
-ssize_t ThetaPrime(ssize_t x, double epsilonPrime, double l, size_t k,
-                   size_t num_nodes, execution_tag &&) {
-  return (2 + 2. / 3. * epsilonPrime) *
-         (l * std::log(num_nodes) + logBinomial(num_nodes, k) +
-          std::log(std::log2(num_nodes))) *
-         std::pow(2.0, x) / (epsilonPrime * epsilonPrime);
-}
+inline size_t ThetaPrime(ssize_t x, double epsilonPrime, double l, size_t k,
+                         size_t num_nodes, mpi_omp_parallel_tag &) {
+  int world_size;
+  MPI_Comm_size(MPI_COMM_WORLD, &world_size);
 
-
-//! Compute Theta.
-//!
-//! \param epsilon Parameter controlling the approximation factor.
-//! \param l Parameter usually set to 1.
-//! \param k The size of the seed set.
-//! \param LB The estimate of the lower bound.
-//! \param num_nodes The number of nodes in the input graph.
-inline size_t Theta(double epsilon, double l, size_t k, double LB,
-                    size_t num_nodes) {
-  double term1 = 0.6321205588285577;  // 1 - 1/e
-  double alpha = sqrt(l * std::log(num_nodes) + std::log(2));
-  double beta = sqrt(term1 * (logBinomial(num_nodes, k) +
-                              l * std::log(num_nodes) + std::log(2)));
-  double lamdaStar = 2 * num_nodes * (term1 * alpha + beta) *
-                     (term1 * alpha + beta) * pow(epsilon, -2);
-
-  return lamdaStar / LB;
+  return (ThetaPrime(x, epsilonPrime, l, k, num_nodes, omp_parallel_tag{}) /
+          world_size) + 1;
 }
 
 
@@ -134,7 +77,6 @@ inline size_t Theta(double epsilon, double l, size_t k, double LB,
 //! \tparam GraphTy The type of the input graph.
 //! \tparam PRNGeneratorTy The type of the parallel random number generator.
 //! \tparam diff_model_tag Type-Tag to selecte the diffusion model.
-//! \tparam execution_tag Type-Tag to select the execution policy.
 //!
 //! \param G The input graph.  The graph is transoposed.
 //! \param k The size of the seed set.
@@ -144,11 +86,10 @@ inline size_t Theta(double epsilon, double l, size_t k, double LB,
 //! \param record Data structure storing timing and event counts.
 //! \param model_tag The diffusion model tag.
 //! \param ex_tag The execution policy tag.
-template <typename GraphTy, typename PRNGeneratorTy, typename diff_model_tag,
-          typename execution_tag>
+template <typename GraphTy, typename PRNGeneratorTy, typename diff_model_tag>
 auto Sampling(const GraphTy &G, std::size_t k, double epsilon, double l,
               PRNGeneratorTy &generator, IMMExecutionRecord &record,
-              diff_model_tag &&model_tag, execution_tag &&ex_tag) {
+              diff_model_tag &&model_tag, mpi_omp_parallel_tag &ex_tag) {
   using vertex_type = typename GraphTy::vertex_type;
 
   // sqrt(2) * epsilon
@@ -162,14 +103,14 @@ auto Sampling(const GraphTy &G, std::size_t k, double epsilon, double l,
   for (ssize_t x = 1; x < std::log2(G.num_nodes()); ++x) {
     // Equation 9
     ssize_t thetaPrime = ThetaPrime(x, epsilonPrime, l, k, G.num_nodes(),
-                                    std::forward<execution_tag>(ex_tag));
+                                    ex_tag);
 
     record.ThetaPrimeDeltas.push_back(thetaPrime - RR.size());
 
     auto timeRRRSets = measure<>::exec_time([&](){
       auto deltaRR = GenerateRRRSets(G, thetaPrime - RR.size(), generator,
                                      std::forward<diff_model_tag>(model_tag),
-                                     std::forward<execution_tag>(ex_tag));
+                                     omp_parallel_tag{});
 
       RR.insert(RR.end(), std::make_move_iterator(deltaRR.begin()),
                 std::make_move_iterator(deltaRR.end()));
@@ -177,16 +118,12 @@ auto Sampling(const GraphTy &G, std::size_t k, double epsilon, double l,
     record.ThetaEstimationGenerateRRR.push_back(timeRRRSets);
 
     double f;
-
     auto timeMostInfluential = measure<>::exec_time([&](){
-      const auto &S =
-          FindMostInfluentialSet(G, k, RR, std::forward<execution_tag>(ex_tag));
-
-
+      const auto &S = FindMostInfluentialSet(G, k, RR, ex_tag);
       f = S.first;
     });
-
     record.ThetaEstimationMostInfluential.push_back(timeMostInfluential);
+
 
     if (f >= std::pow(2, -x)) {
       LB = (G.num_nodes() * f) / (1 + epsilonPrime);
@@ -194,35 +131,39 @@ auto Sampling(const GraphTy &G, std::size_t k, double epsilon, double l,
     }
   }
 
+  int world_size;
+  MPI_Comm_size(MPI_COMM_WORLD, &world_size);
+
   size_t theta = Theta(epsilon, l, k, LB, G.num_nodes());
+  size_t thetaLocal = (theta / world_size) + 1;
   auto end = std::chrono::high_resolution_clock::now();
 
   record.ThetaEstimationTotal = end - start;
 
   record.Theta = theta;
 
+  start = std::chrono::high_resolution_clock::now();
+  if (thetaLocal > RR.size()) {
+    auto deltaRR = GenerateRRRSets(G, thetaLocal - RR.size(), generator,
+                                   std::forward<diff_model_tag>(model_tag),
+                                   omp_parallel_tag{});
 
-  record.GenerateRRRSets = measure<>::exec_time([&](){
-    if (theta > RR.size()) {
-      auto deltaRR = GenerateRRRSets(G, theta - RR.size(), generator,
-                                     std::forward<diff_model_tag>(model_tag),
-                                     std::forward<execution_tag>(ex_tag));
+    RR.insert(RR.end(), std::make_move_iterator(deltaRR.begin()),
+              std::make_move_iterator(deltaRR.end()));
+  }
+  end = std::chrono::high_resolution_clock::now();
 
-      RR.insert(RR.end(), std::make_move_iterator(deltaRR.begin()),
-                std::make_move_iterator(deltaRR.end()));
-    }
-  });
+  record.GenerateRRRSets = end - start;
 
   return RR;
 }
 
 
-//! The IMM algroithm for Influence Maximization
+//! The IMM algroithm for Influence Maximization (MPI specialization).
 //!
 //! \tparam GraphTy The type of the input graph.
 //! \tparam PRNG The type of the parallel random number generator.
 //! \tparam diff_model_tag Type-Tag to selecte the diffusion model.
-//! \tparam execution_tag Type-Tag to select the execution policy.
 //!
 //! \param G The input graph.  The graph is transoposed.
 //! \param k The size of the seed set.
@@ -231,39 +172,41 @@ auto Sampling(const GraphTy &G, std::size_t k, double epsilon, double l,
 //! \param gen The parallel random number generator.
 //! \param model_tag The diffusion model tag.
 //! \param ex_tag The execution policy tag.
-template <typename GraphTy, typename PRNG, typename diff_model_tag,
-          typename execution_tag>
+template <typename GraphTy, typename diff_model_tag, typename PRNG>
 auto IMM(const GraphTy &G, std::size_t k, double epsilon, double l, PRNG &gen,
-         diff_model_tag &&model_tag, execution_tag &&ex_tag) {
+         diff_model_tag &&model_tag, ripples::mpi_omp_parallel_tag &&ex_tag) {
   using vertex_type = typename GraphTy::vertex_type;
   IMMExecutionRecord record;
 
   size_t max_num_threads(1);
 
-  if (std::is_same<execution_tag, omp_parallel_tag>::value) {
 #pragma omp single
-    max_num_threads = omp_get_max_threads();
-  }
+  max_num_threads = omp_get_max_threads();
+
+  // Find out rank, size
+  int world_rank;
+  MPI_Comm_rank(MPI_COMM_WORLD, &world_rank);
+  int world_size;
+  MPI_Comm_size(MPI_COMM_WORLD, &world_size);
+
+  gen.split(world_size, world_rank);
 
   std::vector<trng::lcg64> generator(max_num_threads, gen);
 
-  if (std::is_same<execution_tag, omp_parallel_tag>::value) {
 #pragma omp parallel
-    {
-      generator[omp_get_thread_num()].split(omp_get_num_threads(),
-                                            omp_get_thread_num());
-    }
+  {
+    generator[omp_get_thread_num()].split(omp_get_num_threads(),
+                                          omp_get_thread_num());
   }
 
   l = l * (1 + 1 / std::log2(G.num_nodes()));
 
   auto R = Sampling(G, k, epsilon, l, generator, record,
                     std::forward<diff_model_tag>(model_tag),
-                    std::forward<execution_tag>(ex_tag));
+                    ex_tag);
 
   auto start = std::chrono::high_resolution_clock::now();
-  const auto &S =
-      FindMostInfluentialSet(G, k, R, std::forward<execution_tag>(ex_tag));
+  const auto &S = FindMostInfluentialSet(G, k, R, ex_tag);
   auto end = std::chrono::high_resolution_clock::now();
 
   record.FindMostInfluentialSet = end - start;
@@ -271,6 +214,6 @@ auto IMM(const GraphTy &G, std::size_t k, double epsilon, double l, PRNG &gen,
   return std::make_pair(S.second, record);
 }
 
-}  // namespace im
+}  // namespace ripples
 
-#endif  // IM_IMM_H
+#endif  // RIPPLES_MPI_IMM_H

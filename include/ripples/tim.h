@@ -37,8 +37,8 @@
 //
 //===----------------------------------------------------------------------===//
 
-#ifndef IM_TIM_H
-#define IM_TIM_H
+#ifndef RIPPLES_TIM_H
+#define RIPPLES_TIM_H
 
 #include <algorithm>
 #include <cassert>
@@ -54,17 +54,17 @@
 
 #include <omp.h>
 
-#include "im/diffusion_simulation.h"
-#include "im/find_most_influential.h"
-#include "im/generate_rrr_sets.h"
-#include "im/utility.h"
+#include "ripples/diffusion_simulation.h"
+#include "ripples/find_most_influential.h"
+#include "ripples/generate_rrr_sets.h"
+#include "ripples/utility.h"
 
 #include "CLI11/CLI11.hpp"
 #include "trng/lcg64.hpp"
 #include "trng/uniform01_dist.hpp"
 #include "trng/uniform_int_dist.hpp"
 
-namespace im {
+namespace ripples {
 
 //! \brief The configuration data structure for the TIM+ algorithm.
 struct TIMConfiguration {
@@ -148,14 +148,14 @@ size_t WR(GraphTy &G, typename GraphTy::vertex_type r, PRNG &generator,
 
     wr += G.degree(v);
 
-    if (std::is_same<diff_model_tag, im::independent_cascade_tag>::value) {
+    if (std::is_same<diff_model_tag, ripples::independent_cascade_tag>::value) {
       for (auto u : G.neighbors(v)) {
         if (!visited[u.vertex] && value(generator) <= u.weight) {
           queue.push(u.vertex);
           visited[u.vertex] = true;
         }
       }
-    } else if (std::is_same<diff_model_tag, im::linear_threshold_tag>::value) {
+    } else if (std::is_same<diff_model_tag, ripples::linear_threshold_tag>::value) {
       float threshold = value(generator);
       for (auto u : G.neighbors(v)) {
         threshold -= u.weight;
@@ -400,6 +400,6 @@ auto TIM(const GraphTy &G, size_t k, double epsilon, PRNG &gen,
   return std::make_pair(seeds.second, Record);
 }
 
-}  // namespace im
+}  // namespace ripples
 
-#endif /* IM_TIM_H */
+#endif /* RIPPLES_TIM_H */

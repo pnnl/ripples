@@ -38,13 +38,13 @@
 //===----------------------------------------------------------------------===//
 
 
-#ifndef IM_GRAPH_DUMP_H
-#define IM_GRAPH_DUMP_H
+#ifndef RIPPLES_GRAPH_DUMP_H
+#define RIPPLES_GRAPH_DUMP_H
 
 #include <iostream>
 
 
-namespace im {
+namespace ripples {
 
 template <typename GraphTy, typename OStream>
 void dumpGraph(const GraphTy & G, OStream & OS) {
@@ -56,6 +56,6 @@ void dumpGraph(const GraphTy & G, OStream & OS) {
   }
 }
 
-}  // namespace im
+}  // namespace ripples
 
-#endif /* IM_GRAPH_DUMP_H */
+#endif /* RIPPLES_GRAPH_DUMP_H */

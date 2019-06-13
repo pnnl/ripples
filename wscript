@@ -41,7 +41,7 @@ def options(opt):
     cfg_options = opt.get_option_group('Configuration options')
 
     opt.load('trng4', tooldir='waftools')
-    opt.load('json', tooldir='waftools')
+    opt.load('libjson', tooldir='waftools')
     opt.load('spdlog', tooldir='waftools')
 
     cfg_options.add_option(
@@ -57,13 +57,14 @@ def options(opt):
 
 def configure(conf):
     conf.load('compiler_cxx')
+    conf.load('clang_compilation_database')
     conf.load('waf_unit_test')
     conf.load('sphinx', tooldir='waftools')
 
     conf.env.CXXFLAGS += ['-std=c++17', '-O3', '-march=native', '-pipe']
 
     conf.load('spdlog', tooldir='waftools')
-    conf.load('json', tooldir='waftools')
+    conf.load('libjson', tooldir='waftools')
     conf.load('trng4', tooldir='waftools')
 
     conf.check_cxx(cxxflags=['-fopenmp'], ldflags=['-fopenmp'],

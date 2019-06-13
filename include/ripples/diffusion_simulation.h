@@ -37,7 +37,9 @@
 //
 //===----------------------------------------------------------------------===//
 
-#pragma once
+
+#ifndef RIPPLES_DIFFUSION_SIMULATION_H
+#define RIPPLES_DIFFUSION_SIMULATION_H
 
 #include <algorithm>
 #include <vector>
@@ -45,9 +47,9 @@
 
 #include "trng/uniform01_dist.hpp"
 
-#include "im/graph.h"
+#include "ripples/graph.h"
 
-namespace im {
+namespace ripples {
 
 //! \brief Type-tag for the Independent Cascade Model.
 struct independent_cascade_tag {};
@@ -194,4 +196,6 @@ auto simulate(const GraphTy &G, Iterator begin, Iterator end, PRNG &generator,
   return impl::run_simulation(G, begin, end, generator, M);
 }
 
-}  // namespace im
+}  // namespace ripples
+
+#endif /* DIFFUSION_SIMULATION_H */

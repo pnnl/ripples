@@ -37,8 +37,8 @@
 //
 //===----------------------------------------------------------------------===//
 
-#ifndef IM_GRAPH_H
-#define IM_GRAPH_H
+#ifndef RIPPLES_GRAPH_H
+#define RIPPLES_GRAPH_H
 
 #include <algorithm>
 #include <cstddef>
@@ -46,9 +46,9 @@
 #include <numeric>
 #include <vector>
 
-#include <im/utility.h>
+#include <ripples/utility.h>
 
-namespace im {
+namespace ripples {
 
 //! \brief Forward Direction Graph loading policy.
 //!
@@ -464,6 +464,6 @@ class Graph {
   size_t numEdges;
 };
 
-}  // namespace im
+}  // namespace ripples
 
-#endif  // IM_GRAPH_H
+#endif  // RIPPLES_GRAPH_H

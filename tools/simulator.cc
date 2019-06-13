@@ -48,14 +48,14 @@
 #include "trng/lcg64.hpp"
 #include "trng/uniform_int_dist.hpp"
 
-#include "im/configuration.h"
-#include "im/diffusion_simulation.h"
-#include "im/graph.h"
-#include "im/loaders.h"
+#include "ripples/configuration.h"
+#include "ripples/diffusion_simulation.h"
+#include "ripples/graph.h"
+#include "ripples/loaders.h"
 
 #include "omp.h"
 
-namespace im {
+namespace ripples {
 
 struct SimulatorConfiguration {
   std::string EFileName;
@@ -89,10 +89,10 @@ auto GetExperimentRecord(const SimulatorConfiguration &CFG,
   return experiment;
 }
 
-}  // namespace im
+}  // namespace ripples
 
 using Configuration =
-    im::ToolConfiguration<im::SimulatorConfiguration>;
+    ripples::ToolConfiguration<ripples::SimulatorConfiguration>;
 
 int main(int argc, char **argv) {
   Configuration CFG;
@@ -112,10 +112,10 @@ int main(int argc, char **argv) {
   experimentRecordIS >> experimentRecord;
   CFG.diffusionModel = experimentRecord[0]["DiffusionModel"];
 
-  using Graph = im::Graph<uint32_t, float, im::ForwardDirection<uint32_t>>;
+  using Graph = ripples::Graph<uint32_t, float, ripples::ForwardDirection<uint32_t>>;
   auto console = spdlog::stdout_color_st("console");
   console->info("Loading ...");
-  Graph G = im::loadGraph<Graph>(CFG, weightGen);
+  Graph G = ripples::loadGraph<Graph>(CFG, weightGen);
   console->info("Loading Done!");
   console->info("Number of Nodes : {}", G.num_nodes());
   console->info("Number of Edges : {}", G.num_edges());
@@ -147,17 +147,17 @@ int main(int argc, char **argv) {
         if (CFG.diffusionModel == "IC") {
           experiments[i] = simulate(G, seeds.begin(), seeds.end(),
                                     generator[omp_get_thread_num()],
-                                    im::independent_cascade_tag{});
+                                    ripples::independent_cascade_tag{});
         } else if (CFG.diffusionModel == "LT") {
           experiments[i] = simulate(G, seeds.begin(), seeds.end(),
                                     generator[omp_get_thread_num()],
-                                    im::linear_threshold_tag{});
+                                    ripples::linear_threshold_tag{});
         } else {
           throw std::string("Not Yet Implemented");
         }
       }
       simRecordLog.push_back(
-          im::GetExperimentRecord(CFG, std::distance(seeds.begin(), seeds.end()), record["Epsilon"], experiments));
+          ripples::GetExperimentRecord(CFG, std::distance(seeds.begin(), seeds.end()), record["Epsilon"], experiments));
   }
   simRecord->info("{}", simRecordLog.dump(2));
 

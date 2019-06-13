@@ -37,14 +37,14 @@
 //
 //===----------------------------------------------------------------------===//
 
-#ifndef IM_CONFIGURATION_H
-#define IM_CONFIGURATION_H
+#ifndef RIPPLES_CONFIGURATION_H
+#define RIPPLES_CONFIGURATION_H
 
 #include <string>
 
 #include "CLI11/CLI11.hpp"
 
-namespace im {
+namespace ripples {
 
 //! \brief Descriptor for the input Graph
 //!
@@ -132,6 +132,6 @@ struct ToolConfiguration :
   }
 };
 
-};  // namespace im
+};  // namespace ripples
 
-#endif  // IM_CONFIGURATION_H
+#endif  // RIPPLES_CONFIGURATION_H

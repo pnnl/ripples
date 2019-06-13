@@ -41,10 +41,10 @@
 #include <iostream>
 #include <string>
 
-#include "im/configuration.h"
-#include "im/graph.h"
-#include "im/loaders.h"
-#include "im/graph_dump.h"
+#include "ripples/configuration.h"
+#include "ripples/graph.h"
+#include "ripples/loaders.h"
+#include "ripples/graph_dump.h"
 
 #include "CLI11/CLI11.hpp"
 #include "spdlog/sinks/stdout_color_sinks.h"
@@ -82,7 +82,7 @@ struct DumpConfiguration {
 
 
 using Configuration =
-    im::ToolConfiguration<DumpConfiguration, DumpOutputConfiguration>;
+    ripples::ToolConfiguration<DumpConfiguration, DumpOutputConfiguration>;
 
 
 int main(int argc, char **argv) {
@@ -95,10 +95,10 @@ int main(int argc, char **argv) {
 
   spdlog::set_level(spdlog::level::info);
 
-  using Graph = im::Graph<uint32_t, float, im::ForwardDirection<uint32_t>>;
+  using Graph = ripples::Graph<uint32_t, float, ripples::ForwardDirection<uint32_t>>;
   auto console = spdlog::stdout_color_st("console");
   console->info("Loading...");
-  Graph G = im::loadGraph<Graph>(CFG, weightGen);
+  Graph G = ripples::loadGraph<Graph>(CFG, weightGen);
   console->info("Loading Done!");
   console->info("Number of Nodes : {}", G.num_nodes());
   console->info("Number of Edges : {}", G.num_edges());

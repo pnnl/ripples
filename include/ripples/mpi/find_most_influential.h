@@ -37,15 +37,15 @@
 //
 //===----------------------------------------------------------------------===//
 
-#ifndef IM_MPI_FIND_MOST_INFLUENTIAL_H
-#define IM_MPI_FIND_MOST_INFLUENTIAL_H
+#ifndef RIPPLES_MPI_FIND_MOST_INFLUENTIAL_H
+#define RIPPLES_MPI_FIND_MOST_INFLUENTIAL_H
 
-#include "im/find_most_influential.h"
-#include "im/utility.h"
+#include "ripples/find_most_influential.h"
+#include "ripples/utility.h"
 
 #include "spdlog/spdlog.h"
 
-namespace im {
+namespace ripples {
 
 //! \brief Select k seeds starting from the a list of Random Reverse
 //! Reachability Sets.
@@ -161,6 +161,6 @@ auto FindMostInfluentialSet(const GraphTy &G, size_t k,
   return std::make_pair(f, result);
 }
 
-}  // namespace im
+}  // namespace ripples
 
-#endif  // IM_MPI_FIND_MOST_INFLUENTIAL_H
+#endif  // RIPPLES_MPI_FIND_MOST_INFLUENTIAL_H

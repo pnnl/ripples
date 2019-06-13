@@ -37,22 +37,22 @@
 //
 //===----------------------------------------------------------------------===//
 
-#ifndef IM_GENERATE_RRR_SETS_H
-#define IM_GENERATE_RRR_SETS_H
+#ifndef RIPPLES_GENERATE_RRR_SETS_H
+#define RIPPLES_GENERATE_RRR_SETS_H
 
 #include <algorithm>
 #include <queue>
 #include <utility>
 #include <vector>
 
-#include "im/diffusion_simulation.h"
-#include "im/graph.h"
-#include "im/utility.h"
+#include "ripples/diffusion_simulation.h"
+#include "ripples/graph.h"
+#include "ripples/utility.h"
 
 #include "trng/uniform01_dist.hpp"
 #include "trng/uniform_int_dist.hpp"
 
-namespace im {
+namespace ripples {
 
 //! \brief The Random Reverse Reachability Sets type
 template <typename GraphTy>
@@ -88,7 +88,7 @@ void AddRRRSet(GraphTy &G, typename GraphTy::vertex_type r,
     vertex_type v = queue.front();
     queue.pop();
 
-    if (std::is_same<diff_model_tag, im::independent_cascade_tag>::value) {
+    if (std::is_same<diff_model_tag, ripples::independent_cascade_tag>::value) {
       for (auto u : G.neighbors(v)) {
         if (!visited[u.vertex] && value(generator) <= u.weight) {
           queue.push(u.vertex);
@@ -96,7 +96,7 @@ void AddRRRSet(GraphTy &G, typename GraphTy::vertex_type r,
           result.push_back(u.vertex);
         }
       }
-    } else if (std::is_same<diff_model_tag, im::linear_threshold_tag>::value) {
+    } else if (std::is_same<diff_model_tag, ripples::linear_threshold_tag>::value) {
       float threshold = value(generator);
       for (auto u : G.neighbors(v)) {
         threshold -= u.weight;
@@ -187,6 +187,6 @@ std::vector<RRRset<GraphTy>> GenerateRRRSets(GraphTy &G, size_t theta,
   return rrrSets;
 }
 
-}  // namespace im
+}  // namespace ripples
 
-#endif  // IM_GENERATE_RRR_SETS_H
+#endif  // RIPPLES_GENERATE_RRR_SETS_H

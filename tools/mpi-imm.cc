@@ -42,12 +42,12 @@
 
 #include <iostream>
 
-#include "im/configuration.h"
-#include "im/diffusion_simulation.h"
-#include "im/graph.h"
-#include "im/loaders.h"
-#include "im/mpi/imm.h"
-#include "im/utility.h"
+#include "ripples/configuration.h"
+#include "ripples/diffusion_simulation.h"
+#include "ripples/graph.h"
+#include "ripples/loaders.h"
+#include "ripples/mpi/imm.h"
+#include "ripples/utility.h"
 
 #include "CLI11/CLI11.hpp"
 #include "nlohmann/json.hpp"
@@ -57,7 +57,7 @@
 #include "spdlog/spdlog.h"
 
 
-namespace im {
+namespace ripples {
 
 template <typename SeedSet>
 auto GetExperimentRecord(const ToolConfiguration<IMMConfiguration> &CFG,
@@ -89,13 +89,13 @@ auto GetExperimentRecord(const ToolConfiguration<IMMConfiguration> &CFG,
   return experiment;
 }
 
-}  // namespace im
+}  // namespace ripples
 
 
 int main(int argc, char *argv[]) {
   MPI_Init(NULL, NULL);
 
-  im::ToolConfiguration<im::IMMConfiguration> CFG;
+  ripples::ToolConfiguration<ripples::IMMConfiguration> CFG;
   CFG.ParseCmdOptions(argc, argv);
 
   spdlog::set_level(spdlog::level::info);
@@ -104,11 +104,11 @@ int main(int argc, char *argv[]) {
   weightGen.seed(0UL);
   weightGen.split(2, 0);
 
-  using GraphFwd = im::Graph<uint32_t, float, im::ForwardDirection<uint32_t>>;
-  using GraphBwd = im::Graph<uint32_t, float, im::BackwardDirection<uint32_t>>;
+  using GraphFwd = ripples::Graph<uint32_t, float, ripples::ForwardDirection<uint32_t>>;
+  using GraphBwd = ripples::Graph<uint32_t, float, ripples::BackwardDirection<uint32_t>>;
   auto console = spdlog::stdout_color_st("console");
   console->info("Loading...");
-  GraphFwd Gf = im::loadGraph<GraphFwd>(CFG, weightGen);
+  GraphFwd Gf = ripples::loadGraph<GraphFwd>(CFG, weightGen);
   GraphBwd G = Gf.get_transpose();
   console->info("Loading Done!");
   console->info("Number of Nodes : {}", G.num_nodes());
@@ -117,7 +117,7 @@ int main(int argc, char *argv[]) {
   nlohmann::json executionLog;
 
   std::vector<typename GraphBwd::vertex_type> seeds;
-  im::IMMExecutionRecord R;
+  ripples::IMMExecutionRecord R;
 
   trng::lcg64 generator;
   generator.seed(0UL);
@@ -127,14 +127,14 @@ int main(int argc, char *argv[]) {
     auto start = std::chrono::high_resolution_clock::now();
     std::tie(seeds, R) =
         IMM(G, CFG.k, CFG.epsilon, 1.0, generator,
-            im::independent_cascade_tag{}, im::mpi_omp_parallel_tag{});
+            ripples::independent_cascade_tag{}, ripples::mpi_omp_parallel_tag{});
     auto end = std::chrono::high_resolution_clock::now();
     R.Total = end - start;
   } else if (CFG.diffusionModel == "LT") {
     auto start = std::chrono::high_resolution_clock::now();
     std::tie(seeds, R) =
-        IMM(G, CFG.k, CFG.epsilon, 1, generator, im::linear_threshold_tag{},
-            im::mpi_omp_parallel_tag{});
+        IMM(G, CFG.k, CFG.epsilon, 1, generator, ripples::linear_threshold_tag{},
+            ripples::mpi_omp_parallel_tag{});
     auto end = std::chrono::high_resolution_clock::now();
     R.Total = end - start;
   }
