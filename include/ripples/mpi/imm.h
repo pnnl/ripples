@@ -1,26 +1,59 @@
 //===------------------------------------------------------------*- C++ -*-===//
 //
+//             Ripples: A C++ Library for Influence Maximization
+//                  Marco Minutoli <marco.minutoli@pnnl.gov>
+//                   Pacific Northwest National Laboratory
+//
+//===----------------------------------------------------------------------===//
+//
 // Copyright 2018 Battelle Memorial Institute
+// All rights reserved.
+//
+// Redistribution and use in source and binary forms, with or without
+// modification, are permitted provided that the following conditions are met:
+//
+// 1. Redistributions of source code must retain the above copyright notice,
+// this list of conditions and the following disclaimer.
+//
+// 2. Redistributions in binary form must reproduce the above copyright notice,
+// this list of conditions and the following disclaimer in the documentation
+// and/or other materials provided with the distribution.
+//
+// 3. Neither the name of the copyright holder nor the names of its contributors
+// may be used to endorse or promote products derived from this software without
+// specific prior written permission.
+//
+// THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
+// AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+// IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
+// ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE
+// LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR
+// CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF
+// SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS
+// INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN
+// CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
+// ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
+// POSSIBILITY OF SUCH DAMAGE.
 //
 //===----------------------------------------------------------------------===//
 
-#ifndef IM_MPI_IMM_H
-#define IM_MPI_IMM_H
+#ifndef RIPPLES_MPI_IMM_H
+#define RIPPLES_MPI_IMM_H
 
 #include "mpi.h"
 
+#include <cstddef>
 #include <utility>
 #include <vector>
-#include <cstddef>
 
 #include "trng/lcg64.hpp"
 
-#include "im/generate_rrr_sets.h"
-#include "im/imm.h"
-#include "im/mpi/find_most_influential.h"
-#include "im/utility.h"
+#include "ripples/generate_rrr_sets.h"
+#include "ripples/imm.h"
+#include "ripples/mpi/find_most_influential.h"
+#include "ripples/utility.h"
 
-namespace im {
+namespace ripples {
 
 //! Compute ThetaPrime for the MPI implementation.
 //!
@@ -35,9 +68,9 @@ inline size_t ThetaPrime(ssize_t x, double epsilonPrime, double l, size_t k,
   MPI_Comm_size(MPI_COMM_WORLD, &world_size);
 
   return (ThetaPrime(x, epsilonPrime, l, k, num_nodes, omp_parallel_tag{}) /
-          world_size) + 1;
+          world_size) +
+         1;
 }
-
 
 //! Collect a set of Random Reverse Reachable set.
 //!
@@ -69,12 +102,12 @@ auto Sampling(const GraphTy &G, std::size_t k, double epsilon, double l,
   size_t thetaPrime = 0;
   for (ssize_t x = 1; x < std::log2(G.num_nodes()); ++x) {
     // Equation 9
-    ssize_t thetaPrime = ThetaPrime(x, epsilonPrime, l, k, G.num_nodes(),
-                                    ex_tag);
+    ssize_t thetaPrime =
+        ThetaPrime(x, epsilonPrime, l, k, G.num_nodes(), ex_tag);
 
     record.ThetaPrimeDeltas.push_back(thetaPrime - RR.size());
 
-    auto timeRRRSets = measure<>::exec_time([&](){
+    auto timeRRRSets = measure<>::exec_time([&]() {
       auto deltaRR = GenerateRRRSets(G, thetaPrime - RR.size(), generator,
                                      std::forward<diff_model_tag>(model_tag),
                                      omp_parallel_tag{});
@@ -85,12 +118,11 @@ auto Sampling(const GraphTy &G, std::size_t k, double epsilon, double l,
     record.ThetaEstimationGenerateRRR.push_back(timeRRRSets);
 
     double f;
-    auto timeMostInfluential = measure<>::exec_time([&](){
+    auto timeMostInfluential = measure<>::exec_time([&]() {
       const auto &S = FindMostInfluentialSet(G, k, RR, ex_tag);
       f = S.first;
     });
     record.ThetaEstimationMostInfluential.push_back(timeMostInfluential);
-
 
     if (f >= std::pow(2, -x)) {
       LB = (G.num_nodes() * f) / (1 + epsilonPrime);
@@ -125,7 +157,6 @@ auto Sampling(const GraphTy &G, std::size_t k, double epsilon, double l,
   return RR;
 }
 
-
 //! The IMM algroithm for Influence Maximization (MPI specialization).
 //!
 //! \tparam GraphTy The type of the input graph.
@@ -141,7 +172,7 @@ auto Sampling(const GraphTy &G, std::size_t k, double epsilon, double l,
 //! \param ex_tag The execution policy tag.
 template <typename GraphTy, typename diff_model_tag, typename PRNG>
 auto IMM(const GraphTy &G, std::size_t k, double epsilon, double l, PRNG &gen,
-         diff_model_tag &&model_tag, im::mpi_omp_parallel_tag &&ex_tag) {
+         diff_model_tag &&model_tag, ripples::mpi_omp_parallel_tag &&ex_tag) {
   using vertex_type = typename GraphTy::vertex_type;
   IMMExecutionRecord record;
 
@@ -169,8 +200,7 @@ auto IMM(const GraphTy &G, std::size_t k, double epsilon, double l, PRNG &gen,
   l = l * (1 + 1 / std::log2(G.num_nodes()));
 
   auto R = Sampling(G, k, epsilon, l, generator, record,
-                    std::forward<diff_model_tag>(model_tag),
-                    ex_tag);
+                    std::forward<diff_model_tag>(model_tag), ex_tag);
 
   auto start = std::chrono::high_resolution_clock::now();
   const auto &S = FindMostInfluentialSet(G, k, R, ex_tag);
@@ -181,6 +211,6 @@ auto IMM(const GraphTy &G, std::size_t k, double epsilon, double l, PRNG &gen,
   return std::make_pair(S.second, record);
 }
 
-}  // namespace im
+}  // namespace ripples
 
-#endif  // IM_MPI_IMM_H
+#endif  // RIPPLES_MPI_IMM_H

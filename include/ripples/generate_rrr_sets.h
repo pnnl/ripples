@@ -1,27 +1,60 @@
 //===------------------------------------------------------------*- C++ -*-===//
 //
+//             Ripples: A C++ Library for Influence Maximization
+//                  Marco Minutoli <marco.minutoli@pnnl.gov>
+//                   Pacific Northwest National Laboratory
+//
+//===----------------------------------------------------------------------===//
+//
 // Copyright 2018 Battelle Memorial Institute
+// All rights reserved.
+//
+// Redistribution and use in source and binary forms, with or without
+// modification, are permitted provided that the following conditions are met:
+//
+// 1. Redistributions of source code must retain the above copyright notice,
+// this list of conditions and the following disclaimer.
+//
+// 2. Redistributions in binary form must reproduce the above copyright notice,
+// this list of conditions and the following disclaimer in the documentation
+// and/or other materials provided with the distribution.
+//
+// 3. Neither the name of the copyright holder nor the names of its contributors
+// may be used to endorse or promote products derived from this software without
+// specific prior written permission.
+//
+// THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
+// AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+// IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
+// ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE
+// LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR
+// CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF
+// SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS
+// INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN
+// CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
+// ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
+// POSSIBILITY OF SUCH DAMAGE.
 //
 //===----------------------------------------------------------------------===//
 
-#ifndef IM_GENERATE_RRR_SETS_H
-#define IM_GENERATE_RRR_SETS_H
+#ifndef RIPPLES_GENERATE_RRR_SETS_H
+#define RIPPLES_GENERATE_RRR_SETS_H
 
 #include <algorithm>
 #include <queue>
 #include <utility>
 #include <vector>
 
-#include "im/diffusion_simulation.h"
-#include "im/graph.h"
-#include "im/utility.h"
+#include "ripples/diffusion_simulation.h"
+#include "ripples/graph.h"
+#include "ripples/utility.h"
 
 #include "im/cuda/cuda_generate_rrr_sets.h"
 
 #include "trng/uniform01_dist.hpp"
 #include "trng/uniform_int_dist.hpp"
 
-namespace im {
+namespace ripples {
 
 //! \brief The Random Reverse Reachability Sets type
 template <typename GraphTy>
@@ -57,7 +90,7 @@ void AddRRRSet(GraphTy &G, typename GraphTy::vertex_type r,
     vertex_type v = queue.front();
     queue.pop();
 
-    if (std::is_same<diff_model_tag, im::independent_cascade_tag>::value) {
+    if (std::is_same<diff_model_tag, ripples::independent_cascade_tag>::value) {
       for (auto u : G.neighbors(v)) {
         if (!visited[u.vertex] && value(generator) <= u.weight) {
           queue.push(u.vertex);
@@ -65,7 +98,8 @@ void AddRRRSet(GraphTy &G, typename GraphTy::vertex_type r,
           result.push_back(u.vertex);
         }
       }
-    } else if (std::is_same<diff_model_tag, im::linear_threshold_tag>::value) {
+    } else if (std::is_same<diff_model_tag,
+                            ripples::linear_threshold_tag>::value) {
       float threshold = value(generator);
       for (auto u : G.neighbors(v)) {
         threshold -= u.weight;
@@ -176,6 +210,6 @@ std::vector<RRRset<GraphTy>> GenerateRRRSets(GraphTy &G, size_t theta,
   return CudaGenerateRRRSets(theta, std::forward<diff_model_tag>(model_tag));
 }
 
-}  // namespace im
+}  // namespace ripples
 
-#endif  // IM_GENERATE_RRR_SETS_H
+#endif  // RIPPLES_GENERATE_RRR_SETS_H

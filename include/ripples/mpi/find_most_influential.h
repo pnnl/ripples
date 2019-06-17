@@ -1,18 +1,51 @@
 //===------------------------------------------------------------*- C++ -*-===//
 //
+//             Ripples: A C++ Library for Influence Maximization
+//                  Marco Minutoli <marco.minutoli@pnnl.gov>
+//                   Pacific Northwest National Laboratory
+//
+//===----------------------------------------------------------------------===//
+//
 // Copyright 2018 Battelle Memorial Institute
+// All rights reserved.
+//
+// Redistribution and use in source and binary forms, with or without
+// modification, are permitted provided that the following conditions are met:
+//
+// 1. Redistributions of source code must retain the above copyright notice,
+// this list of conditions and the following disclaimer.
+//
+// 2. Redistributions in binary form must reproduce the above copyright notice,
+// this list of conditions and the following disclaimer in the documentation
+// and/or other materials provided with the distribution.
+//
+// 3. Neither the name of the copyright holder nor the names of its contributors
+// may be used to endorse or promote products derived from this software without
+// specific prior written permission.
+//
+// THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
+// AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+// IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
+// ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE
+// LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR
+// CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF
+// SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS
+// INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN
+// CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
+// ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
+// POSSIBILITY OF SUCH DAMAGE.
 //
 //===----------------------------------------------------------------------===//
 
-#ifndef IM_MPI_FIND_MOST_INFLUENTIAL_H
-#define IM_MPI_FIND_MOST_INFLUENTIAL_H
+#ifndef RIPPLES_MPI_FIND_MOST_INFLUENTIAL_H
+#define RIPPLES_MPI_FIND_MOST_INFLUENTIAL_H
 
-#include "im/find_most_influential.h"
-#include "im/utility.h"
+#include "ripples/find_most_influential.h"
+#include "ripples/utility.h"
 
 #include "spdlog/spdlog.h"
 
-namespace im {
+namespace ripples {
 
 //! \brief Select k seeds starting from the a list of Random Reverse
 //! Reachability Sets.
@@ -53,8 +86,8 @@ auto FindMostInfluentialSet(const GraphTy &G, size_t k,
                     std::forward<omp_parallel_tag>(omp_parallel_tag{}));
 
   MPI_Win_fence(0, win);
-  MPI_Accumulate(vertexCoverage.data(), G.num_nodes(), MPI_UINT32_T, 0,
-                 0, G.num_nodes(), MPI_UINT32_T, MPI_SUM, win);
+  MPI_Accumulate(vertexCoverage.data(), G.num_nodes(), MPI_UINT32_T, 0, 0,
+                 G.num_nodes(), MPI_UINT32_T, MPI_SUM, win);
   MPI_Win_fence(0, win);
 
   MPI_Win_free(&win);
@@ -75,7 +108,7 @@ auto FindMostInfluentialSet(const GraphTy &G, size_t k,
   result.reserve(k);
 
   auto end = RRRsets.end();
-  uint32_t coveredAndSelected[2] = { 0, 0 };
+  uint32_t coveredAndSelected[2] = {0, 0};
 
   while (result.size() < k) {
     if (rank == 0) {
@@ -94,23 +127,20 @@ auto FindMostInfluentialSet(const GraphTy &G, size_t k,
     MPI_Bcast(&coveredAndSelected, 2, MPI_UINT32_T, 0, MPI_COMM_WORLD);
 
     vertex_type v = coveredAndSelected[1];
-    auto cmp = [=](const RRRset & a) -> auto {
-                 return !std::binary_search(a.begin(), a.end(), v);
-               };
+    auto cmp = [=](const RRRset &a) -> auto {
+      return !std::binary_search(a.begin(), a.end(), v);
+    };
 
     auto itr = partition(RRRsets.begin(), end, cmp, omp_parallel_tag{});
 
     if (std::distance(itr, end) < std::distance(RRRsets.begin(), itr)) {
       UpdateCounters(itr, end, vertexCoverage, omp_parallel_tag{});
     } else {
-      #pragma omp parallel for simd
-      for (size_t i = 0; i < vertexCoverage.size(); ++i)
-        vertexCoverage[i] = 0;
+#pragma omp parallel for simd
+      for (size_t i = 0; i < vertexCoverage.size(); ++i) vertexCoverage[i] = 0;
 
-      CountOccurrencies(
-          RRRsets.begin(), itr,
-          vertexCoverage.begin(), vertexCoverage.end(),
-          omp_parallel_tag{});
+      CountOccurrencies(RRRsets.begin(), itr, vertexCoverage.begin(),
+                        vertexCoverage.end(), omp_parallel_tag{});
     }
 
     end = itr;
@@ -128,6 +158,6 @@ auto FindMostInfluentialSet(const GraphTy &G, size_t k,
   return std::make_pair(f, result);
 }
 
-}  // namespace im
+}  // namespace ripples
 
-#endif  // IM_MPI_FIND_MOST_INFLUENTIAL_H
+#endif  // RIPPLES_MPI_FIND_MOST_INFLUENTIAL_H

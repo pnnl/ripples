@@ -1,6 +1,39 @@
 //===------------------------------------------------------------*- C++ -*-===//
 //
+//             Ripples: A C++ Library for Influence Maximization
+//                  Marco Minutoli <marco.minutoli@pnnl.gov>
+//                   Pacific Northwest National Laboratory
+//
+//===----------------------------------------------------------------------===//
+//
 // Copyright 2018 Battelle Memorial Institute
+// All rights reserved.
+//
+// Redistribution and use in source and binary forms, with or without
+// modification, are permitted provided that the following conditions are met:
+//
+// 1. Redistributions of source code must retain the above copyright notice,
+// this list of conditions and the following disclaimer.
+//
+// 2. Redistributions in binary form must reproduce the above copyright notice,
+// this list of conditions and the following disclaimer in the documentation
+// and/or other materials provided with the distribution.
+//
+// 3. Neither the name of the copyright holder nor the names of its contributors
+// may be used to endorse or promote products derived from this software without
+// specific prior written permission.
+//
+// THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
+// AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+// IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
+// ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE
+// LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR
+// CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF
+// SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS
+// INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN
+// CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
+// ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
+// POSSIBILITY OF SUCH DAMAGE.
 //
 //===----------------------------------------------------------------------===//
 
@@ -9,19 +42,20 @@
 #include "CLI11/CLI11.hpp"
 #include "nlohmann/json.hpp"
 #include "spdlog/sinks/basic_file_sink.h"
+#include "spdlog/sinks/rotating_file_sink.h"
 #include "spdlog/sinks/stdout_color_sinks.h"
 #include "spdlog/spdlog.h"
 #include "trng/lcg64.hpp"
 #include "trng/uniform_int_dist.hpp"
 
-#include "im/configuration.h"
-#include "im/diffusion_simulation.h"
-#include "im/graph.h"
-#include "im/loaders.h"
+#include "ripples/configuration.h"
+#include "ripples/diffusion_simulation.h"
+#include "ripples/graph.h"
+#include "ripples/loaders.h"
 
 #include "omp.h"
 
-namespace im {
+namespace ripples {
 
 struct SimulatorConfiguration {
   std::string EFileName;
@@ -29,9 +63,9 @@ struct SimulatorConfiguration {
   std::size_t Replicas;
 
   void addCmdOptions(CLI::App &app) {
-    app.add_option(
-        "-e,--experiment-file", EFileName,
-        "The file storing the experiments form a run of an inf-max algorithm.")
+    app.add_option("-e,--experiment-file", EFileName,
+                   "The file storing the experiments form a run of an inf-max "
+                   "algorithm.")
         ->group("Simulator Options")
         ->required();
     app.add_option("--replicas", Replicas,
@@ -41,30 +75,28 @@ struct SimulatorConfiguration {
   }
 };
 
-
 template <typename Sims>
-auto GetExperimentRecord(const SimulatorConfiguration &CFG,
-                         size_t seeds, float epsilon, const Sims &experiments) {
-  nlohmann::json experiment{
-      {"Algorithm", "IMM"},
-      {"DiffusionModel", CFG.diffusionModel},
-      {"Epsilon", epsilon},
-      {"K", seeds},
-      {"Simulations", experiments}
-  };
+auto GetExperimentRecord(const SimulatorConfiguration &CFG, size_t seeds,
+                         float epsilon, const Sims &experiments) {
+  nlohmann::json experiment{{"Algorithm", "IMM"},
+                            {"DiffusionModel", CFG.diffusionModel},
+                            {"Epsilon", epsilon},
+                            {"K", seeds},
+                            {"Simulations", experiments}};
   return experiment;
 }
 
-}  // namespace im
+}  // namespace ripples
 
 using Configuration =
-    im::ToolConfiguration<im::SimulatorConfiguration>;
+    ripples::ToolConfiguration<ripples::SimulatorConfiguration>;
 
 int main(int argc, char **argv) {
   Configuration CFG;
   CFG.ParseCmdOptions(argc, argv);
 
-  auto simRecord = spdlog::basic_logger_st("simRecord", CFG.OutputFile);
+  auto simRecord =
+      spdlog::rotating_logger_st("simRecord", CFG.OutputFile, 0, 3);
   simRecord->set_pattern("%v");
 
   trng::lcg64 weightGen;
@@ -78,10 +110,11 @@ int main(int argc, char **argv) {
   experimentRecordIS >> experimentRecord;
   CFG.diffusionModel = experimentRecord[0]["DiffusionModel"];
 
-  using Graph = im::Graph<uint32_t, float>;
+  using Graph =
+      ripples::Graph<uint32_t, float, ripples::ForwardDirection<uint32_t>>;
   auto console = spdlog::stdout_color_st("console");
   console->info("Loading ...");
-  Graph G = im::loadGraph<Graph>(CFG, weightGen);
+  Graph G = ripples::loadGraph<Graph>(CFG, weightGen);
   console->info("Loading Done!");
   console->info("Number of Nodes : {}", G.num_nodes());
   console->info("Number of Edges : {}", G.num_edges());
@@ -109,21 +142,22 @@ int main(int argc, char **argv) {
     }
 
 #pragma omp parallel for schedule(dynamic)
-      for (size_t i = 0; i < experiments.size(); ++i) {
-        if (CFG.diffusionModel == "IC") {
-          experiments[i] = simulate(G, seeds.begin(), seeds.end(),
-                                    generator[omp_get_thread_num()],
-                                    im::independent_cascade_tag{});
-        } else if (CFG.diffusionModel == "LT") {
-          experiments[i] = simulate(G, seeds.begin(), seeds.end(),
-                                    generator[omp_get_thread_num()],
-                                    im::linear_threshold_tag{});
-        } else {
-          throw std::string("Not Yet Implemented");
-        }
+    for (size_t i = 0; i < experiments.size(); ++i) {
+      if (CFG.diffusionModel == "IC") {
+        experiments[i] = simulate(G, seeds.begin(), seeds.end(),
+                                  generator[omp_get_thread_num()],
+                                  ripples::independent_cascade_tag{});
+      } else if (CFG.diffusionModel == "LT") {
+        experiments[i] = simulate(G, seeds.begin(), seeds.end(),
+                                  generator[omp_get_thread_num()],
+                                  ripples::linear_threshold_tag{});
+      } else {
+        throw std::string("Not Yet Implemented");
       }
-      simRecordLog.push_back(
-          im::GetExperimentRecord(CFG, std::distance(seeds.begin(), seeds.end()), record["Epsilon"], experiments));
+    }
+    simRecordLog.push_back(ripples::GetExperimentRecord(
+        CFG, std::distance(seeds.begin(), seeds.end()), record["Epsilon"],
+        experiments));
   }
   simRecord->info("{}", simRecordLog.dump(2));
 

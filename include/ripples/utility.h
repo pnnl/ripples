@@ -1,19 +1,52 @@
 //===------------------------------------------------------------*- C++ -*-===//
 //
+//             Ripples: A C++ Library for Influence Maximization
+//                  Marco Minutoli <marco.minutoli@pnnl.gov>
+//                   Pacific Northwest National Laboratory
+//
+//===----------------------------------------------------------------------===//
+//
 // Copyright 2018 Battelle Memorial Institute
+// All rights reserved.
+//
+// Redistribution and use in source and binary forms, with or without
+// modification, are permitted provided that the following conditions are met:
+//
+// 1. Redistributions of source code must retain the above copyright notice,
+// this list of conditions and the following disclaimer.
+//
+// 2. Redistributions in binary form must reproduce the above copyright notice,
+// this list of conditions and the following disclaimer in the documentation
+// and/or other materials provided with the distribution.
+//
+// 3. Neither the name of the copyright holder nor the names of its contributors
+// may be used to endorse or promote products derived from this software without
+// specific prior written permission.
+//
+// THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
+// AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+// IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
+// ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE
+// LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR
+// CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF
+// SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS
+// INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN
+// CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
+// ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
+// POSSIBILITY OF SUCH DAMAGE.
 //
 //===----------------------------------------------------------------------===//
 
-#ifndef IM_UTILITY_H
-#define IM_UTILITY_H
+#ifndef RIPPLES_UTILITY_H
+#define RIPPLES_UTILITY_H
 
 #include <endian.h>
 #include <chrono>
 #include <utility>
 
 #ifdef __APPLE__
-#include <machine/endian.h>
 #include <libkern/OSByteOrder.h>
+#include <machine/endian.h>
 
 #define le64toh(x) OSSwapLittleToHostInt64(x)
 #define htole64(x) OSSwapHostToLittleInt64(x)
@@ -28,7 +61,7 @@
 #include "nlohmann/json.hpp"
 #endif
 
-namespace im {
+namespace ripples {
 
 //! Execution tag for the sequential algorithms.
 struct sequential_tag {};
@@ -61,7 +94,7 @@ struct measure {
   }
 };
 
-}  // namespace im
+}  // namespace ripples
 
 #ifndef __CUDACC__
 namespace nlohmann {
@@ -74,7 +107,7 @@ void to_json(nlohmann::json &j, const std::chrono::duration<T1, T2> &d) {
 }  // namespace nlohmann
 #endif
 
-namespace im {
+namespace ripples {
 
 //! Dump a value of size N in binary format.
 template <size_t N>
@@ -168,6 +201,6 @@ struct sequence_of : public dump_v<sizeof(T)> {
   }
 };
 
-}  // namespace im
+}  // namespace ripples
 
-#endif  // IM_UTILITY_H
+#endif  // RIPPLES_UTILITY_H

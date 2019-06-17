@@ -1,11 +1,44 @@
 //===------------------------------------------------------------*- C++ -*-===//
 //
+//             Ripples: A C++ Library for Influence Maximization
+//                  Marco Minutoli <marco.minutoli@pnnl.gov>
+//                   Pacific Northwest National Laboratory
+//
+//===----------------------------------------------------------------------===//
+//
 // Copyright 2018 Battelle Memorial Institute
+// All rights reserved.
+//
+// Redistribution and use in source and binary forms, with or without
+// modification, are permitted provided that the following conditions are met:
+//
+// 1. Redistributions of source code must retain the above copyright notice,
+// this list of conditions and the following disclaimer.
+//
+// 2. Redistributions in binary form must reproduce the above copyright notice,
+// this list of conditions and the following disclaimer in the documentation
+// and/or other materials provided with the distribution.
+//
+// 3. Neither the name of the copyright holder nor the names of its contributors
+// may be used to endorse or promote products derived from this software without
+// specific prior written permission.
+//
+// THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
+// AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+// IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
+// ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE
+// LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR
+// CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF
+// SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS
+// INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN
+// CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
+// ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
+// POSSIBILITY OF SUCH DAMAGE.
 //
 //===----------------------------------------------------------------------===//
 
-#ifndef IM_IMM_H
-#define IM_IMM_H
+#ifndef RIPPLES_IMM_H
+#define RIPPLES_IMM_H
 
 #include <cmath>
 #include <cstddef>
@@ -16,12 +49,12 @@
 #include "trng/uniform01_dist.hpp"
 #include "trng/uniform_int_dist.hpp"
 
-#include "im/find_most_influential.h"
-#include "im/generate_rrr_sets.h"
-#include "im/tim.h"
-#include "im/utility.h"
+#include "ripples/find_most_influential.h"
+#include "ripples/generate_rrr_sets.h"
+#include "ripples/tim.h"
+#include "ripples/utility.h"
 
-namespace im {
+namespace ripples {
 
 //! The IMM algorithm configuration descriptor.
 struct IMMConfiguration : public TIMConfiguration {};
@@ -75,7 +108,6 @@ ssize_t ThetaPrime(ssize_t x, double epsilonPrime, double l, size_t k,
          std::pow(2.0, x) / (epsilonPrime * epsilonPrime);
 }
 
-
 //! Compute Theta.
 //!
 //! \param epsilon Parameter controlling the approximation factor.
@@ -94,7 +126,6 @@ inline size_t Theta(double epsilon, double l, size_t k, double LB,
 
   return lamdaStar / LB;
 }
-
 
 //! Collect a set of Random Reverse Reachable set.
 //!
@@ -133,7 +164,7 @@ auto Sampling(const GraphTy &G, std::size_t k, double epsilon, double l,
 
     record.ThetaPrimeDeltas.push_back(thetaPrime - RR.size());
 
-    auto timeRRRSets = measure<>::exec_time([&](){
+    auto timeRRRSets = measure<>::exec_time([&]() {
       auto deltaRR = GenerateRRRSets(G, thetaPrime - RR.size(), generator,
                                      std::forward<diff_model_tag>(model_tag),
                                      std::forward<execution_tag>(ex_tag));
@@ -145,10 +176,9 @@ auto Sampling(const GraphTy &G, std::size_t k, double epsilon, double l,
 
     double f;
 
-    auto timeMostInfluential = measure<>::exec_time([&](){
+    auto timeMostInfluential = measure<>::exec_time([&]() {
       const auto &S =
           FindMostInfluentialSet(G, k, RR, std::forward<execution_tag>(ex_tag));
-
 
       f = S.first;
     });
@@ -168,8 +198,7 @@ auto Sampling(const GraphTy &G, std::size_t k, double epsilon, double l,
 
   record.Theta = theta;
 
-
-  record.GenerateRRRSets = measure<>::exec_time([&](){
+  record.GenerateRRRSets = measure<>::exec_time([&]() {
     if (theta > RR.size()) {
       auto deltaRR = GenerateRRRSets(G, theta - RR.size(), generator,
                                      std::forward<diff_model_tag>(model_tag),
@@ -182,7 +211,6 @@ auto Sampling(const GraphTy &G, std::size_t k, double epsilon, double l,
 
   return RR;
 }
-
 
 //! The IMM algroithm for Influence Maximization
 //!
@@ -238,6 +266,6 @@ auto IMM(const GraphTy &G, std::size_t k, double epsilon, double l, PRNG &gen,
   return std::make_pair(S.second, record);
 }
 
-}  // namespace im
+}  // namespace ripples
 
-#endif  // IM_IMM_H
+#endif  // RIPPLES_IMM_H

@@ -1,11 +1,44 @@
 //===------------------------------------------------------------*- C++ -*-===//
 //
+//             Ripples: A C++ Library for Influence Maximization
+//                  Marco Minutoli <marco.minutoli@pnnl.gov>
+//                   Pacific Northwest National Laboratory
+//
+//===----------------------------------------------------------------------===//
+//
 // Copyright 2018 Battelle Memorial Institute
+// All rights reserved.
+//
+// Redistribution and use in source and binary forms, with or without
+// modification, are permitted provided that the following conditions are met:
+//
+// 1. Redistributions of source code must retain the above copyright notice,
+// this list of conditions and the following disclaimer.
+//
+// 2. Redistributions in binary form must reproduce the above copyright notice,
+// this list of conditions and the following disclaimer in the documentation
+// and/or other materials provided with the distribution.
+//
+// 3. Neither the name of the copyright holder nor the names of its contributors
+// may be used to endorse or promote products derived from this software without
+// specific prior written permission.
+//
+// THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
+// AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+// IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
+// ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE
+// LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR
+// CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF
+// SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS
+// INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN
+// CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
+// ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
+// POSSIBILITY OF SUCH DAMAGE.
 //
 //===----------------------------------------------------------------------===//
 
-#ifndef IM_FIND_MOST_INFLUENTIAL_H
-#define IM_FIND_MOST_INFLUENTIAL_H
+#ifndef RIPPLES_FIND_MOST_INFLUENTIAL_H
+#define RIPPLES_FIND_MOST_INFLUENTIAL_H
 
 #include <algorithm>
 #include <queue>
@@ -13,9 +46,9 @@
 #include <vector>
 
 #include <omp.h>
-#include "im/utility.h"
+#include "ripples/utility.h"
 
-namespace im {
+namespace ripples {
 //! Sequential swap ranges.
 //!
 //! \tparam ItrTy1 The iterator type of the first sequence.
@@ -30,7 +63,6 @@ ItrTy2 swap_ranges(ItrTy1 B, ItrTy1 E, ItrTy2 O, sequential_tag) {
   return std::swap_ranges(B, E, O);
 }
 
-
 //! Parallel swap ranges.
 //!
 //! \tparam ItrTy1 The iterator type of the first sequence.
@@ -43,7 +75,7 @@ ItrTy2 swap_ranges(ItrTy1 B, ItrTy1 E, ItrTy2 O, sequential_tag) {
 template <typename ItrTy1, typename ItrTy2>
 ItrTy2 swap_ranges(ItrTy1 B, ItrTy1 E, ItrTy2 O, omp_parallel_tag) {
   size_t toBeSwaped = std::distance(B, E);
-  #pragma omp parallel for
+#pragma omp parallel for
   for (size_t i = 0; i < toBeSwaped; ++i) {
     std::iter_swap(B + i, O + i);
   }
@@ -73,34 +105,29 @@ struct PartitionIndices {
   ItrTy end;
   ItrTy pivot;
 
-  PartitionIndices(PartitionIndices && O)
+  PartitionIndices(PartitionIndices &&O)
       : begin{std::move(O.begin)},
         end{std::move(O.end)},
-        pivot{std::move(O.pivot)}
-  {}
+        pivot{std::move(O.pivot)} {}
 
-  PartitionIndices & operator=(PartitionIndices && O) {
+  PartitionIndices &operator=(PartitionIndices &&O) {
     this->begin = std::move(O.begin);
     this->end = std::move(O.end);
     this->pivot = std::move(O.pivot);
     return *this;
   }
 
-  PartitionIndices(const PartitionIndices & O)
-      : begin{O.begin},
-        end{O.end},
-        pivot{O.pivot}
-  {}
+  PartitionIndices(const PartitionIndices &O)
+      : begin{O.begin}, end{O.end}, pivot{O.pivot} {}
 
-  PartitionIndices & operator=(const PartitionIndices &O) {
+  PartitionIndices &operator=(const PartitionIndices &O) {
     this->begin = O.begin;
     this->end = O.end;
     this->pivot = O.pivot;
     return *this;
   }
 
-  PartitionIndices(ItrTy B, ItrTy E, ItrTy P)
-      : begin{B}, end{E}, pivot{P} {}
+  PartitionIndices(ItrTy B, ItrTy E, ItrTy P) : begin{B}, end{E}, pivot{P} {}
 
   PartitionIndices(ItrTy B, ItrTy E) : PartitionIndices(B, E, E) {}
 
@@ -112,7 +139,7 @@ struct PartitionIndices {
   PartitionIndices operator+(const PartitionIndices &O) {
     PartitionIndices result(*this);
 
-    if (this->pivot == this->begin && O.pivot == O.begin ) {
+    if (this->pivot == this->begin && O.pivot == O.begin) {
       result.end = O.end;
       return result;
     } else if (this->pivot == this->end) {
@@ -128,8 +155,7 @@ struct PartitionIndices {
                   ex_tag{});
       result.pivot = std::prev(O.pivot, toBeMoved);
     } else {
-      result.pivot = swap_ranges(O.begin, O.pivot, this->pivot,
-                                 ex_tag{});
+      result.pivot = swap_ranges(O.begin, O.pivot, this->pivot, ex_tag{});
     }
     result.end = O.end;
 
@@ -173,11 +199,11 @@ ItrTy partition(ItrTy B, ItrTy E, UnaryPredicate P, omp_parallel_tag) {
   }
 
   for (size_t j = 1; j < num_threads; j <<= 1) {
-    #pragma omp parallel
+#pragma omp parallel
     {
-      #pragma omp single nowait
+#pragma omp single nowait
       for (size_t i = 0; (i + j) < num_threads; i += j * 2) {
-        #pragma omp task firstprivate(i, j)
+#pragma omp task firstprivate(i, j)
         { indices[i] = indices[i] + indices[i + j]; }
       }
     }
@@ -288,17 +314,15 @@ void InitHeapStorage(InItr in_begin, InItr in_end, OutItr out_begin,
 //! \param B The start sequence of RRRsets covered by the just selected seed.
 //! \param E The start sequence of RRRsets covered by the just selected seed.
 //! \param vertexCoverage The vector storing the counters to be updated.
-template <typename RRRsetsItrTy,
-          typename VertexCoverageVectorTy>
+template <typename RRRsetsItrTy, typename VertexCoverageVectorTy>
 void UpdateCounters(RRRsetsItrTy B, RRRsetsItrTy E,
                     VertexCoverageVectorTy &vertexCoverage, sequential_tag &&) {
-  for (;B != E; ++B) {
+  for (; B != E; ++B) {
     for (auto v : *B) {
       vertexCoverage[v] -= 1;
     }
   }
 }
-
 
 //! \brief Update the coverage counters.
 //!
@@ -308,19 +332,17 @@ void UpdateCounters(RRRsetsItrTy B, RRRsetsItrTy E,
 //! \param B The start sequence of RRRsets covered by the just selected seed.
 //! \param E The start sequence of RRRsets covered by the just selected seed.
 //! \param vertexCoverage The vector storing the counters to be updated.
-template <typename RRRsetsItrTy,
-          typename VertexCoverageVectorTy>
+template <typename RRRsetsItrTy, typename VertexCoverageVectorTy>
 void UpdateCounters(RRRsetsItrTy B, RRRsetsItrTy E,
                     VertexCoverageVectorTy &vertexCoverage,
                     omp_parallel_tag &&) {
-  for (;B != E; ++B) {
+  for (; B != E; ++B) {
 #pragma omp parallel for
     for (size_t j = 0; j < (*B).size(); ++j) {
       vertexCoverage[(*B)[j]] -= 1;
     }
   }
 }
-
 
 //! \brief Select k seeds starting from the a list of Random Reverse
 //! Reachability Sets.
@@ -394,9 +416,9 @@ auto FindMostInfluentialSet(const GraphTy &G, size_t k,
 
     uncovered -= element.second;
 
-    auto cmp = [=](const RRRset & a) -> auto {
-                 return !std::binary_search(a.begin(), a.end(), element.first);
-               };
+    auto cmp = [=](const RRRset &a) -> auto {
+      return !std::binary_search(a.begin(), a.end(), element.first);
+    };
 
     auto itr = partition(RRRsets.begin(), end, cmp,
                          std::forward<execution_tag>(ex_tag));
@@ -412,10 +434,9 @@ auto FindMostInfluentialSet(const GraphTy &G, size_t k,
       } else {
         std::fill(vertexCoverage.begin(), vertexCoverage.end(), 0);
       }
-      CountOccurrencies(
-          RRRsets.begin(), itr,
-          vertexCoverage.begin(), vertexCoverage.end(),
-          std::forward<execution_tag>(ex_tag));
+      CountOccurrencies(RRRsets.begin(), itr, vertexCoverage.begin(),
+                        vertexCoverage.end(),
+                        std::forward<execution_tag>(ex_tag));
     }
 
     end = itr;
@@ -444,88 +465,9 @@ template <typename GraphTy, typename RRRset>
 auto FindMostInfluentialSet(const GraphTy &G, size_t k,
                             std::vector<RRRset> &RRRsets,
                             cuda_parallel_tag &&ex_tag) {
-#if 0
-  using vertex_type = typename GraphTy::vertex_type;
-
-  static std::chrono::nanoseconds elapsed_count{0}, elapsed_csr{0},
-      elapsed_core{0};
-  std::vector<uint32_t> occurrences(G.num_nodes(), 0);
-
-  // build CSR
-  auto start = std::chrono::high_resolution_clock::now();
-  std::vector<vertex_type *> rrr_csr_index(RRRsets.size() + 1);
-  std::vector<bool> rrr_csr_active(RRRsets.size(), true);
-  uint64_t n = 0;
-  for (auto &r : RRRsets) n += r.size();
-  std::vector<vertex_type> rrr_csr_sets(n);
-  size_t si = 0, vi = 0;
-  for (auto &r : RRRsets) {
-    rrr_csr_index[si++] = rrr_csr_sets.data() + vi;
-    for (auto &v : r) rrr_csr_sets[vi++] = v;
-  }
-  rrr_csr_index[si] = rrr_csr_sets.data() + vi;
-  elapsed_csr += std::chrono::duration_cast<std::chrono::nanoseconds>(
-      std::chrono::high_resolution_clock::now() - start);
-
-  // init counters
-  start = std::chrono::high_resolution_clock::now();
-  for (auto &v : rrr_csr_sets) ++occurrences[v];
-  elapsed_count += std::chrono::duration_cast<std::chrono::nanoseconds>(
-      std::chrono::high_resolution_clock::now() - start);
-
-  std::vector<vertex_type> result;
-  result.reserve(k);
-  size_t uncovered = RRRsets.size();
-
-  start = std::chrono::high_resolution_clock::now();
-  while (result.size() < k && uncovered != 0) {
-    // find most occurring
-    auto most_occ_it = std::max_element(occurrences.begin(), occurrences.end());
-    auto most_occ = std::distance(occurrences.begin(), most_occ_it);
-    result.push_back(most_occ);
-
-    // update active sets + counters
-    for (size_t ri = 0; ri < rrr_csr_active.size(); ++ri) {
-      if (rrr_csr_active[ri]) {
-        vertex_type *begin = rrr_csr_index[ri];
-        vertex_type *end = rrr_csr_index[ri + 1];
-        for (auto b = begin; b != end; ++b) {
-          if (*b == most_occ) {
-            // update counters
-            for (auto bb = begin; bb != end; ++bb) {
-              assert(occurrences[*bb]);
-              --occurrences[*bb];
-            }
-            // deactivate
-            rrr_csr_active[ri] = false;
-            --uncovered;
-            break;
-          }
-        }
-      }
-    }
-
-    assert(occurrences[most_occ] == 0);
-  }
-  elapsed_core += std::chrono::duration_cast<std::chrono::nanoseconds>(
-      std::chrono::high_resolution_clock::now() - start);
-
-  std::cout << "> [FindMostInfluentialSet] CSR(ns)   :" << elapsed_csr.count()
-            << std::endl;
-  std::cout << "> [FindMostInfluentialSet] count(ns) :" << elapsed_count.count()
-            << std::endl;
-  std::cout << "> [FindMostInfluentialSet] core(ns)  :" << elapsed_core.count()
-            << std::endl;
-
-  double f = double(RRRsets.size() - uncovered) / RRRsets.size();
-  printf("> [FindMostInfluentialSet] f=%f\n", f);
-
-  return std::make_pair(f, result);
-#else
-  return FindMostInfluentialSet(G, k, RRRsets, omp_parallel_tag{});
-#endif
+ return FindMostInfluentialSet(G, k, RRRsets, omp_parallel_tag{});
 }
 
-}  // namespace im
+}  // namespace ripples
 
-#endif  // IM_FIND_MOST_INFLUENTIAL_H
+#endif  // RIPPLES_FIND_MOST_INFLUENTIAL_H

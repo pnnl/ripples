@@ -1,11 +1,44 @@
 //===------------------------------------------------------------*- C++ -*-===//
 //
+//             Ripples: A C++ Library for Influence Maximization
+//                  Marco Minutoli <marco.minutoli@pnnl.gov>
+//                   Pacific Northwest National Laboratory
+//
+//===----------------------------------------------------------------------===//
+//
 // Copyright 2018 Battelle Memorial Institute
+// All rights reserved.
+//
+// Redistribution and use in source and binary forms, with or without
+// modification, are permitted provided that the following conditions are met:
+//
+// 1. Redistributions of source code must retain the above copyright notice,
+// this list of conditions and the following disclaimer.
+//
+// 2. Redistributions in binary form must reproduce the above copyright notice,
+// this list of conditions and the following disclaimer in the documentation
+// and/or other materials provided with the distribution.
+//
+// 3. Neither the name of the copyright holder nor the names of its contributors
+// may be used to endorse or promote products derived from this software without
+// specific prior written permission.
+//
+// THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
+// AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+// IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
+// ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE
+// LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR
+// CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF
+// SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS
+// INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN
+// CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
+// ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
+// POSSIBILITY OF SUCH DAMAGE.
 //
 //===----------------------------------------------------------------------===//
 
-#ifndef IM_TIM_H
-#define IM_TIM_H
+#ifndef RIPPLES_TIM_H
+#define RIPPLES_TIM_H
 
 #include <algorithm>
 #include <cassert>
@@ -21,17 +54,17 @@
 
 #include <omp.h>
 
-#include "im/diffusion_simulation.h"
-#include "im/find_most_influential.h"
-#include "im/generate_rrr_sets.h"
-#include "im/utility.h"
+#include "ripples/diffusion_simulation.h"
+#include "ripples/find_most_influential.h"
+#include "ripples/generate_rrr_sets.h"
+#include "ripples/utility.h"
 
 #include "CLI11/CLI11.hpp"
 #include "trng/lcg64.hpp"
 #include "trng/uniform01_dist.hpp"
 #include "trng/uniform_int_dist.hpp"
 
-namespace im {
+namespace ripples {
 
 //! \brief The configuration data structure for the TIM+ algorithm.
 struct TIMConfiguration {
@@ -42,7 +75,6 @@ struct TIMConfiguration {
   bool OMPStrongScaling{false};      //!< OpenMP Strong Scaling experiment?
   bool cuda_parallel{false};
 
-  
   //! \brief Add command line options to configure TIM+.
   //!
   //! \param app The command-line parser object.
@@ -87,7 +119,6 @@ struct TIMExecutionRecord {
   std::chrono::duration<double, std::milli> Total;
 };
 
-
 //! \brief Compute the number of elements in the RRR set starting at r.
 //!
 //! \tparam GraphTy The type of the Graph.
@@ -119,14 +150,15 @@ size_t WR(GraphTy &G, typename GraphTy::vertex_type r, PRNG &generator,
 
     wr += G.degree(v);
 
-    if (std::is_same<diff_model_tag, im::independent_cascade_tag>::value) {
+    if (std::is_same<diff_model_tag, ripples::independent_cascade_tag>::value) {
       for (auto u : G.neighbors(v)) {
         if (!visited[u.vertex] && value(generator) <= u.weight) {
           queue.push(u.vertex);
           visited[u.vertex] = true;
         }
       }
-    } else if (std::is_same<diff_model_tag, im::linear_threshold_tag>::value) {
+    } else if (std::is_same<diff_model_tag,
+                            ripples::linear_threshold_tag>::value) {
       float threshold = value(generator);
       for (auto u : G.neighbors(v)) {
         threshold -= u.weight;
@@ -371,6 +403,6 @@ auto TIM(const GraphTy &G, size_t k, double epsilon, PRNG &gen,
   return std::make_pair(seeds.second, Record);
 }
 
-}  // namespace im
+}  // namespace ripples
 
-#endif /* IM_TIM_H */
+#endif /* RIPPLES_TIM_H */

@@ -1,6 +1,39 @@
 //===------------------------------------------------------------*- C++ -*-===//
 //
+//             Ripples: A C++ Library for Influence Maximization
+//                  Marco Minutoli <marco.minutoli@pnnl.gov>
+//                   Pacific Northwest National Laboratory
+//
+//===----------------------------------------------------------------------===//
+//
 // Copyright 2018 Battelle Memorial Institute
+// All rights reserved.
+//
+// Redistribution and use in source and binary forms, with or without
+// modification, are permitted provided that the following conditions are met:
+//
+// 1. Redistributions of source code must retain the above copyright notice,
+// this list of conditions and the following disclaimer.
+//
+// 2. Redistributions in binary form must reproduce the above copyright notice,
+// this list of conditions and the following disclaimer in the documentation
+// and/or other materials provided with the distribution.
+//
+// 3. Neither the name of the copyright holder nor the names of its contributors
+// may be used to endorse or promote products derived from this software without
+// specific prior written permission.
+//
+// THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
+// AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+// IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
+// ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE
+// LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR
+// CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF
+// SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS
+// INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN
+// CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
+// ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
+// POSSIBILITY OF SUCH DAMAGE.
 //
 //===----------------------------------------------------------------------===//
 
@@ -8,10 +41,10 @@
 #include <iostream>
 #include <string>
 
-#include "im/configuration.h"
-#include "im/graph.h"
-#include "im/loaders.h"
-#include "im/graph_dump.h"
+#include "ripples/configuration.h"
+#include "ripples/graph.h"
+#include "ripples/graph_dump.h"
+#include "ripples/loaders.h"
 
 #include "CLI11/CLI11.hpp"
 #include "spdlog/sinks/stdout_color_sinks.h"
@@ -19,14 +52,12 @@
 #include "trng/lcg64.hpp"
 #include "trng/uniform01_dist.hpp"
 
-
 struct DumpOutputConfiguration {
   std::string OName{"output"};
   bool binaryDump{false};
 
   void addCmdOptions(CLI::App &app) {
-    app.add_option("-o,--output", OName,
-                   "The name of the output file name")
+    app.add_option("-o,--output", OName, "The name of the output file name")
         ->required()
         ->group("Output Options");
     app.add_flag("--dump-binary", binaryDump,
@@ -34,7 +65,6 @@ struct DumpOutputConfiguration {
         ->group("Output Options");
   }
 };
-
 
 struct DumpConfiguration {
   std::string diffusionModel{"IC"};  //!< The diffusion model to use.
@@ -47,10 +77,8 @@ struct DumpConfiguration {
   }
 };
 
-
 using Configuration =
-    im::ToolConfiguration<DumpConfiguration, DumpOutputConfiguration>;
-
+    ripples::ToolConfiguration<DumpConfiguration, DumpOutputConfiguration>;
 
 int main(int argc, char **argv) {
   Configuration CFG;
@@ -62,10 +90,11 @@ int main(int argc, char **argv) {
 
   spdlog::set_level(spdlog::level::info);
 
-  using Graph = im::Graph<uint32_t, float, im::ForwardDirection<uint32_t>>;
+  using Graph =
+      ripples::Graph<uint32_t, float, ripples::ForwardDirection<uint32_t>>;
   auto console = spdlog::stdout_color_st("console");
   console->info("Loading...");
-  Graph G = im::loadGraph<Graph>(CFG, weightGen);
+  Graph G = ripples::loadGraph<Graph>(CFG, weightGen);
   console->info("Loading Done!");
   console->info("Number of Nodes : {}", G.num_nodes());
   console->info("Number of Edges : {}", G.num_edges());
