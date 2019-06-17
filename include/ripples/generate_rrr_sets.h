@@ -49,7 +49,7 @@
 #include "ripples/graph.h"
 #include "ripples/utility.h"
 
-#include "im/cuda/cuda_generate_rrr_sets.h"
+#include "ripples/cuda/cuda_generate_rrr_sets.h"
 
 #include "trng/uniform01_dist.hpp"
 #include "trng/uniform_int_dist.hpp"

@@ -12,10 +12,10 @@
 
 #include "trng/lcg64.hpp"
 
-#include "im/diffusion_simulation.h"
-#include "im/graph.h"
+#include "ripples/diffusion_simulation.h"
+#include "ripples/graph.h"
 
-namespace im {
+namespace ripples {
 
 //
 // host-host API
@@ -29,7 +29,7 @@ namespace im {
 
 // forward declarations to enable separate compilation
 using cuda_GraphTy =
-    im::Graph<uint32_t, float, im::BackwardDirection<uint32_t>>;
+    ripples::Graph<uint32_t, float, ripples::BackwardDirection<uint32_t>>;
 using cuda_res_t = std::vector<std::vector<typename cuda_GraphTy::vertex_type>>;
 using cuda_PRNGeneratorTy = trng::lcg64;
 
@@ -39,7 +39,7 @@ using cuda_PRNGeneratorTy = trng::lcg64;
 //! \param model_tag The diffusion model tag.
 void cuda_init(const cuda_GraphTy &G,
 		       const cuda_PRNGeneratorTy &,
-               im::linear_threshold_tag &&model_tag);
+               ripples::linear_threshold_tag &&model_tag);
 
 //! \brief Initialize CUDA execution context for IC model.
 //!
@@ -47,17 +47,17 @@ void cuda_init(const cuda_GraphTy &G,
 //! \param model_tag The diffusion model tag.
 void cuda_init(const cuda_GraphTy &G,
 		       const cuda_PRNGeneratorTy &,
-               im::independent_cascade_tag &&model_tag);
+               ripples::independent_cascade_tag &&model_tag);
 
 //! \brief Finalize CUDA execution context for LT model.
 //!
 //! \param model_tag The diffusion model tag.
-void cuda_fini(im::linear_threshold_tag &&model_tag);
+void cuda_fini(ripples::linear_threshold_tag &&model_tag);
 
 //! \brief Finalize CUDA execution context for IC model.
 //!
 //! \param model_tag The diffusion model tag.
-void cuda_fini(im::independent_cascade_tag &&model_tag);
+void cuda_fini(ripples::independent_cascade_tag &&model_tag);
 
 //! \brief Generate Random Reverse Reachability Sets according to Linear
 //! Threshold model - CUDA.
@@ -67,7 +67,7 @@ void cuda_fini(im::independent_cascade_tag &&model_tag);
 //!
 //! \return A list of theta Random Reverse Rachability Sets.
 cuda_res_t CudaGenerateRRRSets(size_t theta,
-                               im::linear_threshold_tag &&model_tag);
+                               ripples::linear_threshold_tag &&model_tag);
 
 //! \brief Generate Random Reverse Reachability Sets according to Independent
 //! Cascade model - CUDA.
@@ -77,7 +77,7 @@ cuda_res_t CudaGenerateRRRSets(size_t theta,
 //!
 //! \return A list of theta Random Reverse Rachability Sets.
 cuda_res_t CudaGenerateRRRSets(size_t theta,
-                               im::independent_cascade_tag &&model_tag);
+                               ripples::independent_cascade_tag &&model_tag);
 
 //
 // host-device API
@@ -160,6 +160,6 @@ void cuda_lt_kernel(size_t n_blocks, size_t block_size, size_t batch_size,
 		size_t warp_step, cuda_PRNGeneratorTy *d_trng_states,
 		mask_word_t *d_res_masks);
 void cuda_d2h(mask_word_t *dst, mask_word_t *src, size_t size);
-}  // namespace im
+}  // namespace ripples
 
 #endif  // IM_CUDA_CUDA_GENERATE_RRR_SETS_H

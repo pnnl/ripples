@@ -14,9 +14,9 @@
 #include "trng/uniform01_dist.hpp"
 #include "trng/uniform_int_dist.hpp"
 
-#include "im/cuda/cuda_generate_rrr_sets.h"
+#include "ripples/cuda/cuda_generate_rrr_sets.h"
 
-namespace im {
+namespace ripples {
 
 // tested configurations:
 // + 1 walk per thread:
@@ -72,7 +72,7 @@ void print_profile(breakdown_tag tag, const std::string &label) {
 
 void cuda_init(const cuda_GraphTy &G,
 		       const cuda_PRNGeneratorTy &r,
-               im::linear_threshold_tag &&model_tag) {
+               ripples::linear_threshold_tag &&model_tag) {
   //TODO
   //cudaGetDeviceProperties(&cuda_conf.cuda_prop, 0);
 
@@ -136,9 +136,9 @@ void cuda_init(const cuda_GraphTy &G,
 
 void cuda_init(const cuda_GraphTy &G,
                const cuda_PRNGeneratorTy &r,
-               im::independent_cascade_tag &&) {}
+               ripples::independent_cascade_tag &&) {}
 
-void cuda_fini(im::linear_threshold_tag &&) {
+void cuda_fini(ripples::linear_threshold_tag &&) {
 // print profiling
 #if CUDA_PROFILE
   printf("*** profiling summary (time unit: ns) ***\n");
@@ -179,7 +179,7 @@ void cuda_fini(im::linear_threshold_tag &&) {
   cuda_graph_fini();
 }
 
-void cuda_fini(im::independent_cascade_tag &&) {}
+void cuda_fini(ripples::independent_cascade_tag &&) {}
 
 void batch_kernel(size_t rank, size_t batch_size) {
   CUDA_LOG("> [batch_kernel] size=%d\n", batch_size);
@@ -272,7 +272,7 @@ void batch_build(size_t rank, cuda_res_t &rrr_sets, size_t bf, size_t batch_size
 }
 
 cuda_res_t CudaGenerateRRRSets(size_t theta,
-                               im::linear_threshold_tag &&model_tag) {
+                               ripples::linear_threshold_tag &&model_tag) {
   CUDA_LOG("> *** CudaGenerateRRRSets theta=%d ***\n", theta);
 
 #if CUDA_PROFILE
@@ -302,12 +302,12 @@ cuda_res_t CudaGenerateRRRSets(size_t theta,
 #endif
 
   return rrr_sets;
-}  // namespace im
+}  // namespace ripples
 
 cuda_res_t CudaGenerateRRRSets(size_t theta,
-                               im::independent_cascade_tag &&model_tag) {
+                               ripples::independent_cascade_tag &&model_tag) {
   assert(false);
   return cuda_res_t{};
 }
 
-}  // namespace im
+}  // namespace ripples

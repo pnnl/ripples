@@ -207,22 +207,22 @@ int main(int argc, char **argv) {
   } else if (CFG.cuda_parallel) {
     std::ofstream perf(CFG.OutputFile);
     if (CFG.diffusionModel == "IC") {
-      cuda_init(G, generator, im::independent_cascade_tag{});
+      cuda_init(G, generator, ripples::independent_cascade_tag{});
       auto start = std::chrono::high_resolution_clock::now();
       std::tie(seeds, R) =
           IMM(G, CFG.k, CFG.epsilon, 1, generator,
-              im::independent_cascade_tag{}, im::cuda_parallel_tag{});
+              ripples::independent_cascade_tag{}, ripples::cuda_parallel_tag{});
       auto end = std::chrono::high_resolution_clock::now();
-      cuda_fini(im::independent_cascade_tag{});
+      cuda_fini(ripples::independent_cascade_tag{});
       R.Total = end - start;
     } else if (CFG.diffusionModel == "LT") {
-      cuda_init(G, generator, im::linear_threshold_tag{});
+      cuda_init(G, generator, ripples::linear_threshold_tag{});
       auto start = std::chrono::high_resolution_clock::now();
       std::tie(seeds, R) =
-          IMM(G, CFG.k, CFG.epsilon, 1, generator, im::linear_threshold_tag{},
-              im::cuda_parallel_tag{});
+          IMM(G, CFG.k, CFG.epsilon, 1, generator, ripples::linear_threshold_tag{},
+              ripples::cuda_parallel_tag{});
       auto end = std::chrono::high_resolution_clock::now();
-      cuda_fini(im::linear_threshold_tag{});
+      cuda_fini(ripples::linear_threshold_tag{});
       R.Total = end - start;
     }
     console->info("IMM CUDA : {}ms", R.Total.count());

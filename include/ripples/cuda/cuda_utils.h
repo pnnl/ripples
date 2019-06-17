@@ -7,9 +7,9 @@
 #ifndef IM_CUDA_CUDA_UTILS_H
 #define IM_CUDA_CUDA_UTILS_H
 
-#include "im/graph.h"
+#include "ripples/graph.h"
 
-namespace im {
+namespace ripples {
 
 //
 // debug utilities
@@ -36,6 +36,6 @@ void cuda_check(cudaError_t err, const char *fname, int line) {
 void cuda_check(const char *fname, int line) {
   cuda_check(cudaGetLastError(), fname, line);
 }
-}  // namespace im
+}  // namespace ripples
 
 #endif  // IM_CUDA_CUDA_UTILS_H

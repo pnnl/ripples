@@ -9,7 +9,7 @@
 
 #include <cassert>
 
-#include "im/graph.h"
+#include "ripples/graph.h"
 
 template <typename host_GraphTy>
 struct cuda_graph {

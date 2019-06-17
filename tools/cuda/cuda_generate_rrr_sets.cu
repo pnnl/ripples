@@ -7,11 +7,11 @@
 #include "trng/uniform01_dist.hpp"
 #include "trng/uniform_int_dist.hpp"
 
-#include "im/cuda/cuda_generate_rrr_sets.h"
-#include "im/cuda/cuda_utils.h"
-#include "im/cuda/cuda_graph.cuh"
+#include "ripples/cuda/cuda_generate_rrr_sets.h"
+#include "ripples/cuda/cuda_utils.h"
+#include "ripples/cuda/cuda_graph.cuh"
 
-namespace im {
+namespace ripples {
 
 // tested configurations:
 // + 1 walk per thread:
@@ -124,7 +124,7 @@ __global__ void kernel_lt_per_thread(
       if (res_size < MAX_SET_SIZE) d_res_mask[res_size] = num_nodes;
     }  // end if active warp
   }    // end if active thread-in-warp
-}  // namespace im
+}  // namespace ripples
 
 void cuda_lt_kernel(size_t n_blocks, size_t block_size, size_t batch_size,
 		size_t num_nodes, size_t warp_step, cuda_PRNGeneratorTy *d_trng_states,
@@ -140,4 +140,4 @@ void cuda_d2h(mask_word_t *dst, mask_word_t *src, size_t size) {
   cuda_check(__FILE__, __LINE__);
 }
 
-}  // namespace im
+}  // namespace ripples
