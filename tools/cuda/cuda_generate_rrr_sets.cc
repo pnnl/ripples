@@ -71,7 +71,8 @@ struct ctx_t {
 } ctx;
 
 #if CUDA_PROFILE
-void print_profile_breakdown(ctx_t::mt_sample_t &mt_sample, const std::string &label) {
+void print_profile_breakdown(ctx_t::mt_sample_t &mt_sample,
+                             const std::string &label) {
   if (!mt_sample.empty()) {
     std::cout << "*** tag: " << label << "\n";
     for (size_t tid = 0; tid < ctx.cpu_threads; ++tid) {
@@ -351,7 +352,7 @@ void batch_build(size_t rank, cuda_res_t &rrr_sets,
 #else  // CUDA_PARFOR
 #if CUDA_PROFILE
   auto start = std::chrono::high_resolution_clock::now();
-  //std::chrono::nanoseconds m_elapsed{0};
+  // std::chrono::nanoseconds m_elapsed{0};
 #endif
 
 #pragma omp parallel for schedule(guided)
