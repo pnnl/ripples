@@ -219,8 +219,8 @@ int main(int argc, char **argv) {
       cuda_init(G, generator, ripples::linear_threshold_tag{});
       auto start = std::chrono::high_resolution_clock::now();
       std::tie(seeds, R) =
-          IMM(G, CFG.k, CFG.epsilon, 1, generator, ripples::linear_threshold_tag{},
-              ripples::cuda_parallel_tag{});
+          IMM(G, CFG.k, CFG.epsilon, 1, generator,
+              ripples::linear_threshold_tag{}, ripples::cuda_parallel_tag{});
       auto end = std::chrono::high_resolution_clock::now();
       cuda_fini(ripples::linear_threshold_tag{});
       R.Total = end - start;

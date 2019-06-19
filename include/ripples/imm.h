@@ -238,6 +238,8 @@ auto IMM(const GraphTy &G, std::size_t k, double epsilon, double l, PRNG &gen,
   if (std::is_same<execution_tag, omp_parallel_tag>::value) {
 #pragma omp single
     max_num_threads = omp_get_max_threads();
+  } else if (std::is_same<execution_tag, cuda_parallel_tag>::value) {
+    max_num_threads = cuda_num_cpu_threads();
   }
 
   std::vector<trng::lcg64> generator(max_num_threads, gen);
@@ -248,6 +250,10 @@ auto IMM(const GraphTy &G, std::size_t k, double epsilon, double l, PRNG &gen,
       generator[omp_get_thread_num()].split(omp_get_num_threads(),
                                             omp_get_thread_num());
     }
+  } else if (std::is_same<execution_tag, cuda_parallel_tag>::value) {
+#pragma omp parallel
+    generator[omp_get_thread_num()].split(cuda_num_total_threads(),
+                                          omp_get_thread_num());
   }
 
   l = l * (1 + 1 / std::log2(G.num_nodes()));

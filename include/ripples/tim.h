@@ -89,8 +89,8 @@ struct TIMConfiguration {
                  "Trigger the parallel implementation")
         ->group("Algorithm Options");
     app.add_flag("--cuda-parallel", cuda_parallel,
-                     "Trigger the CUDA implementation")
-            ->group("Algorithm Options");
+                 "Trigger the CUDA implementation")
+        ->group("Algorithm Options");
     app.add_option("-d,--diffusion-model", diffusionModel,
                    "The diffusion model to use (LT|IC)")
         ->required()

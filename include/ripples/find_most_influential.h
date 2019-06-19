@@ -365,13 +365,14 @@ auto FindMostInfluentialSet(const GraphTy &G, size_t k,
   using vertex_type = typename GraphTy::vertex_type;
 
   static typename std::vector<RRRset>::size_type max_size = 0;
-	printf("> [FindMostInfluentialSet] BEGIN phase n-sets=%d\n",
-			RRRsets.size());
-	max_size =
-			std::max(max_size,
-					std::max_element(RRRsets.begin(), RRRsets.end(),
-							[](const RRRset &x, const RRRset &y) {return x.size() < y.size();})->size());
-	printf("> [FindMostInfluentialSet] max-size=%d\n", max_size);
+  printf("> [FindMostInfluentialSet] BEGIN phase n-sets=%d\n", RRRsets.size());
+  max_size =
+      std::max(max_size, std::max_element(RRRsets.begin(), RRRsets.end(),
+                                          [](const RRRset &x, const RRRset &y) {
+                                            return x.size() < y.size();
+                                          })
+                             ->size());
+  printf("> [FindMostInfluentialSet] max-size=%d\n", max_size);
 
   std::vector<uint32_t> vertexCoverage(G.num_nodes(), 0);
 
@@ -412,7 +413,8 @@ auto FindMostInfluentialSet(const GraphTy &G, size_t k,
       continue;
     }
 
-    //printf("> [FindMostInfluentialSet] v=%d cov=%d\n", element.first, element.second);
+    // printf("> [FindMostInfluentialSet] v=%d cov=%d\n", element.first,
+    // element.second);
 
     uncovered -= element.second;
 
@@ -465,7 +467,7 @@ template <typename GraphTy, typename RRRset>
 auto FindMostInfluentialSet(const GraphTy &G, size_t k,
                             std::vector<RRRset> &RRRsets,
                             cuda_parallel_tag &&ex_tag) {
- return FindMostInfluentialSet(G, k, RRRsets, omp_parallel_tag{});
+  return FindMostInfluentialSet(G, k, RRRsets, omp_parallel_tag{});
 }
 
 }  // namespace ripples

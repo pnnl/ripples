@@ -204,10 +204,11 @@ std::vector<RRRset<GraphTy>> GenerateRRRSets(GraphTy &G, size_t theta,
 //! \return A list of theta Random Reverse Rachability Sets.
 template <typename GraphTy, typename PRNGeneratorTy, typename diff_model_tag>
 std::vector<RRRset<GraphTy>> GenerateRRRSets(GraphTy &G, size_t theta,
-                                             PRNGeneratorTy &,
+                                             PRNGeneratorTy &generator,
                                              diff_model_tag &&model_tag,
                                              cuda_parallel_tag &&ex_tag) {
-  return CudaGenerateRRRSets(theta, std::forward<diff_model_tag>(model_tag));
+  return CudaGenerateRRRSets(theta, generator,
+                             std::forward<diff_model_tag>(model_tag));
 }
 
 }  // namespace ripples
