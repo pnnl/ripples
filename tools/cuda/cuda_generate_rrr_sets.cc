@@ -13,8 +13,8 @@
 #include "trng/uniform01_dist.hpp"
 #include "trng/uniform_int_dist.hpp"
 
-#include "ripples/generate_rrr_sets.h"
 #include "ripples/cuda/cuda_generate_rrr_sets.h"
+#include "ripples/generate_rrr_sets.h"
 
 #if CUDA_PROFILE
 #include <atomic>
@@ -25,6 +25,7 @@ namespace ripples {
 
 #if CUDA_PROFILE
 enum breakdown_tag { OVERALL, KERNEL, COPY, TRANSLATE_ALLOC, TRANSLATE_BUILD };
+enum counters_tag { RRR_SIZES };
 #endif
 
 // tested configurations:
@@ -62,23 +63,41 @@ struct ctx_t {
   std::atomic<size_t> num_exceedings{0};
   std::unordered_map<breakdown_tag, std::vector<std::chrono::nanoseconds>>
       profile_breakdown;
+  std::unordered_map<counters_tag, std::vector<size_t>> profile_counters;
 #endif
 } ctx;
 
 #if CUDA_PROFILE
-void print_profile(breakdown_tag tag, const std::string &label) {
-  if (!ctx.profile_breakdown[tag].empty()) {
-    std::sort(ctx.profile_breakdown[tag].begin(),
-              ctx.profile_breakdown[tag].end());
-    auto &sample(ctx.profile_breakdown[tag]);
-    std::chrono::microseconds tot{0};
-    for (auto &x : sample)
-      tot += std::chrono::duration_cast<std::chrono::microseconds>(x);
+void print_profile(std::vector<std::chrono::nanoseconds> &sample,
+                   const std::string &label) {
+  if (!sample.empty()) {
+    std::sort(sample.begin(), sample.end());
+    auto tot = std::accumulate(
+        sample.begin(), sample.end(), std::chrono::microseconds{0},
+        [](std::chrono::microseconds acc, std::chrono::nanoseconds x) {
+          return acc + std::chrono::duration_cast<std::chrono::microseconds>(x);
+        });
     std::cout << "*** tag: " << label << "\n*** "
               << "cnt=" << sample.size() << "\tmin=" << sample[0].count()
               << "\tmed=" << sample[sample.size() / 2].count()
               << "\tmax=" << sample.back().count()
+              << "\tavg=" << (float)tot.count() / sample.size()
               << "\ttot(us)=" << tot.count() << std::endl;
+  } else
+    std::cout << "*** tag: " << label << " N/A\n";
+}
+
+void print_profile_counter(std::vector<size_t> &sample,
+                           const std::string &label) {
+  if (!sample.empty()) {
+    std::sort(sample.begin(), sample.end());
+    auto tot = std::accumulate(sample.begin(), sample.end(), size_t{0});
+    std::cout << "*** tag: " << label << "\n*** "
+              << "cnt=" << sample.size() << "\tmin=" << sample[0]
+              << "\tmed=" << sample[sample.size() / 2]
+              << "\tmax=" << sample.back()
+              << "\tavg=" << (float)tot / sample.size() << "\ttot=" << tot
+              << std::endl;
   } else
     std::cout << "*** tag: " << label << " N/A\n";
 }
@@ -174,11 +193,16 @@ void cuda_fini(ripples::linear_threshold_tag &&) {
   printf("g-mem size     = %d\n", ctx.cpu_threads * ctx.grid_size *
                                       ctx.mask_words * sizeof(mask_word_t));
 
-  print_profile(breakdown_tag::OVERALL, "overall");
-  print_profile(breakdown_tag::KERNEL, "kernel");
-  print_profile(breakdown_tag::COPY, "device-to-host copy");
-  print_profile(breakdown_tag::TRANSLATE_BUILD, "translate > build");
-  print_profile(breakdown_tag::TRANSLATE_ALLOC, "translate > build > alloc");
+  print_profile(ctx.profile_breakdown[breakdown_tag::OVERALL], "overall");
+  print_profile(ctx.profile_breakdown[breakdown_tag::KERNEL], "kernel");
+  print_profile(ctx.profile_breakdown[breakdown_tag::COPY],
+                "device-to-host copy");
+  print_profile(ctx.profile_breakdown[breakdown_tag::TRANSLATE_BUILD],
+                "translate > build");
+  // print_profile(ctx.profile_breakdown[breakdown_tag::TRANSLATE_ALLOC],
+  // "translate > build > alloc");
+
+  print_profile_counter(ctx.profile_counters[counters_tag::RRR_SIZES], "RRR sizes");
 
   auto ne = ctx.num_exceedings.load();
   printf("exceeding sets = %d/%d (%f)\n", ne, ctx.num_sets,
@@ -243,10 +267,10 @@ void batch_d2h(size_t rank, size_t batch_size) {
 #endif
 }
 
-template<typename diff_model_tag>
+template <typename diff_model_tag>
 void batch_build(size_t rank, cuda_res_t &rrr_sets,
-                 cuda_PRNGeneratorsTy &generators, size_t bf,
-                 size_t batch_size, diff_model_tag &&model_tag) {
+                 cuda_PRNGeneratorsTy &generators, size_t bf, size_t batch_size,
+                 diff_model_tag &&model_tag) {
   // translate
   CUDA_LOG("> [batch_build] size=%d first=%d\n", batch_size, bf);
 #if CUDA_PROFILE
@@ -321,7 +345,7 @@ cuda_res_t CudaGenerateRRRSets(size_t theta, cuda_PRNGeneratorsTy &generators,
     batch_kernel(rank, batch_size);
     batch_d2h(rank, batch_size);
     batch_build(rank, rrr_sets, generators, batch_first, batch_size,
-    		    ripples::linear_threshold_tag{});
+                ripples::linear_threshold_tag{});
   }
 
 #if CUDA_PROFILE
@@ -329,6 +353,8 @@ cuda_res_t CudaGenerateRRRSets(size_t theta, cuda_PRNGeneratorsTy &generators,
       std::chrono::high_resolution_clock::now() - start);
   ctx.profile_breakdown[breakdown_tag::OVERALL].push_back(elapsed);
   ctx.num_sets += theta;
+  for (auto &r : rrr_sets)
+    ctx.profile_counters[counters_tag::RRR_SIZES].push_back(r.size());
 #endif
 
   return rrr_sets;
