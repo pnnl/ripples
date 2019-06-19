@@ -73,7 +73,7 @@ struct ctx_t {
 #if CUDA_PROFILE
 void print_profile_breakdown(ctx_t::mt_sample_t &mt_sample, const std::string &label) {
   if (!mt_sample.empty()) {
-    std::cout << "*** tag: " << label << "\n*** ";
+    std::cout << "*** tag: " << label << "\n";
     for (size_t tid = 0; tid < ctx.cpu_threads; ++tid) {
       auto &sample(mt_sample[tid]);
       if (!sample.empty()) {
@@ -81,15 +81,14 @@ void print_profile_breakdown(ctx_t::mt_sample_t &mt_sample, const std::string &l
         auto tot = std::accumulate(
             sample.begin(), sample.end(), std::chrono::nanoseconds{0},
             [](std::chrono::nanoseconds acc, std::chrono::nanoseconds x) {
-              return acc +
-                     std::chrono::duration_cast<std::chrono::nanoseconds>(x);
+              return acc + x;
             });
         std::cout << "[tid=" << tid << "]\t"
                   << "cnt=" << sample.size() << "\tmin=" << sample[0].count()
                   << "\tmed=" << sample[sample.size() / 2].count()
                   << "\tmax=" << sample.back().count()
-                  << "\tavg(ns)=" << (float)tot.count() / sample.size()
-                  << "\ttot(ns)=" << tot.count() << std::endl;
+                  << "\tavg=" << (float)tot.count() / sample.size()
+                  << "\ttot=" << tot.count() << std::endl;
       } else {
         std::cout << "[tid=" << tid << "] N/A\n";
       }
@@ -103,7 +102,7 @@ void print_profile_counter(std::vector<size_t> &sample,
   if (!sample.empty()) {
     std::sort(sample.begin(), sample.end());
     auto tot = std::accumulate(sample.begin(), sample.end(), size_t{0});
-    std::cout << "*** tag: " << label << "\n*** "
+    std::cout << "*** tag: " << label << "\n"
               << "cnt=" << sample.size() << "\tmin=" << sample[0]
               << "\tmed=" << sample[sample.size() / 2]
               << "\tmax=" << sample.back()
