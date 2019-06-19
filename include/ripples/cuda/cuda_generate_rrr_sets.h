@@ -92,7 +92,6 @@ cuda_res_t CudaGenerateRRRSets(size_t theta, cuda_PRNGeneratorsTy &generators,
 // host-device API
 //
 using mask_word_t = typename cuda_GraphTy::vertex_type;
-constexpr size_t MAX_SET_SIZE = 16;
 
 #define CUDA_DBG 0
 #define CUDA_CHECK 0
@@ -168,7 +167,7 @@ void cuda_graph_fini();
 void cuda_lt_kernel(size_t n_blocks, size_t block_size, size_t batch_size,
                     size_t num_nodes, size_t warp_step,
                     cuda_PRNGeneratorTy *d_trng_states,
-                    mask_word_t *d_res_masks);
+                    mask_word_t *d_res_masks, size_t num_mask_words);
 void cuda_d2h(mask_word_t *dst, mask_word_t *src, size_t size);
 }  // namespace ripples
 

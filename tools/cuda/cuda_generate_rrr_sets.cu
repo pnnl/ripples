@@ -65,7 +65,7 @@ template <typename HostGraphTy>
 __global__ void kernel_lt_per_thread(
     size_t bs, typename HostGraphTy::DestinationTy **index, size_t num_nodes,
     size_t warp_size, cuda_PRNGeneratorTy *d_trng_states,
-    mask_word_t *d_res_masks) {
+    mask_word_t *d_res_masks, size_t num_mask_words) {
   using destination_type = typename HostGraphTy::DestinationTy;
   using vertex_type = typename HostGraphTy::vertex_type;
 
@@ -78,8 +78,8 @@ __global__ void kernel_lt_per_thread(
       size_t res_size = 0;
 
       // init res memory
-      auto d_res_mask = d_res_masks + wid * MAX_SET_SIZE;
-      memset(d_res_mask, 0, MAX_SET_SIZE * sizeof(mask_word_t));
+      auto d_res_mask = d_res_masks + wid * num_mask_words;
+      memset(d_res_mask, 0, num_mask_words * sizeof(mask_word_t));
 
       // cache rng state
       auto &r(d_trng_states[wid]);
@@ -118,7 +118,7 @@ __global__ void kernel_lt_per_thread(
       }
 
       // mark end-of-set
-      if (res_size < MAX_SET_SIZE) d_res_mask[res_size] = num_nodes;
+      if (res_size < num_mask_words) d_res_mask[res_size] = num_nodes;
     }  // end if active warp
   }    // end if active thread-in-warp
 }  // namespace ripples
@@ -126,10 +126,10 @@ __global__ void kernel_lt_per_thread(
 void cuda_lt_kernel(size_t n_blocks, size_t block_size, size_t batch_size,
                     size_t num_nodes, size_t warp_step,
                     cuda_PRNGeneratorTy *d_trng_states,
-                    mask_word_t *d_res_masks) {
+                    mask_word_t *d_res_masks, size_t num_mask_words) {
   kernel_lt_per_thread<cuda_GraphTy><<<n_blocks, block_size>>>(
       batch_size, cuda_ctx.d_graph->d_index_, num_nodes, warp_step,
-      d_trng_states, d_res_masks);
+      d_trng_states, d_res_masks, num_mask_words);
   cuda_check(__FILE__, __LINE__);
 }
 
