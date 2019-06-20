@@ -7,6 +7,8 @@
 #ifndef IM_CUDA_CUDA_UTILS_H
 #define IM_CUDA_CUDA_UTILS_H
 
+#include "spdlog/spdlog.h"
+
 #include "ripples/graph.h"
 
 namespace ripples {
@@ -14,22 +16,10 @@ namespace ripples {
 //
 // debug utilities
 //
-template <typename graph_t>
-void print_graph(const graph_t &g) {
-  printf("*** graph BEGIN ***\n");
-  for (typename graph_t::vertex_type i = 0; i < g.num_nodes(); ++i) {
-    printf("%d\t:", i);
-    for (auto &n : g.neighbors(i)) printf("%d\t", n.vertex);
-    printf("\n");
-  }
-  printf("*** graph END ***\n");
-}
-
 void cuda_check(cudaError_t err, const char *fname, int line) {
   if (err != cudaSuccess) {
-    CUDA_LOG("> CUDA error @%s:%d: name=%s msg='%s'\n", fname, line,
-             cudaGetErrorName(err), cudaGetErrorString(err));
-    assert(false);
+    spdlog::error("> CUDA error @%s:%d: name=%s msg='%s'\n", fname, line,
+            cudaGetErrorName(err), cudaGetErrorString(err));
   }
 }
 

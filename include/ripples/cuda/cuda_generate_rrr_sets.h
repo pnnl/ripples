@@ -15,6 +15,10 @@
 #include "ripples/diffusion_simulation.h"
 #include "ripples/graph.h"
 
+#include "spdlog/fmt/ostr.h"
+#include "spdlog/sinks/stdout_color_sinks.h"
+#include "spdlog/spdlog.h"
+
 namespace ripples {
 
 //
@@ -93,15 +97,8 @@ cuda_res_t CudaGenerateRRRSets(size_t theta, cuda_PRNGeneratorsTy &generators,
 //
 using mask_word_t = typename cuda_GraphTy::vertex_type;
 
-#define CUDA_DBG 0
 #define CUDA_CHECK 0
 #define CUDA_PROFILE 1
-
-#if CUDA_DBG
-#define CUDA_LOG(...) printf(__VA_ARGS__)
-#else
-#define CUDA_LOG(...)
-#endif
 
 constexpr size_t debug_walk_id = 1;
 
@@ -133,10 +130,6 @@ bool check_lt_from(const rrr_t &r,
 #if CUDA_CHECK
 template <typename rrr_t, typename graph_t>
 void check_lt(const rrr_t &r, const graph_t &g, size_t id) {
-  CUDA_LOG("> checking set %d: ", id);
-  for (auto &v : r) CUDA_LOG("%d ", v);
-  CUDA_LOG("\n");
-
   bool res = false;
   for (auto it = r.begin(); it != r.end(); ++it) {
     if (check_lt_from(r, it, g)) {
@@ -146,7 +139,7 @@ void check_lt(const rrr_t &r, const graph_t &g, size_t id) {
   }
 
   if (!res) {
-    printf("> check FAILED\n");
+    spdlog::error("check_lt FAILED\n");
     exit(1);
   }
 }
@@ -169,6 +162,48 @@ void cuda_lt_kernel(size_t n_blocks, size_t block_size, size_t batch_size,
                     cuda_PRNGeneratorTy *d_trng_states,
                     mask_word_t *d_res_masks, size_t num_mask_words);
 void cuda_d2h(mask_word_t *dst, mask_word_t *src, size_t size);
+
+#if CUDA_PROFILE
+template <typename logst_t, typename mt_sample_t>
+void print_profile_breakdown(logst_t &logst, mt_sample_t &mt_sample,
+                             const std::string &label) {
+  if (!mt_sample.empty()) {
+    logst->info("*** tag: {}", label);
+    for (size_t tid = 0; tid < mt_sample.size(); ++tid) {
+      auto &sample(mt_sample[tid]);
+      if (!sample.empty()) {
+        std::sort(sample.begin(), sample.end());
+        auto tot = std::accumulate(
+            sample.begin(), sample.end(), std::chrono::nanoseconds{0},
+            [](std::chrono::nanoseconds acc, std::chrono::nanoseconds x) {
+              return acc + x;
+            });
+        logst->info("[tid={}]\tcnt={}\tmin={}\tmed={}\tmax={}\tavg={}\ttot={}",
+                    tid, sample.size(), sample[0].count(),
+                    sample[sample.size() / 2].count(), sample.back().count(),
+                    (float)tot.count() / sample.size(), tot.count());
+      } else {
+    	  logst->info("[tid={}] N/A", tid);
+      }
+    }
+  } else
+	  logst->info("*** tag: {} N/A", label);
+}
+
+template <typename logst_t, typename sample_t>
+void print_profile_counter(logst_t &logst, sample_t &sample,
+                           const std::string &label) {
+  if (!sample.empty()) {
+    std::sort(sample.begin(), sample.end());
+    auto tot = std::accumulate(sample.begin(), sample.end(), size_t{0});
+    logst->info("cnt={}\tmin={}\tmed={}\tmax={}\tavg={}",
+                        sample.size(), sample[0],
+                        sample[sample.size() / 2], sample.back(),
+                        (float)tot / sample.size());
+  } else
+	  logst->info("*** tag: {} N/A", label);
+}
+#endif
 }  // namespace ripples
 
 #endif  // IM_CUDA_CUDA_GENERATE_RRR_SETS_H

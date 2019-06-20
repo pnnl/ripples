@@ -191,7 +191,7 @@ std::vector<RRRset<GraphTy>> GenerateRRRSets(GraphTy &G, size_t theta,
 
 //! \brief Generate Random Reverse Reachability Sets - CUDA.
 //!
-//! \tparam GraphTy The type of the garph.
+//! \tparam GraphTy The type of the graph.
 //! \tparam PRNGeneratorty The type of the random number generator.
 //! \tparam diff_model_tag The policy for the diffusion model.
 //!

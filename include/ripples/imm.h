@@ -262,6 +262,14 @@ auto IMM(const GraphTy &G, std::size_t k, double epsilon, double l, PRNG &gen,
                     std::forward<diff_model_tag>(model_tag),
                     std::forward<execution_tag>(ex_tag));
 
+#if CUDA_PROFILE
+  auto logst = spdlog::stdout_color_st("IMM-profile");
+  std::vector<size_t> rrr_sizes;
+  for(auto &rrr_set : R)
+	  rrr_sizes.push_back(rrr_set.size());
+  print_profile_counter(logst, rrr_sizes, "RRR sizes");
+#endif
+
   auto start = std::chrono::high_resolution_clock::now();
   const auto &S =
       FindMostInfluentialSet(G, k, R, std::forward<execution_tag>(ex_tag));

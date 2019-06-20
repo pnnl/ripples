@@ -21,13 +21,12 @@
 #include <chrono>
 #endif
 
-//#define CUDA_PARFOR
+#define CUDA_PARFOR
 
 namespace ripples {
 
 #if CUDA_PROFILE
 enum breakdown_tag { OVERALL, KERNEL, COPY, BUILD };
-enum counters_tag { RRR_SIZES };
 #endif
 
 // tested configurations:
@@ -66,52 +65,8 @@ struct ctx_t {
   using mt_sample_t = std::vector<std::vector<std::chrono::nanoseconds>>;
   using breakdown_t = std::unordered_map<breakdown_tag, mt_sample_t>;
   breakdown_t profile_breakdown;
-  std::unordered_map<counters_tag, std::vector<size_t>> profile_counters;
 #endif
 } ctx;
-
-#if CUDA_PROFILE
-void print_profile_breakdown(ctx_t::mt_sample_t &mt_sample,
-                             const std::string &label) {
-  if (!mt_sample.empty()) {
-    std::cout << "*** tag: " << label << "\n";
-    for (size_t tid = 0; tid < ctx.cpu_threads; ++tid) {
-      auto &sample(mt_sample[tid]);
-      if (!sample.empty()) {
-        std::sort(sample.begin(), sample.end());
-        auto tot = std::accumulate(
-            sample.begin(), sample.end(), std::chrono::nanoseconds{0},
-            [](std::chrono::nanoseconds acc, std::chrono::nanoseconds x) {
-              return acc + x;
-            });
-        std::cout << "[tid=" << tid << "]\t"
-                  << "cnt=" << sample.size() << "\tmin=" << sample[0].count()
-                  << "\tmed=" << sample[sample.size() / 2].count()
-                  << "\tmax=" << sample.back().count()
-                  << "\tavg=" << (float)tot.count() / sample.size()
-                  << "\ttot=" << tot.count() << std::endl;
-      } else {
-        std::cout << "[tid=" << tid << "] N/A\n";
-      }
-    }
-  } else
-    std::cout << "*** tag: " << label << " N/A\n";
-}
-
-void print_profile_counter(std::vector<size_t> &sample,
-                           const std::string &label) {
-  if (!sample.empty()) {
-    std::sort(sample.begin(), sample.end());
-    auto tot = std::accumulate(sample.begin(), sample.end(), size_t{0});
-    std::cout << "*** tag: " << label << "\n"
-              << "cnt=" << sample.size() << "\tmin=" << sample[0]
-              << "\tmed=" << sample[sample.size() / 2]
-              << "\tmax=" << sample.back()
-              << "\tavg=" << (float)tot / sample.size() << std::endl;
-  } else
-    std::cout << "*** tag: " << label << " N/A\n";
-}
-#endif
 
 size_t cuda_num_total_threads() {
   return ctx.cpu_threads + ctx.gpu_streams * ctx.max_batch_size;
@@ -145,22 +100,6 @@ void cuda_init(const cuda_GraphTy &G, const cuda_PRNGeneratorTy &r,
 #else
   ctx.gpu_streams = 1;
 #endif
-
-  // print sizing info
-  CUDA_LOG("> *** CUDA_BATCHED sizing ***\n");
-  CUDA_LOG("block-size = %d\n", ctx.block_size);
-  CUDA_LOG("n. blocks  = %d\n", ctx.n_blocks);
-
-  // TODO
-  // CUDA_LOG("warp size  = %d\n", ctx.cuda_prop.warpSize);
-
-  CUDA_LOG("grid size  = %d\n", ctx.grid_size);
-  CUDA_LOG("batch size = %d\n", ctx.max_batch_size);
-
-  // TODO move
-  CUDA_LOG("g-mem size = %d\n", ctx.gpu_streams * ctx.grid_size *
-                                    ctx.mask_words * sizeof(mask_word_t));
-
   // set up device-side graph
   cuda_graph_init(G);
 
@@ -206,35 +145,34 @@ void cuda_init(const cuda_GraphTy &G, const cuda_PRNGeneratorTy &r,
 void cuda_fini(ripples::linear_threshold_tag &&) {
 // print profiling
 #if CUDA_PROFILE
-  printf("*** profiling summary (time unit: ns) ***\n");
+  auto logst = spdlog::stdout_color_st("CUDA-profile");
 
   // print sizing info
-  printf("> *** CUDA_BATCHED sizing ***\n");
-  printf("block-size     = %d\n", ctx.block_size);
-  printf("n. blocks      = %d\n", ctx.n_blocks);
+  logst->info("block-size     = {}", ctx.block_size);
+  logst->info("n. blocks      = {}", ctx.n_blocks);
   // TODO
-  // printf("warp size    = %d\n", ctx.cuda_prop.warpSize);
-  printf("grid size      = %d\n", ctx.grid_size);
-  printf("batch size     = %d\n", ctx.max_batch_size);
-  printf("n. cpu threads = %d\n", ctx.cpu_threads);
-  printf("n. gpu streams = %d\n", ctx.gpu_streams);
-  printf("g-mem size     = %d\n", ctx.gpu_streams * ctx.grid_size *
-                                      ctx.mask_words * sizeof(mask_word_t));
+  // logst->info("warp size    = {}", ctx.cuda_prop.warpSize);
+  logst->info("grid size      = {}", ctx.grid_size);
+  logst->info("batch size     = {}", ctx.max_batch_size);
+  logst->info("n. cpu threads = {}", ctx.cpu_threads);
+  logst->info("n. gpu streams = {}", ctx.gpu_streams);
 
-  print_profile_breakdown(ctx.profile_breakdown[breakdown_tag::OVERALL],
+  // mem sizing
+  logst->info("g-mem size     = {}", ctx.gpu_streams * ctx.grid_size *
+                                         ctx.mask_words * sizeof(mask_word_t));
+
+  print_profile_breakdown(logst, ctx.profile_breakdown[breakdown_tag::OVERALL],
                           "overall");
-  print_profile_breakdown(ctx.profile_breakdown[breakdown_tag::KERNEL],
+  print_profile_breakdown(logst, ctx.profile_breakdown[breakdown_tag::KERNEL],
                           "kernel");
-  print_profile_breakdown(ctx.profile_breakdown[breakdown_tag::COPY],
+  print_profile_breakdown(logst, ctx.profile_breakdown[breakdown_tag::COPY],
                           "device-to-host copy");
-  print_profile_breakdown(ctx.profile_breakdown[breakdown_tag::BUILD], "build");
-
-  print_profile_counter(ctx.profile_counters[counters_tag::RRR_SIZES],
-                        "RRR sizes");
+  print_profile_breakdown(logst, ctx.profile_breakdown[breakdown_tag::BUILD],
+                          "build");
 
   auto ne = ctx.num_exceedings.load();
-  printf("exceeding sets = %d/%d (%f)\n", ne, ctx.num_sets,
-         (float)ne / ctx.num_sets);
+  logst->info("exceeding sets = {}/{} ({})", ne, ctx.num_sets,
+              (float)ne / ctx.num_sets);
 #endif
 
   // finalize streams and free memory
@@ -255,8 +193,6 @@ void cuda_fini(ripples::linear_threshold_tag &&) {
 void cuda_fini(ripples::independent_cascade_tag &&) {}
 
 void batch_kernel(size_t rank, size_t batch_size) {
-  CUDA_LOG("> [batch_kernel] size=%d\n", batch_size);
-
 #if CUDA_PROFILE
   auto start = std::chrono::high_resolution_clock::now();
 #endif
@@ -269,7 +205,6 @@ void batch_kernel(size_t rank, size_t batch_size) {
   // un-comment the following line to measure effective kernel run-time (rather
   // than launch-time)
   // cudaDeviceSynchronize();
-  // TODO
   auto elapsed = std::chrono::duration_cast<std::chrono::nanoseconds>(
       std::chrono::high_resolution_clock::now() - start);
   ctx.profile_breakdown[breakdown_tag::KERNEL][rank].push_back(elapsed);
@@ -277,8 +212,6 @@ void batch_kernel(size_t rank, size_t batch_size) {
 }
 
 void batch_d2h(size_t rank, size_t batch_size) {
-  CUDA_LOG("> [batch_d2h] size=%d\n", batch_size);
-
 #if CUDA_PROFILE
   auto start = std::chrono::high_resolution_clock::now();
 #endif
@@ -297,37 +230,21 @@ void batch_build(size_t rank, cuda_res_t &rrr_sets,
                  cuda_PRNGeneratorsTy &generators, size_t bf, size_t batch_size,
                  diff_model_tag &&model_tag) {
   // translate
-  CUDA_LOG("> [batch_build] size=%d first=%d\n", batch_size, bf);
 
 #ifdef CUDA_PARFOR
 
 #if CUDA_PROFILE
   auto start = std::chrono::high_resolution_clock::now();
-  // TODO
-//  std::chrono::nanoseconds m_elapsed{0};
 #endif
 
   for (size_t i = 0; i < batch_size; ++i) {
     auto &rrr_set = rrr_sets[bf + i];
-#if CUDA_PROFILE
-    // TODO
-    // auto m_start = std::chrono::high_resolution_clock::now();
-#endif
     rrr_set.reserve(ctx.mask_words);
-#if CUDA_PROFILE
-    // TODO
-    // m_elapsed += std::chrono::duration_cast<std::chrono::nanoseconds>(
-    // std::chrono::high_resolution_clock::now() - m_start);
-#endif
     auto res_mask = ctx.res_masks[rank] + (i * ctx.mask_words);
     for (size_t j = 0;
          j < ctx.mask_words && res_mask[j] != ctx.graph->num_nodes(); ++j) {
       rrr_set.push_back(res_mask[j]);
     }
-
-#if CUDA_CHECK
-    check_lt(rrr_set, *ctx.graph, bf + i);
-#endif
 
     if (rrr_set.size() == ctx.mask_words) {
       ++ctx.num_exceedings;
@@ -341,12 +258,9 @@ void batch_build(size_t rank, cuda_res_t &rrr_sets,
   }
 
 #if CUDA_PROFILE
-  // TODO
   auto elapsed = std::chrono::duration_cast<std::chrono::nanoseconds>(
       std::chrono::high_resolution_clock::now() - start);
   ctx.profile_breakdown[breakdown_tag::BUILD][rank].push_back(elapsed);
-  // TODO
-//  ctx.profile_breakdown[breakdown_tag::TRANSLATE_ALLOC].push_back(m_elapsed);
 #endif
 
 #else  // CUDA_PARFOR
@@ -358,25 +272,12 @@ void batch_build(size_t rank, cuda_res_t &rrr_sets,
 #pragma omp parallel for schedule(guided)
   for (size_t i = 0; i < batch_size; ++i) {
     auto &rrr_set = rrr_sets[bf + i];
-#if CUDA_PROFILE
-    // TODO
-    // auto m_start = std::chrono::high_resolution_clock::now();
-#endif
     rrr_set.reserve(ctx.mask_words);
-#if CUDA_PROFILE
-    // TODO
-    // m_elapsed += std::chrono::duration_cast<std::chrono::nanoseconds>(
-    // std::chrono::high_resolution_clock::now() - m_start);
-#endif
     auto res_mask = ctx.res_masks[rank] + (i * ctx.mask_words);
     for (size_t j = 0;
          j < ctx.mask_words && res_mask[j] != ctx.graph->num_nodes(); ++j) {
       rrr_set.push_back(res_mask[j]);
     }
-
-#if CUDA_CHECK
-    check_lt(rrr_set, *ctx.graph, bf + i);
-#endif
 
     if (rrr_set.size() == ctx.mask_words) {
       ++ctx.num_exceedings;
@@ -393,25 +294,24 @@ void batch_build(size_t rank, cuda_res_t &rrr_sets,
   auto elapsed = std::chrono::duration_cast<std::chrono::nanoseconds>(
       std::chrono::high_resolution_clock::now() - start);
   ctx.profile_breakdown[breakdown_tag::BUILD][rank].push_back(elapsed);
-  // TODO
-  // ctx.profile_breakdown[breakdown_tag::TRANSLATE_ALLOC].push_back(m_elapsed);
 #endif
 #endif  // CUDA_PARFOR
+
+#if CUDA_CHECK
+  size_t i = 0;
+  for (auto &rrr_set : rrr_sets) check_lt(rrr_set, *ctx.graph, bf + i++);
+#endif
 }
 
 cuda_res_t CudaGenerateRRRSets(size_t theta, cuda_PRNGeneratorsTy &generators,
                                ripples::linear_threshold_tag &&model_tag) {
-  CUDA_LOG("> *** CudaGenerateRRRSets theta=%d ***\n", theta);
-
 #if CUDA_PROFILE
   auto start = std::chrono::high_resolution_clock::now();
 #endif
 
   cuda_res_t rrr_sets(theta);
 
-  auto num_batches =
-      (rrr_sets.size() + ctx.max_batch_size - 1) / ctx.max_batch_size;
-  printf("> [CudaGenerateRRRSets] BEGIN-phase batches=%d\n", num_batches);
+  auto num_batches = (theta + ctx.max_batch_size - 1) / ctx.max_batch_size;
 
 #ifdef CUDA_PARFOR
 #pragma omp parallel for schedule(guided)
@@ -458,8 +358,6 @@ cuda_res_t CudaGenerateRRRSets(size_t theta, cuda_PRNGeneratorsTy &generators,
       std::chrono::high_resolution_clock::now() - start);
   ctx.profile_breakdown[breakdown_tag::OVERALL][0].push_back(elapsed);
   ctx.num_sets += theta;
-  for (auto &r : rrr_sets)
-    ctx.profile_counters[counters_tag::RRR_SIZES].push_back(r.size());
 #endif
 
   return rrr_sets;
