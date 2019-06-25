@@ -4,28 +4,12 @@
 //
 //===----------------------------------------------------------------------===//
 
-#ifndef IM_CUDA_CUDA_UTILS_H
-#define IM_CUDA_CUDA_UTILS_H
-
-#include "spdlog/spdlog.h"
-
-#include "ripples/graph.h"
+#ifndef RIPPLES_CUDA_CUDA_UTILS_H
+#define RIPPLES_CUDA_CUDA_UTILS_H
 
 namespace ripples {
-
-//
-// debug utilities
-//
-void cuda_check(cudaError_t err, const char *fname, int line) {
-  if (err != cudaSuccess) {
-    spdlog::error("> CUDA error @%s:%d: name=%s msg='%s'\n", fname, line,
-            cudaGetErrorName(err), cudaGetErrorString(err));
-  }
-}
-
-void cuda_check(const char *fname, int line) {
-  cuda_check(cudaGetLastError(), fname, line);
-}
+void cuda_check(cudaError_t err, const char *fname, int line);
+void cuda_check(const char *fname, int line);
 }  // namespace ripples
 
 #endif  // IM_CUDA_CUDA_UTILS_H

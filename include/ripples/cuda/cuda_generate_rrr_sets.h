@@ -4,8 +4,8 @@
 //
 //===----------------------------------------------------------------------===//
 
-#ifndef IM_CUDA_CUDA_GENERATE_RRR_SETS_H
-#define IM_CUDA_CUDA_GENERATE_RRR_SETS_H
+#ifndef RIPPLES_CUDA_CUDA_GENERATE_RRR_SETS_H
+#define RIPPLES_CUDA_CUDA_GENERATE_RRR_SETS_H
 
 #include <cstddef>
 #include <vector>
@@ -38,6 +38,8 @@ using cuda_res_t = std::vector<std::vector<typename cuda_GraphTy::vertex_type>>;
 using cuda_PRNGeneratorTy = trng::lcg64;
 using cuda_PRNGeneratorsTy = std::vector<cuda_PRNGeneratorTy>;
 
+constexpr size_t CUDA_WALK_SIZE = 8;
+
 //! \brief Initialize CUDA execution context for LT model.
 //!
 //! \param G The input host-side graph.
@@ -61,6 +63,11 @@ size_t cuda_num_total_threads();
 //!
 //! \return The number of CPU threads performing walks.
 size_t cuda_num_cpu_threads();
+
+//! \brief Returns the GPU warp size.
+//!
+//! \return The GPU warp size.
+size_t cuda_warp_size();
 
 //! \brief Finalize CUDA execution context for LT model.
 //!
@@ -99,8 +106,6 @@ using mask_word_t = typename cuda_GraphTy::vertex_type;
 
 #define CUDA_CHECK 0
 #define CUDA_PROFILE 1
-
-constexpr size_t debug_walk_id = 1;
 
 //
 // check utilities
@@ -161,6 +166,10 @@ void cuda_lt_kernel(size_t n_blocks, size_t block_size, size_t batch_size,
                     size_t num_nodes, size_t warp_step,
                     cuda_PRNGeneratorTy *d_trng_states,
                     mask_word_t *d_res_masks, size_t num_mask_words);
+void cuda_ic_kernel(size_t n_blocks, size_t block_size, size_t batch_size,
+                    size_t num_nodes, size_t warp_step,
+                    cuda_PRNGeneratorTy *d_trng_states,
+                    mask_word_t *d_res_masks, size_t num_mask_words);
 void cuda_d2h(mask_word_t *dst, mask_word_t *src, size_t size);
 
 #if CUDA_PROFILE
@@ -183,25 +192,31 @@ void print_profile_breakdown(logst_t &logst, mt_sample_t &mt_sample,
                     sample[sample.size() / 2].count(), sample.back().count(),
                     (float)tot.count() / sample.size(), tot.count());
       } else {
-    	  logst->info("[tid={}] N/A", tid);
+        logst->info("[tid={}] N/A", tid);
       }
     }
   } else
-	  logst->info("*** tag: {} N/A", label);
+    logst->info("*** tag: {} N/A", label);
 }
 
 template <typename logst_t, typename sample_t>
 void print_profile_counter(logst_t &logst, sample_t &sample,
                            const std::string &label) {
   if (!sample.empty()) {
+    auto n = sample.size();
     std::sort(sample.begin(), sample.end());
     auto tot = std::accumulate(sample.begin(), sample.end(), size_t{0});
-    logst->info("cnt={}\tmin={}\tmed={}\tmax={}\tavg={}",
-                        sample.size(), sample[0],
-                        sample[sample.size() / 2], sample.back(),
-                        (float)tot / sample.size());
+    logst->info("cnt={}\tmin={}\tmed={}\tmax={}\tavg={}", sample.size(),
+                sample[0], sample[sample.size() / 2], sample.back(),
+                (float)tot / sample.size());
+    auto max_qi = 100, qi_step = 1;
+    for (size_t qi = qi_step; qi < max_qi; qi += qi_step) {
+      auto qp = (float)qi / max_qi * 100;
+      auto si = qi * sample.size() / max_qi;
+      logst->info("size {}%-percentile:\t{}", qp, sample[si]);
+    }
   } else
-	  logst->info("*** tag: {} N/A", label);
+    logst->info("*** tag: {} N/A", label);
 }
 #endif
 }  // namespace ripples

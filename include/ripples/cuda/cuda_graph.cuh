@@ -4,8 +4,8 @@
 //
 //===----------------------------------------------------------------------===//
 
-#ifndef IM_CUDA_CUDA_GRAPH_CUH
-#define IM_CUDA_CUDA_GRAPH_CUH
+#ifndef RIPPLES_CUDA_CUDA_GRAPH_CUH
+#define RIPPLES_CUDA_CUDA_GRAPH_CUH
 
 #include <cassert>
 
