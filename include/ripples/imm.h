@@ -49,6 +49,7 @@
 #include "trng/uniform01_dist.hpp"
 #include "trng/uniform_int_dist.hpp"
 
+#include "ripples/configuration.h"
 #include "ripples/find_most_influential.h"
 #include "ripples/generate_rrr_sets.h"
 #include "ripples/tim.h"
@@ -57,7 +58,40 @@
 namespace ripples {
 
 //! The IMM algorithm configuration descriptor.
-struct IMMConfiguration : public TIMConfiguration {};
+struct IMMConfiguration : public TIMConfiguration {
+  size_t streaming_workers{0};
+  size_t streaming_gpu_workers{0};
+  size_t cuda_num_threads{0};
+  size_t cuda_block_density{0};
+  size_t cuda_warp_density{0};
+
+  //! \brief Add command line options to configure IMM.
+  //!
+  //! \param app The command-line parser object.
+  void addCmdOptions(CLI::App &app) {
+    TIMConfiguration::addCmdOptions(app);
+    app.add_option("--streaming-workers", streaming_workers,
+                   "The number of workers for the CPU+GPU streaming engine.")
+        ->required()
+        ->group("Streaming-Engine Options");
+    app.add_option("--streaming-gpu-workers", streaming_gpu_workers,
+                   "The number of GPU workers for the CPU+GPU streaming engine.")
+        ->required()
+        ->group("Streaming-Engine Options");
+    app.add_option("--cuda-num-threads", cuda_num_threads,
+                   "The number of active CUDA threads.")
+        ->required()
+        ->group("Streaming-Engine Options");
+    app.add_option("--cuda-block-density", cuda_block_density,
+                   "The number of active CUDA threads per block.")
+        ->required()
+        ->group("Streaming-Engine Options");
+    app.add_option("--cuda-warp-density", cuda_warp_density,
+                   "The number of active CUDA threads per warp.")
+        ->required()
+        ->group("Streaming-Engine Options");
+  }
+};
 
 //! IMM execution record.
 struct IMMExecutionRecord {
@@ -81,6 +115,10 @@ struct IMMExecutionRecord {
   //! Total execution time.
   ex_time_ms Total;
 };
+
+//! Retrieve the configuration parsed from command line.
+//! \return the configuration parsed from command line.
+ToolConfiguration<ripples::IMMConfiguration> configuration();
 
 //! Approximate logarithm of n chose k.
 //! \param n
@@ -238,8 +276,6 @@ auto IMM(const GraphTy &G, std::size_t k, double epsilon, double l, PRNG &gen,
   if (std::is_same<execution_tag, omp_parallel_tag>::value) {
 #pragma omp single
     max_num_threads = omp_get_max_threads();
-  } else if (std::is_same<execution_tag, cuda_parallel_tag>::value) {
-    max_num_threads = cuda_num_cpu_threads();
   }
 
   std::vector<trng::lcg64> generator(max_num_threads, gen);
@@ -250,10 +286,6 @@ auto IMM(const GraphTy &G, std::size_t k, double epsilon, double l, PRNG &gen,
       generator[omp_get_thread_num()].split(omp_get_num_threads(),
                                             omp_get_thread_num());
     }
-  } else if (std::is_same<execution_tag, cuda_parallel_tag>::value) {
-#pragma omp parallel
-    generator[omp_get_thread_num()].split(cuda_num_total_threads(),
-                                          omp_get_thread_num());
   }
 
   l = l * (1 + 1 / std::log2(G.num_nodes()));

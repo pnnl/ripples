@@ -80,11 +80,21 @@ auto GetExperimentRecord(const ToolConfiguration<IMMConfiguration> &CFG,
   return experiment;
 }
 
+ripples::ToolConfiguration<ripples::IMMConfiguration> CFG;
+
+void parse_command_line(int argc, char **argv) {
+  CFG.ParseCmdOptions(argc, argv);
+}
+
+ripples::ToolConfiguration<ripples::IMMConfiguration> configuration() {
+  return CFG;
+}
+
 }  // namespace ripples
 
 int main(int argc, char **argv) {
-  ripples::ToolConfiguration<ripples::IMMConfiguration> CFG;
-  CFG.ParseCmdOptions(argc, argv);
+  ripples::parse_command_line(argc, argv);
+  auto CFG = ripples::configuration();
 
   spdlog::set_level(spdlog::level::info);
 

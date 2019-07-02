@@ -4,7 +4,7 @@
 //
 //===----------------------------------------------------------------------===//
 
-#include "spdlog/spdlog.h"
+#include <cstdio>
 
 #include "ripples/cuda/cuda_utils.h"
 
@@ -15,8 +15,9 @@ namespace ripples {
   //
   void cuda_check(cudaError_t err, const char *fname, int line) {
     if (err != cudaSuccess) {
-      spdlog::error("> CUDA error @%s:%d: name=%s msg='%s'\n", fname, line,
+      fprintf(stderr, "> CUDA error @%s:%d: name=%s msg='%s'\n", fname, line,
                     cudaGetErrorName(err), cudaGetErrorString(err));
+      fflush(stderr);
     }
   }
   

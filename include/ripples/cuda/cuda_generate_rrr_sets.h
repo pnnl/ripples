@@ -54,16 +54,6 @@ void cuda_init(const cuda_GraphTy &G, const cuda_PRNGeneratorTy &,
 void cuda_init(const cuda_GraphTy &G, const cuda_PRNGeneratorTy &,
                ripples::independent_cascade_tag &&model_tag);
 
-//! \brief Returns the total number of threads (i.e., CPU+GPU) performing walks.
-//!
-//! \return The total number of threads performing walks.
-size_t cuda_num_total_threads();
-
-//! \brief Returns the number of CPU threads performing walks.
-//!
-//! \return The number of CPU threads performing walks.
-size_t cuda_num_cpu_threads();
-
 //! \brief Returns the GPU warp size.
 //!
 //! \return The GPU warp size.
@@ -86,7 +76,7 @@ void cuda_fini(ripples::independent_cascade_tag &&model_tag);
 //! \param model_tag The diffusion model tag.
 //!
 //! \return A list of theta Random Reverse Rachability Sets.
-cuda_res_t CudaGenerateRRRSets(size_t theta, cuda_PRNGeneratorsTy &generators,
+cuda_res_t CudaGenerateRRRSets(size_t theta,
                                ripples::linear_threshold_tag &&model_tag);
 
 //! \brief Generate Random Reverse Reachability Sets according to Independent
@@ -96,7 +86,7 @@ cuda_res_t CudaGenerateRRRSets(size_t theta, cuda_PRNGeneratorsTy &generators,
 //! \param model_tag The diffusion model tag.
 //!
 //! \return A list of theta Random Reverse Rachability Sets.
-cuda_res_t CudaGenerateRRRSets(size_t theta, cuda_PRNGeneratorsTy &generators,
+cuda_res_t CudaGenerateRRRSets(size_t theta,
                                ripples::independent_cascade_tag &&model_tag);
 
 //
@@ -156,11 +146,10 @@ void check_lt(Args &&...) {}
 void cuda_graph_init(const cuda_GraphTy &G);
 void cuda_malloc(void **dst, size_t size);
 void cuda_free(void *ptr);
-void cuda_rng_setup(size_t n_blocks, size_t block_size,
-                    cuda_PRNGeneratorTy *d_trng_state, size_t rank,
-                    const cuda_PRNGeneratorTy &r, size_t warp_step,
-                    size_t max_batch_size, size_t num_total_threads,
-                    size_t rng_offset);
+void cuda_rng_setup(cuda_PRNGeneratorTy *d_trng_state,
+                    const cuda_PRNGeneratorTy &r, size_t num_seqs,
+                    size_t first_seq, size_t n_blocks, size_t block_size,
+                    size_t warp_step);
 void cuda_graph_fini();
 void cuda_lt_kernel(size_t n_blocks, size_t block_size, size_t batch_size,
                     size_t num_nodes, size_t warp_step,
