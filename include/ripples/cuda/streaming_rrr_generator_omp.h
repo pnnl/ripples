@@ -44,6 +44,10 @@
 #include <cstdlib>
 #include <vector>
 
+#if CUDA_PROFILE
+#include <chrono>
+#endif
+
 #include "spdlog/spdlog.h"
 #include "trng/uniform_int_dist.hpp"
 
@@ -64,6 +68,17 @@ class StreamingRRRGenerator {
                        ripples::linear_threshold_tag &&, size_t rank) = 0;
     virtual void batch(rrr_set_t *first, size_t size,
                        ripples::independent_cascade_tag &&, size_t rank) = 0;
+
+#if CUDA_PROFILE
+    struct iter_profile_t {
+      size_t n_{0}, num_exceedings_{0};
+      std::chrono::nanoseconds d_{0};
+    };
+    using profile_t = std::vector<iter_profile_t>;
+    profile_t prof_bd;
+
+    void begin_prof_iter() { prof_bd.emplace_back(); }
+#endif
   };
 
   class CPUWorker : public Worker {
@@ -91,10 +106,22 @@ class StreamingRRRGenerator {
     template <typename diff_model_tag>
     void batch_dispatcher(rrr_set_t *first, size_t size, diff_model_tag &&model,
                           size_t rank) {
+#if CUDA_PROFILE
+      auto start = std::chrono::high_resolution_clock::now();
+#endif
       for (auto last = first + size; first != last; ++first) {
         typename GraphTy::vertex_type root = u_(rng_);
         AddRRRSet(G_, root, rng_, *first, std::forward<diff_model_tag>(model));
       }
+#if CUDA_PROFILE
+      auto &p(this->prof_bd.back());
+      p.d_ += std::chrono::duration_cast<std::chrono::nanoseconds>(
+          std::chrono::high_resolution_clock::now() - start);
+      p.n_ += size;
+      spdlog::get("console")->info(
+          "> [CPUWorker @{} batch_dispatcher] profile size={} n={} d={}",
+          (void *)this, this->prof_bd.size(), p.n_, p.d_.count());
+#endif
     }
   };
 
@@ -164,9 +191,7 @@ class StreamingRRRGenerator {
                      conf_.num_blocks_, conf_.block_size_, conf_.warp_step_);
     }
 
-    static void init(const GraphTy &G) {
-      cuda_graph_init(G);
-    }
+    static void init(const GraphTy &G) { cuda_graph_init(G); }
 
     static void fini() { cuda_graph_fini(); }
 
@@ -195,6 +220,9 @@ class StreamingRRRGenerator {
     template <typename diff_model_tag>
     void batch_dispatcher(rrr_set_t *first, size_t size, diff_model_tag &&m,
                           size_t rank) {
+#if CUDA_PROFILE
+      auto start = std::chrono::high_resolution_clock::now();
+#endif
       auto max_batch_size = conf_.num_active_threads_;
       auto num_batches = (size + max_batch_size - 1) / max_batch_size;
       auto last = first + size;
@@ -205,6 +233,15 @@ class StreamingRRRGenerator {
         batch_d2h(batch_size);
         batch_build(first, batch_size, std::forward<diff_model_tag>(m));
       }
+#if CUDA_PROFILE
+      auto &p(this->prof_bd.back());
+      p.d_ += std::chrono::duration_cast<std::chrono::nanoseconds>(
+          std::chrono::high_resolution_clock::now() - start);
+      p.n_ += size;
+      spdlog::get("console")->info(
+          "> [GPUWorker @{} batch_dispatcher] profile size={} n-sets={} ns={}",
+          (void *)this, this->prof_bd.size(), p.n_, p.d_.count());
+#endif
     }
 
     template <typename diff_model_tag>
@@ -232,19 +269,25 @@ class StreamingRRRGenerator {
     template <typename diff_model_tag>
     void batch_build(rrr_set_t *first, size_t batch_size,
                      diff_model_tag &&model_tag) {
+#if CUDA_PROFILE
+      auto &p(this->prof_bd.back());
+#endif
+
       for (size_t i = 0; i < batch_size; ++i, ++first) {
         auto &rrr_set(*first);
         rrr_set.reserve(conf_.mask_words_);
         auto res_mask = res_mask_ + (i * conf_.mask_words_);
         if (res_mask[0] != G_.num_nodes()) {
           // valid walk
-          for (size_t j = 0; j < conf_.mask_words_ && res_mask[j] != G_.num_nodes();
-               ++j) {
+          for (size_t j = 0;
+               j < conf_.mask_words_ && res_mask[j] != G_.num_nodes(); ++j) {
             rrr_set.push_back(res_mask[j]);
           }
         } else {
-          // invalid walk
-          //++ctx.num_exceedings; TODO
+// invalid walk
+#if CUDA_PROFILE
+          p.num_exceedings_++;
+#endif
           auto root = res_mask[1];
           AddRRRSet(G_, root, rng_, rrr_set,
                     std::forward<diff_model_tag>(model_tag));
@@ -291,13 +334,79 @@ class StreamingRRRGenerator {
     }
   }
 
+#if CUDA_PROFILE
+  template <typename iterator>
+  void print_prof_iter(size_t i, iterator first, iterator last) {
+    auto console = spdlog::get("console");
+    size_t n_idle = 0;
+    for (; first != last; ++first) {
+      auto &profs((*first)->prof_bd);
+      assert(i < profs.size());
+      auto &p(profs.at(i));
+      if (p.n_)
+        console->info(
+            "n-sets={}\tn-exc={}\tns={}\tb={}", p.n_, p.num_exceedings_, p.d_.count(),
+            (float)p.n_ * 1e03 /
+                std::chrono::duration_cast<std::chrono::milliseconds>(p.d_)
+                    .count());
+      else
+        ++n_idle;
+    }
+    if (n_idle) console->info("> {} idle workers", n_idle);
+  }
+#endif
+
   ~StreamingRRRGenerator() {
+#if CUDA_PROFILE
+    auto ms = std::chrono::duration_cast<std::chrono::milliseconds>(prof_bd.d);
+    auto console = spdlog::get("console");
+    console->info("*** BEGIN Streaming Engine profiling");
+    auto first_gpu_worker = workers.begin();
+    std::advance(first_gpu_worker, num_cpu_workers_);
+    for (size_t i = 0; i < prof_bd.prof_bd.size(); ++i) {
+      console->info("+++ BEGIN iter {}", i);
+      console->info("--- CPU workers");
+      print_prof_iter(i, workers.begin(), first_gpu_worker);
+      console->info("--- GPU workers");
+      print_prof_iter(i, first_gpu_worker, workers.end());
+      auto &p(prof_bd.prof_bd[i]);
+      auto ms = std::chrono::duration_cast<std::chrono::milliseconds>(p.d_);
+      console->info("--- overall");
+      console->info("n. sets               = {}", p.n_);
+      console->info("elapsed (ns)          = {}", p.d_.count());
+      console->info("throughput (sets/sec) = {}",
+                    (float)p.n_ * 1e03 / ms.count());
+      console->info("+++ END iter {}", i);
+    }
+    console->info("n. sets               = {}", prof_bd.n);
+    auto n_excs = std::accumulate(
+        workers.begin(), workers.end(), 0, [](size_t acc, const Worker *w) {
+          return std::accumulate(
+              w->prof_bd.begin(), w->prof_bd.end(), acc,
+              [](size_t acc, const typename Worker::iter_profile_t &p) {
+                return acc + p.num_exceedings_;
+              });
+        });
+    console->info("n. exceedings         = {} (/{}={})", n_excs, prof_bd.n,
+                  (float)n_excs / prof_bd.n);
+    console->info("n. iters              = {}", prof_bd.prof_bd.size());
+    console->info("elapsed (ms)          = {}", ms.count());
+    console->info("throughput (sets/sec) = {}",
+                  (float)prof_bd.n * 1e06 / ms.count());
+    console->info("*** END Streaming Engine profiling");
+#endif
+
     for (auto &w : workers) delete w;
     GPUWorker::fini();
   }
 
   template <typename diff_model_tag>
   rrr_sets_t generate(size_t theta, diff_model_tag &&m) {
+#if CUDA_PROFILE
+    auto start = std::chrono::high_resolution_clock::now();
+    for (auto &w : workers) w->begin_prof_iter();
+#endif
+
     rrr_sets_t res(theta);
     auto sets_ptr_ = res.data();
     auto last = sets_ptr_ + theta;
@@ -316,6 +425,14 @@ class StreamingRRRGenerator {
       }
     }
 
+#if CUDA_PROFILE
+    auto d = std::chrono::duration_cast<std::chrono::nanoseconds>(
+        std::chrono::high_resolution_clock::now() - start);
+    prof_bd.prof_bd.emplace_back(theta, d);
+    prof_bd.n += theta;
+    prof_bd.d += std::chrono::duration_cast<std::chrono::microseconds>(d);
+#endif
+
     return res;
   }
 
@@ -323,6 +440,21 @@ class StreamingRRRGenerator {
   size_t num_cpu_workers_, num_gpu_workers_;
   size_t max_batch_size_;  // TODO differentiate small-large batches
   std::vector<Worker *> workers;
+
+#if CUDA_PROFILE
+  struct iter_profile_t {
+    iter_profile_t(size_t n, std::chrono::nanoseconds d) : n_(n), d_(d) {}
+
+    size_t n_{0};
+    std::chrono::nanoseconds d_{0};
+  };
+  struct profile_t {
+    size_t n{0};
+    std::chrono::microseconds d{0};
+    std::vector<iter_profile_t> prof_bd;
+  };
+  profile_t prof_bd;
+#endif
 };
 }  // namespace ripples
 

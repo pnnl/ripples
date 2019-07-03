@@ -19,6 +19,9 @@
 #include "spdlog/sinks/stdout_color_sinks.h"
 #include "spdlog/spdlog.h"
 
+#define CUDA_CHECK 0
+#define CUDA_PROFILE 1
+
 namespace ripples {
 
 //
@@ -94,9 +97,6 @@ cuda_res_t CudaGenerateRRRSets(size_t theta,
 //
 using mask_word_t = typename cuda_GraphTy::vertex_type;
 
-#define CUDA_CHECK 0
-#define CUDA_PROFILE 1
-
 //
 // check utilities
 //
@@ -109,6 +109,7 @@ bool reaches(const graph_t &g, typename graph_t::vertex_type src,
   return false;
 }
 
+#if CUDA_CHECK
 template <typename rrr_t, typename graph_t>
 bool check_lt_from(const rrr_t &r,
                    const typename rrr_t::const_iterator &root_it,
@@ -122,7 +123,6 @@ bool check_lt_from(const rrr_t &r,
   return false;
 }
 
-#if CUDA_CHECK
 template <typename rrr_t, typename graph_t>
 void check_lt(const rrr_t &r, const graph_t &g, size_t id) {
   bool res = false;
@@ -162,32 +162,6 @@ void cuda_ic_kernel(size_t n_blocks, size_t block_size, size_t batch_size,
 void cuda_d2h(mask_word_t *dst, mask_word_t *src, size_t size);
 
 #if CUDA_PROFILE
-template <typename logst_t, typename mt_sample_t>
-void print_profile_breakdown(logst_t &logst, mt_sample_t &mt_sample,
-                             const std::string &label) {
-  if (!mt_sample.empty()) {
-    logst->info("*** tag: {}", label);
-    for (size_t tid = 0; tid < mt_sample.size(); ++tid) {
-      auto &sample(mt_sample[tid]);
-      if (!sample.empty()) {
-        std::sort(sample.begin(), sample.end());
-        auto tot = std::accumulate(
-            sample.begin(), sample.end(), std::chrono::nanoseconds{0},
-            [](std::chrono::nanoseconds acc, std::chrono::nanoseconds x) {
-              return acc + x;
-            });
-        logst->info("[tid={}]\tcnt={}\tmin={}\tmed={}\tmax={}\tavg={}\ttot={}",
-                    tid, sample.size(), sample[0].count(),
-                    sample[sample.size() / 2].count(), sample.back().count(),
-                    (float)tot.count() / sample.size(), tot.count());
-      } else {
-        logst->info("[tid={}] N/A", tid);
-      }
-    }
-  } else
-    logst->info("*** tag: {} N/A", label);
-}
-
 template <typename logst_t, typename sample_t>
 void print_profile_counter(logst_t &logst, sample_t &sample,
                            const std::string &label) {
