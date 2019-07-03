@@ -52,6 +52,7 @@
 #include "trng/uniform_int_dist.hpp"
 
 #include "ripples/generate_rrr_sets.h"
+#include "ripples/imm.h"
 
 namespace ripples {
 
@@ -118,9 +119,6 @@ class StreamingRRRGenerator {
       p.d_ += std::chrono::duration_cast<std::chrono::nanoseconds>(
           std::chrono::high_resolution_clock::now() - start);
       p.n_ += size;
-      spdlog::get("console")->info(
-          "> [CPUWorker @{} batch_dispatcher] profile size={} n={} d={}",
-          (void *)this, this->prof_bd.size(), p.n_, p.d_.count());
 #endif
     }
   };
@@ -238,9 +236,6 @@ class StreamingRRRGenerator {
       p.d_ += std::chrono::duration_cast<std::chrono::nanoseconds>(
           std::chrono::high_resolution_clock::now() - start);
       p.n_ += size;
-      spdlog::get("console")->info(
-          "> [GPUWorker @{} batch_dispatcher] profile size={} n-sets={} ns={}",
-          (void *)this, this->prof_bd.size(), p.n_, p.d_.count());
 #endif
     }
 
