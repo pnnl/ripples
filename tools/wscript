@@ -44,6 +44,9 @@ def build(bld):
     bld(features='cxx cxxprogram', source='imm.cc', target='imm',
         use=tools_deps)
 
+    bld(features='cxx cxxprogram', source='louvain-imm.cc', target='louvain-imm',
+        use=tools_deps)
+
     bld(features='cxx cxxprogram', source='simulator.cc', target='simulator',
         use=tools_deps)
 

@@ -52,6 +52,7 @@
 #include "trng/uniform01_dist.hpp"
 #include "trng/uniform_int_dist.hpp"
 
+#include "spdlog/spdlog.h"
 #include "ripples/find_most_influential.h"
 #include "ripples/generate_rrr_sets.h"
 #include "ripples/tim.h"
@@ -120,6 +121,8 @@ ssize_t ThetaPrime(ssize_t x, double epsilonPrime, double l, size_t k,
 //! \param num_nodes The number of nodes in the input graph.
 inline size_t Theta(double epsilon, double l, size_t k, double LB,
                     size_t num_nodes) {
+  if (LB == 0) return 0;
+
   double term1 = 0.6321205588285577;  // 1 - 1/e
   double alpha = sqrt(l * std::log(num_nodes) + std::log(2));
   double beta = sqrt(term1 * (logBinomial(num_nodes, k) +
@@ -156,6 +159,7 @@ auto Sampling(const GraphTy &G, std::size_t k, double epsilon, double l,
   double epsilonPrime = 1.4142135623730951 * epsilon;
 
   double LB = 0;
+  k = std::min(k, G.num_nodes() / 2);
   std::vector<RRRset<GraphTy>> RR;
 
   auto start = std::chrono::high_resolution_clock::now();
@@ -165,6 +169,7 @@ auto Sampling(const GraphTy &G, std::size_t k, double epsilon, double l,
     ssize_t thetaPrime = ThetaPrime(x, epsilonPrime, l, k, G.num_nodes(),
                                     std::forward<execution_tag>(ex_tag));
 
+    spdlog::get("console")->info("ThetaPrime {}", thetaPrime);
     record.ThetaPrimeDeltas.push_back(thetaPrime - RR.size());
 
     auto timeRRRSets = measure<>::exec_time([&]() {
@@ -200,6 +205,7 @@ auto Sampling(const GraphTy &G, std::size_t k, double epsilon, double l,
   record.ThetaEstimationTotal = end - start;
 
   record.Theta = theta;
+  spdlog::get("console")->info("Theta {}", theta);
 
   record.GenerateRRRSets = measure<>::exec_time([&]() {
     if (theta > RR.size()) {
