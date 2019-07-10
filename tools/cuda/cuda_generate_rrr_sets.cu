@@ -14,7 +14,7 @@
 namespace ripples {
 
 struct cuda_ctx_t {
-  cuda_graph<cuda_GraphTy> *d_graph = nullptr;
+  cuda_device_graph *d_graph = nullptr;
 } cuda_ctx;
 
 size_t cuda_warp_size() {
@@ -23,9 +23,9 @@ size_t cuda_warp_size() {
   return cuda_prop.warpSize;
 }
 
-__global__ void kernel_trng_setup(cuda_PRNGeneratorTy *d_trng_states,
-                                  cuda_PRNGeneratorTy r, size_t num_seqs,
-                                  size_t first_seq, size_t warp_step) {
+__global__ void kernel_lt_trng_setup(cuda_PRNGeneratorTy *d_trng_states,
+                                     cuda_PRNGeneratorTy r, size_t num_seqs,
+                                     size_t first_seq, size_t warp_step) {
   int tid = blockIdx.x * blockDim.x + threadIdx.x;
   if (tid % warp_step == 0) {
     int wid = tid / warp_step;
@@ -35,8 +35,31 @@ __global__ void kernel_trng_setup(cuda_PRNGeneratorTy *d_trng_states,
   }
 }
 
+__global__ void kernel_ic_trng_setup(cuda_PRNGeneratorTy *d_trng_states,
+                                     cuda_PRNGeneratorTy r, size_t num_seqs,
+                                     size_t first_seq,
+                                     size_t num_active_threads) {
+  int tid = blockIdx.x * blockDim.x + threadIdx.x;
+  if (tid < num_active_threads) {
+    d_trng_states[tid] = r;
+    d_trng_states[tid].split(num_seqs, first_seq + tid);
+  }
+}
+
 void cuda_graph_init(const cuda_GraphTy &G) {
   cuda_ctx.d_graph = make_cuda_graph(G);
+}
+
+typename cuda_device_graph::vertex_t *cuda_graph_index() {
+  return cuda_ctx.d_graph->d_index_;
+}
+
+typename cuda_device_graph::vertex_t *cuda_graph_edges() {
+  return cuda_ctx.d_graph->d_edges_;
+}
+
+typename cuda_device_graph::weight_t *cuda_graph_weights() {
+  return cuda_ctx.d_graph->d_weights_;
 }
 
 void cuda_malloc(void **dst, size_t size) {
@@ -49,12 +72,21 @@ void cuda_free(void *ptr) {
   cuda_check(e, __FILE__, __LINE__);
 }
 
-void cuda_rng_setup(cuda_PRNGeneratorTy *d_trng_state,
-                    const cuda_PRNGeneratorTy &r, size_t num_seqs,
-                    size_t first_seq, size_t n_blocks, size_t block_size,
-                    size_t warp_step) {
-  kernel_trng_setup<<<n_blocks, block_size>>>(d_trng_state, r, num_seqs,
-    first_seq, warp_step);
+void cuda_lt_rng_setup(cuda_PRNGeneratorTy *d_trng_state,
+                       const cuda_PRNGeneratorTy &r, size_t num_seqs,
+                       size_t first_seq, size_t n_blocks, size_t block_size,
+                       size_t warp_step) {
+  kernel_lt_trng_setup<<<n_blocks, block_size>>>(d_trng_state, r, num_seqs,
+                                                 first_seq, warp_step);
+  cuda_check(__FILE__, __LINE__);
+}
+
+void cuda_ic_rng_setup(cuda_PRNGeneratorTy *d_trng_state,
+  const cuda_PRNGeneratorTy &r, size_t num_seqs,
+  size_t first_seq, size_t n_blocks, size_t block_size,
+  size_t num_active_threads) {
+  kernel_ic_trng_setup<<<n_blocks, block_size>>>(d_trng_state, r, num_seqs,
+                                                 first_seq, num_active_threads);
   cuda_check(__FILE__, __LINE__);
 }
 
@@ -63,13 +95,15 @@ void cuda_graph_fini() {
   destroy_cuda_graph(cuda_ctx.d_graph);
 }
 
-template <typename HostGraphTy>
-__global__ void kernel_lt_per_thread(
-    size_t bs, typename HostGraphTy::DestinationTy **index, size_t num_nodes,
-    size_t warp_step, cuda_PRNGeneratorTy *d_trng_states,
-    mask_word_t *d_res_masks, size_t num_mask_words) {
-  using destination_type = typename HostGraphTy::DestinationTy;
-  using vertex_type = typename HostGraphTy::vertex_type;
+__global__ void kernel_lt_per_thread(size_t bs,
+                                     typename cuda_device_graph::vertex_t *index,
+                                     typename cuda_device_graph::vertex_t *edges,
+                                     typename cuda_device_graph::weight_t *weights,
+                                     size_t num_nodes, size_t warp_step,
+                                     cuda_PRNGeneratorTy *d_trng_states,
+                                     mask_word_t *d_res_masks,
+                                     size_t num_mask_words) {
+  using vertex_type = typename cuda_device_graph::vertex_t;
 
   int tid = blockIdx.x * blockDim.x + threadIdx.x;
   if (tid % warp_step == 0) {
@@ -90,7 +124,7 @@ __global__ void kernel_lt_per_thread(
       dr_res_mask[res_size++] = src;
 
       float threshold;
-      destination_type *first, *last;
+      vertex_type first, last;
       vertex_type v;
       while (src != num_nodes) {
         // rng
@@ -101,11 +135,11 @@ __global__ void kernel_lt_per_thread(
         last = index[src + 1];
         src = num_nodes;
         for (; first != last; ++first) {
-          threshold -= first->weight;
+          threshold -= weights[first];
           if (threshold > 0) continue;
 
           // found candidate vertex
-          v = first->vertex;
+          v = edges[first];
 
           // insert if not visited
           size_t i = 0;
@@ -141,17 +175,33 @@ void cuda_lt_kernel(size_t n_blocks, size_t block_size, size_t batch_size,
                     size_t num_nodes, size_t warp_step,
                     cuda_PRNGeneratorTy *d_trng_states,
                     mask_word_t *d_res_masks, size_t num_mask_words) {
-  kernel_lt_per_thread<cuda_GraphTy><<<n_blocks, block_size>>>(
-      batch_size, cuda_ctx.d_graph->d_index_, num_nodes, warp_step,
-      d_trng_states, d_res_masks, num_mask_words);
+  kernel_lt_per_thread<<<n_blocks, block_size>>>(
+      batch_size, cuda_ctx.d_graph->d_index_, cuda_ctx.d_graph->d_edges_,
+      cuda_ctx.d_graph->d_weights_, num_nodes, warp_step, d_trng_states,
+      d_res_masks, num_mask_words);
   cuda_check(__FILE__, __LINE__);
 }
 
-void cuda_ic_kernel(size_t n_blocks, size_t block_size, size_t batch_size,
-  size_t num_nodes, size_t warp_step,
-  cuda_PRNGeneratorTy *d_trng_states,
-  mask_word_t *d_res_masks, size_t num_mask_words) {
-    // TODO
+__global__ void kernel_ic(typename cuda_device_graph::vertex_t *index,
+                          typename cuda_device_graph::vertex_t *edges,
+                          typename cuda_device_graph::weight_t *weights,
+                          size_t num_nodes, cuda_PRNGeneratorTy *d_trng_states,
+                          typename cuda_device_graph::vertex_t *d_predecessors) {
+  using vertex_type = typename cuda_device_graph::vertex_t;
+
+  int tid = blockIdx.x * blockDim.x + threadIdx.x;
+  if (tid < num_nodes) {
+    d_predecessors[tid] = num_nodes;
+  }
+}
+
+void cuda_ic_kernel(size_t n_blocks, size_t block_size, size_t num_nodes,
+                    cuda_PRNGeneratorTy *d_trng_states,
+                    typename cuda_device_graph::vertex_t *d_predecessors) {
+  kernel_ic<<<n_blocks, block_size>>>(
+      cuda_ctx.d_graph->d_index_, cuda_ctx.d_graph->d_edges_,
+      cuda_ctx.d_graph->d_weights_, num_nodes, d_trng_states, d_predecessors);
+  cuda_check(__FILE__, __LINE__);
 }
 
 void cuda_d2h(mask_word_t *dst, mask_word_t *src, size_t size) {

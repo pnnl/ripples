@@ -44,10 +44,12 @@ def build(bld):
     if bld.env.ENABLE_CUDA:
         tools_deps += [ 'CUDA', 'CUDART' ]
         bld(features='cxx cxxstlib', source='cuda/cuda_utils.cu', target='cuda_utils', cuda=True, use=tools_deps)
+        bld(features='cxx cxxstlib', source='cuda/cuda_graph.cu', target='cuda_graph', cuda=True, use=tools_deps)
         bld(features='cxx cxxstlib', source='cuda/cuda_generate_rrr_sets.cu', target='cuda_generate_rrr_sets_cu', cuda=True, use=tools_deps)
+        bld(features='cxx cxxstlib', source='cuda/from_nvgraph/bfs.cu', target='bfs', cuda=True, use=tools_deps)
         bld(features='cxx cxxstlib', source='cuda/cuda_generate_rrr_sets.cc', target='cuda_generate_rrr_sets', use=tools_deps)
         bld(features='cxx cxxprogram', source='imm.cc', target='imm',
-            use=tools_deps + ['cuda_generate_rrr_sets','cuda_generate_rrr_sets_cu','cuda_utils'], cuda=True)
+            use=tools_deps + ['cuda_generate_rrr_sets','cuda_generate_rrr_sets_cu','bfs','cuda_graph','cuda_utils'], cuda=True)
     else:
         bld(features='cxx cxxprogram', source='imm.cc', target='imm',
             use=tools_deps)

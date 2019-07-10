@@ -54,21 +54,21 @@
 #include "ripples/generate_rrr_sets.h"
 #include "ripples/imm.h"
 
+#include "ripples/cuda/from_nvgraph/bfs.hxx"
+
 namespace ripples {
 
-template <typename GraphTy, typename PRNGeneratorTy>
+template <typename GraphTy, typename PRNGeneratorTy, typename diff_model_tag>
 class StreamingRRRGenerator {
-  using rrr_set_t = std::vector<typename GraphTy::vertex_type>;
+  using vertex_t = typename GraphTy::vertex_type;
+  using rrr_set_t = std::vector<vertex_t>;
   using rrr_sets_t = std::vector<rrr_set_t>;
 
   class Worker {
    public:
+    Worker(const GraphTy &G) : G_(G) {}
     virtual ~Worker() {}
-
-    virtual void batch(rrr_set_t *first, size_t size,
-                       ripples::linear_threshold_tag &&, size_t rank) = 0;
-    virtual void batch(rrr_set_t *first, size_t size,
-                       ripples::independent_cascade_tag &&, size_t rank) = 0;
+    virtual void batch(rrr_set_t *first, size_t size) = 0;
 
 #if CUDA_PROFILE
     struct iter_profile_t {
@@ -80,39 +80,27 @@ class StreamingRRRGenerator {
 
     void begin_prof_iter() { prof_bd.emplace_back(); }
 #endif
+
+   protected:
+    const GraphTy &G_;
   };
 
   class CPUWorker : public Worker {
    public:
     CPUWorker(const GraphTy &G, const PRNGeneratorTy &rng)
-        : G_(G), rng_(rng), u_(0, G_.num_nodes()) {}
+        : Worker(G), rng_(rng), u_(0, G.num_nodes()) {}
 
    private:
-    const GraphTy &G_;
     PRNGeneratorTy rng_;
     trng::uniform_int_dist u_;
 
-    void batch(rrr_set_t *first, size_t size,
-               ripples::independent_cascade_tag &&m, size_t rank) {
-      batch_dispatcher(first, size,
-                       std::forward<ripples::independent_cascade_tag>(m), rank);
-    }
-
-    void batch(rrr_set_t *first, size_t size, ripples::linear_threshold_tag &&m,
-               size_t rank) {
-      batch_dispatcher(first, size,
-                       std::forward<ripples::linear_threshold_tag>(m), rank);
-    }
-
-    template <typename diff_model_tag>
-    void batch_dispatcher(rrr_set_t *first, size_t size, diff_model_tag &&model,
-                          size_t rank) {
+    void batch(rrr_set_t *first, size_t size) {
 #if CUDA_PROFILE
       auto start = std::chrono::high_resolution_clock::now();
 #endif
       for (auto last = first + size; first != last; ++first) {
-        typename GraphTy::vertex_type root = u_(rng_);
-        AddRRRSet(G_, root, rng_, *first, std::forward<diff_model_tag>(model));
+        vertex_t root = u_(rng_);
+        AddRRRSet(this->G_, root, rng_, *first, diff_model_tag{});
       }
 #if CUDA_PROFILE
       auto &p(this->prof_bd.back());
@@ -123,7 +111,19 @@ class StreamingRRRGenerator {
     }
   };
 
+  // TODO factorize RNGs
   class GPUWorker : public Worker {
+   public:
+    GPUWorker(const GraphTy &G) : Worker(G) {}
+    virtual ~GPUWorker() {}
+
+    static void init(const GraphTy &G) { cuda_graph_init(G); }
+    static void fini() { cuda_graph_fini(); }
+
+    virtual void batch(rrr_set_t *first, size_t size) = 0;
+  };
+
+  class GPUWorkerLT : public GPUWorker {
    public:
     struct config_t {
       config_t() {
@@ -166,58 +166,43 @@ class StreamingRRRGenerator {
       size_t block_size_, warp_step_, num_blocks_;
     };
 
-    GPUWorker(const config_t &conf, const GraphTy &G, const PRNGeneratorTy &rng)
-        : conf_(conf), G_(G), rng_(rng), u_(0, G_.num_nodes()) {
+    GPUWorkerLT(const config_t &conf, const GraphTy &G,
+                const PRNGeneratorTy &rng)
+        : GPUWorker(G), conf_(conf), u_(0, G.num_nodes()) {
       // allocate host/device memory
       auto mask_size = conf.mask_words_ * sizeof(mask_word_t);
-      res_mask_ = (mask_word_t *)malloc(conf_.num_gpu_threads() * mask_size);
-      cuda_malloc((void **)&d_res_mask_, conf_.num_gpu_threads() * mask_size);
+      lt_res_mask_ = (mask_word_t *)malloc(conf_.num_gpu_threads() * mask_size);
+      cuda_malloc((void **)&d_lt_res_mask_,
+                  conf_.num_gpu_threads() * mask_size);
+
+      // allocate device-size RNGs
       cuda_malloc((void **)&d_trng_state_,
                   conf_.num_gpu_threads() * sizeof(PRNGeneratorTy));
     }
 
-    ~GPUWorker() {
+    ~GPUWorkerLT() {
       // free host/device memory
-      free(res_mask_);
-      cuda_free(d_res_mask_);
+      free(lt_res_mask_);
+      cuda_free(d_lt_res_mask_);
       cuda_free(d_trng_state_);
     }
 
     void rng_setup(const PRNGeneratorTy &master_rng, size_t num_seqs,
                    size_t first_seq) {
-      cuda_rng_setup(d_trng_state_, master_rng, num_seqs, first_seq,
-                     conf_.num_blocks_, conf_.block_size_, conf_.warp_step_);
+      cuda_lt_rng_setup(d_trng_state_, master_rng, num_seqs, first_seq,
+                        conf_.num_blocks_, conf_.block_size_, conf_.warp_step_);
     }
-
-    static void init(const GraphTy &G) { cuda_graph_init(G); }
-
-    static void fini() { cuda_graph_fini(); }
 
    private:
     config_t conf_;
-    const GraphTy &G_;
     PRNGeneratorTy rng_;
     trng::uniform_int_dist u_;
 
     // memory buffers
-    mask_word_t *res_mask_, *d_res_mask_;
+    mask_word_t *lt_res_mask_, *d_lt_res_mask_;
     PRNGeneratorTy *d_trng_state_;
 
-    void batch(rrr_set_t *first, size_t size,
-               ripples::independent_cascade_tag &&m, size_t rank) {
-      batch_dispatcher(first, size,
-                       std::forward<ripples::independent_cascade_tag>(m), rank);
-    }
-
-    void batch(rrr_set_t *first, size_t size, ripples::linear_threshold_tag &&m,
-               size_t rank) {
-      batch_dispatcher(first, size,
-                       std::forward<ripples::linear_threshold_tag>(m), rank);
-    }
-
-    template <typename diff_model_tag>
-    void batch_dispatcher(rrr_set_t *first, size_t size, diff_model_tag &&m,
-                          size_t rank) {
+    void batch(rrr_set_t *first, size_t size) {
 #if CUDA_PROFILE
       auto start = std::chrono::high_resolution_clock::now();
 #endif
@@ -227,9 +212,12 @@ class StreamingRRRGenerator {
       for (size_t bi = 0; bi < num_batches; ++bi, first += max_batch_size) {
         auto batch_offset = bi * max_batch_size;
         auto batch_size = std::min(size - batch_offset, max_batch_size);
-        batch_kernel(batch_size, std::forward<diff_model_tag>(m));
-        batch_d2h(batch_size);
-        batch_build(first, batch_size, std::forward<diff_model_tag>(m));
+        cuda_lt_kernel(conf_.num_blocks_, conf_.block_size_, batch_size,
+                       this->G_.num_nodes(), conf_.warp_step_, d_trng_state_,
+                       d_lt_res_mask_, conf_.mask_words_);
+        cuda_d2h(lt_res_mask_, d_lt_res_mask_,
+                 batch_size * conf_.mask_words_ * sizeof(mask_word_t));
+        batch_lt_build(first, batch_size);
       }
 #if CUDA_PROFILE
       auto &p(this->prof_bd.back());
@@ -239,31 +227,7 @@ class StreamingRRRGenerator {
 #endif
     }
 
-    template <typename diff_model_tag>
-    void batch_kernel(size_t batch_size, diff_model_tag &&) {
-      if (std::is_same<diff_model_tag, ripples::linear_threshold_tag>::value) {
-        cuda_lt_kernel(conf_.num_blocks_, conf_.block_size_, batch_size,
-                       G_.num_nodes(), conf_.warp_step_, d_trng_state_,
-                       d_res_mask_, conf_.mask_words_);
-      } else if (std::is_same<diff_model_tag,
-                              ripples::independent_cascade_tag>::value) {
-        cuda_ic_kernel(conf_.num_blocks_, conf_.block_size_, batch_size,
-                       G_.num_nodes(), conf_.warp_step_, d_trng_state_,
-                       d_res_mask_, conf_.mask_words_);
-      } else {
-        spdlog::error("invalid diffusion model");
-        exit(1);
-      }
-    }
-
-    void batch_d2h(size_t batch_size) {
-      cuda_d2h(res_mask_, d_res_mask_,
-               batch_size * conf_.mask_words_ * sizeof(mask_word_t));
-    }
-
-    template <typename diff_model_tag>
-    void batch_build(rrr_set_t *first, size_t batch_size,
-                     diff_model_tag &&model_tag) {
+    void batch_lt_build(rrr_set_t *first, size_t batch_size) {
 #if CUDA_PROFILE
       auto &p(this->prof_bd.back());
 #endif
@@ -271,11 +235,12 @@ class StreamingRRRGenerator {
       for (size_t i = 0; i < batch_size; ++i, ++first) {
         auto &rrr_set(*first);
         rrr_set.reserve(conf_.mask_words_);
-        auto res_mask = res_mask_ + (i * conf_.mask_words_);
-        if (res_mask[0] != G_.num_nodes()) {
+        auto res_mask = lt_res_mask_ + (i * conf_.mask_words_);
+        if (res_mask[0] != this->G_.num_nodes()) {
           // valid walk
           for (size_t j = 0;
-               j < conf_.mask_words_ && res_mask[j] != G_.num_nodes(); ++j) {
+               j < conf_.mask_words_ && res_mask[j] != this->G_.num_nodes();
+               ++j) {
             rrr_set.push_back(res_mask[j]);
           }
         } else {
@@ -284,8 +249,8 @@ class StreamingRRRGenerator {
           p.num_exceedings_++;
 #endif
           auto root = res_mask[1];
-          AddRRRSet(G_, root, rng_, rrr_set,
-                    std::forward<diff_model_tag>(model_tag));
+          AddRRRSet(this->G_, root, rng_, rrr_set,
+                    ripples::linear_threshold_tag{});
         }
 
         std::stable_sort(rrr_set.begin(), rrr_set.end());
@@ -295,7 +260,114 @@ class StreamingRRRGenerator {
 #endif
       }
     }
-  };
+  };  // GPUWorkerLT
+
+  class GPUWorkerIC : public GPUWorker {
+   public:
+    struct config_t {
+      config_t(size_t num_nodes) : num_nodes_(num_nodes) {
+        auto CFG = configuration();
+
+        // configuration parameters
+        num_warps_per_block_ = CFG.cuda_block_density;
+
+        // number of (active) blocks
+        block_size_ = cuda_warp_size() * num_warps_per_block_;
+        num_blocks_ = (num_nodes_ + block_size_ - 1) / block_size_;
+      }
+
+      size_t num_gpu_threads() const { return num_nodes_; }
+
+      // configuration parameters
+      size_t num_nodes_;
+      size_t num_warps_per_block_;  // block density: 1 to num_active_threads_ /
+                                    // num_active_threads_per_warp_
+
+      // inferred configuration
+      size_t block_size_, num_blocks_;
+    };
+
+    GPUWorkerIC(const config_t &conf, const GraphTy &G,
+                const PRNGeneratorTy &rng)
+        : GPUWorker(G),
+          conf_(conf),
+          u_(0, G.num_nodes()),
+          // TODO stream
+          solver(G.num_nodes(), G.num_edges(), cuda_graph_index(),
+                 cuda_graph_edges(), true, TRAVERSAL_DEFAULT_ALPHA,
+                 TRAVERSAL_DEFAULT_BETA) {
+      // allocate host/device memory
+      ic_predecessors_ = (int *)malloc(
+          G.num_nodes() * sizeof(typename cuda_device_graph::vertex_t));
+      cudaMalloc((void **)&d_ic_predecessors_,
+                 G.num_nodes() * sizeof(typename cuda_device_graph::vertex_t));
+
+      // allocate device-size RNGs
+      cuda_malloc((void **)&d_trng_state_,
+                  conf_.num_gpu_threads() * sizeof(PRNGeneratorTy));
+
+      solver.configure(nullptr, d_ic_predecessors_, nullptr);
+    }
+
+    ~GPUWorkerIC() {
+      // free host/device memory
+      free(ic_predecessors_);
+      cudaFree(d_ic_predecessors_);
+      cuda_free(d_trng_state_);
+    }
+
+    void rng_setup(const PRNGeneratorTy &master_rng, size_t num_seqs,
+                   size_t first_seq) {
+      cuda_ic_rng_setup(d_trng_state_, master_rng, num_seqs, first_seq,
+                        conf_.num_blocks_, conf_.block_size_,
+                        this->G_.num_nodes());
+    }
+
+   private:
+    config_t conf_;
+    PRNGeneratorTy rng_;
+    trng::uniform_int_dist u_;
+
+    // nvgraph machinery
+    nvgraph::Bfs<int> solver;
+
+    // memory buffers
+    typename cuda_device_graph::vertex_t *ic_predecessors_, *d_ic_predecessors_;
+    PRNGeneratorTy *d_trng_state_;
+
+    void batch(rrr_set_t *first, size_t size) {
+#if CUDA_PROFILE
+      auto start = std::chrono::high_resolution_clock::now();
+#endif
+      for (size_t wi = 0; wi < size; ++wi) {
+#if 0
+        cuda_ic_kernel(conf_.num_blocks_, conf_.block_size_, this->G_.num_nodes(),
+                       d_trng_state_, d_ic_predecessors_);
+        cuda_d2h(ic_predecessors_, d_ic_predecessors_,
+                 this->G_.num_nodes() * sizeof(vertex_t));
+#else
+        solver.traverse((int)u_(rng_));
+
+        cuda_d2h(ic_predecessors_, d_ic_predecessors_,
+                 this->G_.num_nodes() *
+                     sizeof(typename cuda_device_graph::vertex_t));
+#endif
+        ic_build(first++);
+      }
+#if CUDA_PROFILE
+      auto &p(this->prof_bd.back());
+      p.d_ += std::chrono::duration_cast<std::chrono::nanoseconds>(
+          std::chrono::high_resolution_clock::now() - start);
+      p.n_ += size;
+#endif
+    }
+
+    void ic_build(rrr_set_t *dst) {
+      auto &rrr_set(*dst);
+      for (vertex_t i = 0; i < this->G_.num_nodes(); ++i)
+        if (ic_predecessors_[i] != -1) rrr_set.push_back(i);
+    }
+  };  // GPUWorkerIC
 
  public:
   StreamingRRRGenerator(const GraphTy &G, const PRNGeneratorTy &master_rng,
@@ -304,29 +376,56 @@ class StreamingRRRGenerator {
     // init GPU
     GPUWorker::init(G);
 
-    // configuration
-    typename GPUWorker::config_t gpu_conf;
-    max_batch_size_ = 32 * gpu_conf.num_gpu_threads();
+    // TODO factorize
+    if (std::is_same<diff_model_tag, ripples::independent_cascade_tag>::value) {
+      typename GPUWorkerIC::config_t gpu_conf(G.num_nodes());
+      max_batch_size_ = 32;
 
-    // RNG sequences
-    auto num_rng_sequences =
-        num_cpu_workers + num_gpu_workers * (gpu_conf.num_gpu_threads() + 1);
-    auto gpu_seq_offset = num_cpu_workers + num_gpu_workers;
+      auto num_rng_sequences =
+          num_cpu_workers + num_gpu_workers * (gpu_conf.num_gpu_threads() + 1);
+      auto gpu_seq_offset = num_cpu_workers + num_gpu_workers;
 
-    for (size_t i = 0; i < num_cpu_workers_; ++i) {
-      auto rng = master_rng;
-      rng.split(num_rng_sequences, i);
-      workers.push_back(new CPUWorker(G, rng));
-    }
+      // CPU workers
+      for (size_t i = 0; i < num_cpu_workers_; ++i) {
+        auto rng = master_rng;
+        rng.split(num_rng_sequences, i);
+        workers.push_back(new CPUWorker(G, rng));
+      }
 
-    for (size_t i = 0; i < num_gpu_workers_; ++i) {
-      auto rng = master_rng;
-      rng.split(num_rng_sequences, num_cpu_workers + i);
-      auto w = new GPUWorker(gpu_conf, G, rng);
-      w->rng_setup(master_rng, num_rng_sequences,
-                   gpu_seq_offset + i * gpu_conf.num_gpu_threads());
-      workers.push_back(w);
-    }
+      for (size_t i = 0; i < num_gpu_workers_; ++i) {
+        auto rng = master_rng;
+        rng.split(num_rng_sequences, num_cpu_workers + i);
+        auto w = new GPUWorkerIC(gpu_conf, G, rng);
+        w->rng_setup(master_rng, num_rng_sequences,
+                     gpu_seq_offset + i * gpu_conf.num_gpu_threads());
+        workers.push_back(w);
+      }
+    } else if (std::is_same<diff_model_tag,
+                            ripples::linear_threshold_tag>::value) {
+      typename GPUWorkerLT::config_t gpu_conf;
+      max_batch_size_ = 32 * gpu_conf.num_gpu_threads();
+
+      auto num_rng_sequences =
+          num_cpu_workers + num_gpu_workers * (gpu_conf.num_gpu_threads() + 1);
+      auto gpu_seq_offset = num_cpu_workers + num_gpu_workers;
+
+      // CPU workers
+      for (size_t i = 0; i < num_cpu_workers_; ++i) {
+        auto rng = master_rng;
+        rng.split(num_rng_sequences, i);
+        workers.push_back(new CPUWorker(G, rng));
+      }
+
+      for (size_t i = 0; i < num_gpu_workers_; ++i) {
+        auto rng = master_rng;
+        rng.split(num_rng_sequences, num_cpu_workers + i);
+        auto w = new GPUWorkerLT(gpu_conf, G, rng);
+        w->rng_setup(master_rng, num_rng_sequences,
+                     gpu_seq_offset + i * gpu_conf.num_gpu_threads());
+        workers.push_back(w);
+      }
+    } else
+      assert(false);
   }
 
 #if CUDA_PROFILE
@@ -340,7 +439,8 @@ class StreamingRRRGenerator {
       auto &p(profs.at(i));
       if (p.n_)
         console->info(
-            "n-sets={}\tn-exc={}\tns={}\tb={}", p.n_, p.num_exceedings_, p.d_.count(),
+            "n-sets={}\tn-exc={}\tns={}\tb={}", p.n_, p.num_exceedings_,
+            p.d_.count(),
             (float)p.n_ * 1e03 /
                 std::chrono::duration_cast<std::chrono::milliseconds>(p.d_)
                     .count());
@@ -395,8 +495,7 @@ class StreamingRRRGenerator {
     GPUWorker::fini();
   }
 
-  template <typename diff_model_tag>
-  rrr_sets_t generate(size_t theta, diff_model_tag &&m) {
+  rrr_sets_t generate(size_t theta) {
 #if CUDA_PROFILE
     auto start = std::chrono::high_resolution_clock::now();
     for (auto &w : workers) w->begin_prof_iter();
@@ -415,8 +514,7 @@ class StreamingRRRGenerator {
       for (size_t bi = 0; bi < num_batches; ++bi) {
         auto batch_offset = bi * max_batch_size_;
         auto batch_size = std::min(theta - batch_offset, max_batch_size_);
-        workers[rank]->batch(sets_ptr_ + batch_offset, batch_size,
-                             std::forward<diff_model_tag>(m), rank);
+        workers[rank]->batch(sets_ptr_ + batch_offset, batch_size);
       }
     }
 
@@ -433,7 +531,7 @@ class StreamingRRRGenerator {
 
  private:
   size_t num_cpu_workers_, num_gpu_workers_;
-  size_t max_batch_size_;  // TODO differentiate small-large batches
+  size_t max_batch_size_;
   std::vector<Worker *> workers;
 
 #if CUDA_PROFILE

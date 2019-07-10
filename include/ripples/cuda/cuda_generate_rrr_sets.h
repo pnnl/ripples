@@ -41,6 +41,13 @@ using cuda_res_t = std::vector<std::vector<typename cuda_GraphTy::vertex_type>>;
 using cuda_PRNGeneratorTy = trng::lcg64;
 using cuda_PRNGeneratorsTy = std::vector<cuda_PRNGeneratorTy>;
 
+struct cuda_device_graph {
+  using vertex_t = int; // TODO vertex type hard-coded in nvgraph
+  using weight_t = typename cuda_GraphTy::edge_weight_type;
+  vertex_t *d_index_ = nullptr, *d_edges_ = nullptr;
+  weight_t *d_weights_ = nullptr;
+};
+
 constexpr size_t CUDA_WALK_SIZE = 8;
 
 //! \brief Initialize CUDA execution context for LT model.
@@ -57,109 +64,55 @@ void cuda_init(const cuda_GraphTy &G, const cuda_PRNGeneratorTy &,
 void cuda_init(const cuda_GraphTy &G, const cuda_PRNGeneratorTy &,
                ripples::independent_cascade_tag &&model_tag);
 
+
+typename cuda_device_graph::vertex_t *cuda_graph_index();
+typename cuda_device_graph::vertex_t *cuda_graph_edges();
+typename cuda_device_graph::weight_t *cuda_graph_weights();
+
 //! \brief Returns the GPU warp size.
 //!
 //! \return The GPU warp size.
 size_t cuda_warp_size();
 
-//! \brief Finalize CUDA execution context for LT model.
-//!
-//! \param model_tag The diffusion model tag.
-void cuda_fini(ripples::linear_threshold_tag &&model_tag);
+//! \brief Finalize CUDA execution context.
+void cuda_fini();
 
-//! \brief Finalize CUDA execution context for IC model.
-//!
-//! \param model_tag The diffusion model tag.
-void cuda_fini(ripples::independent_cascade_tag &&model_tag);
-
-//! \brief Generate Random Reverse Reachability Sets according to Linear
-//! Threshold model - CUDA.
+//! \brief Generate Random Reverse Reachability Sets with CUDA.
 //!
 //! \param theta The number of RRR sets to be generated.
-//! \param model_tag The diffusion model tag.
 //!
 //! \return A list of theta Random Reverse Rachability Sets.
-cuda_res_t CudaGenerateRRRSets(size_t theta,
-                               ripples::linear_threshold_tag &&model_tag);
-
-//! \brief Generate Random Reverse Reachability Sets according to Independent
-//! Cascade model - CUDA.
-//!
-//! \param theta The number of RRR sets to be generated.
-//! \param model_tag The diffusion model tag.
-//!
-//! \return A list of theta Random Reverse Rachability Sets.
-cuda_res_t CudaGenerateRRRSets(size_t theta,
-                               ripples::independent_cascade_tag &&model_tag);
+cuda_res_t CudaGenerateRRRSets(size_t theta);
 
 //
 // host-device API
 //
-using mask_word_t = typename cuda_GraphTy::vertex_type;
-
-//
-// check utilities
-//
-template <typename graph_t>
-bool reaches(const graph_t &g, typename graph_t::vertex_type src,
-             typename graph_t::vertex_type dst) {
-  assert(src != dst);
-  for (auto &n : g.neighbors(src))
-    if (n.vertex == dst) return true;
-  return false;
-}
-
-#if CUDA_CHECK
-template <typename rrr_t, typename graph_t>
-bool check_lt_from(const rrr_t &r,
-                   const typename rrr_t::const_iterator &root_it,
-                   const graph_t &g) {
-  if (r.size() == 1) return root_it == r.begin();
-  auto wr = r;
-  auto root = *root_it;
-  wr.erase(wr.begin() + std::distance(r.begin(), root_it));
-  for (auto it = wr.begin(); it != wr.end(); ++it)
-    if (reaches(g, root, *it) && check_lt_from(wr, it, g)) return true;
-  return false;
-}
-
-template <typename rrr_t, typename graph_t>
-void check_lt(const rrr_t &r, const graph_t &g, size_t id) {
-  bool res = false;
-  for (auto it = r.begin(); it != r.end(); ++it) {
-    if (check_lt_from(r, it, g)) {
-      res = true;
-      break;
-    }
-  }
-
-  if (!res) {
-    spdlog::error("check_lt FAILED\n");
-    exit(1);
-  }
-}
-#else
-template <typename... Args>
-void check_lt(Args &&...) {}
-#endif
+using mask_word_t = typename cuda_device_graph::vertex_t;
 
 void cuda_graph_init(const cuda_GraphTy &G);
+void cuda_graph_fini();
+
 void cuda_malloc(void **dst, size_t size);
 void cuda_free(void *ptr);
-void cuda_rng_setup(cuda_PRNGeneratorTy *d_trng_state,
-                    const cuda_PRNGeneratorTy &r, size_t num_seqs,
-                    size_t first_seq, size_t n_blocks, size_t block_size,
-                    size_t warp_step);
-void cuda_graph_fini();
+void cuda_d2h(mask_word_t *dst, mask_word_t *src, size_t size);
+
+void cuda_lt_rng_setup(cuda_PRNGeneratorTy *d_trng_state,
+                       const cuda_PRNGeneratorTy &r, size_t num_seqs,
+                       size_t first_seq, size_t n_blocks, size_t block_size,
+                       size_t warp_step);
+
+void cuda_ic_rng_setup(cuda_PRNGeneratorTy *d_trng_state,
+                       const cuda_PRNGeneratorTy &r, size_t num_seqs,
+                       size_t first_seq, size_t n_blocks, size_t block_size,
+                       size_t num_active_threads);
+
 void cuda_lt_kernel(size_t n_blocks, size_t block_size, size_t batch_size,
                     size_t num_nodes, size_t warp_step,
                     cuda_PRNGeneratorTy *d_trng_states,
                     mask_word_t *d_res_masks, size_t num_mask_words);
-void cuda_ic_kernel(size_t n_blocks, size_t block_size, size_t batch_size,
-                    size_t num_nodes, size_t warp_step,
+void cuda_ic_kernel(size_t n_blocks, size_t block_size, size_t num_nodes,
                     cuda_PRNGeneratorTy *d_trng_states,
-                    mask_word_t *d_res_masks, size_t num_mask_words);
-void cuda_d2h(mask_word_t *dst, mask_word_t *src, size_t size);
+                    typename cuda_device_graph::vertex_t *d_predecessors);
 
 #if CUDA_PROFILE
 template <typename logst_t, typename sample_t>

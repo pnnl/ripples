@@ -208,9 +208,9 @@ std::vector<RRRset<GraphTy>> GenerateRRRSets(GraphTy &G, size_t theta,
 template <typename GraphTy, typename PRNGeneratorTy, typename diff_model_tag>
 std::vector<RRRset<GraphTy>> GenerateRRRSets(GraphTy &G, size_t theta,
                                              PRNGeneratorTy &,
-                                             diff_model_tag &&model_tag,
-                                             cuda_parallel_tag &&ex_tag) {
-  return CudaGenerateRRRSets(theta, std::forward<diff_model_tag>(model_tag));
+                                             diff_model_tag &&,
+                                             cuda_parallel_tag &&) {
+  return CudaGenerateRRRSets(theta);
 }
 
 }  // namespace ripples

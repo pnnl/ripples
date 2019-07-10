@@ -416,6 +416,14 @@ class Graph {
     return G;
   }
 
+DestinationTy **csr_index() const {
+   return index;
+ }
+
+DestinationTy *csr_edges() const {
+   return edges;
+ }
+
  private:
   static constexpr bool isForward =
       std::is_same<DirectionPolicy, ForwardDirection<VertexTy>>::value;
