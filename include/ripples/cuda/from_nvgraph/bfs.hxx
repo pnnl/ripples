@@ -14,167 +14,148 @@
  * limitations under the License.
  */
 
-
-
 #pragma once
 
-#include <climits> 
+#include <climits>
 
 #include <cuda_runtime.h>
 
 #include "ripples/graph.h"
 
-//Used in nvgraph/nvgraph.h
+// Used in nvgraph/nvgraph.h
 
 #define TRAVERSAL_DEFAULT_ALPHA 15
 
 #define TRAVERSAL_DEFAULT_BETA 18
 
-
-
 #include "nvgraph_error.hxx"
-
-
 
 namespace nvgraph
 
 {
 
-	template <typename IndexType>
+template <typename IndexType>
 
-		class Bfs 
+class Bfs
 
-		{
+{
+ private:
+  IndexType n, nnz;
 
-			private:
+  IndexType *row_offsets;
 
-				IndexType n, nnz;
+  IndexType *col_indices;
 
-				IndexType* row_offsets;
+  bool directed;
+  bool deterministic;
 
-				IndexType* col_indices;
+  // edgemask, distances, predecessors are set/read by users - using Vectors
 
-			
+  bool useEdgeMask;
 
-				bool directed;
-				bool deterministic;
+  bool computeDistances;
 
+  bool computePredecessors;
 
-				// edgemask, distances, predecessors are set/read by users - using Vectors
+  IndexType *distances;
 
-				bool useEdgeMask;
+  IndexType *predecessors;
 
-				bool computeDistances;
+  int *edge_mask;
 
-				bool computePredecessors; 
+  // Working data
 
-				
+  // For complete description of each, go to bfs.cu
 
-				IndexType *distances;
+  IndexType nisolated;
 
-				IndexType *predecessors;
+  IndexType *frontier, *new_frontier;
 
-				int *edge_mask;
+  IndexType *original_frontier;
 
-				
+  IndexType vertices_bmap_size;
 
-				//Working data
+  int *visited_bmap, *isolated_bmap;
 
-				//For complete description of each, go to bfs.cu
+  IndexType *vertex_degree;
 
+  IndexType *buffer_np1_1, *buffer_np1_2;
 
+  IndexType *frontier_vertex_degree;
 
-				IndexType nisolated;	
+  IndexType *exclusive_sum_frontier_vertex_degree;
 
-				IndexType *frontier, *new_frontier;	
+  IndexType *unvisited_queue;
 
-				IndexType * original_frontier;
+  IndexType *left_unvisited_queue;
 
-				IndexType vertices_bmap_size;
+  IndexType *exclusive_sum_frontier_vertex_buckets_offsets;
 
-				int *visited_bmap, *isolated_bmap;
+  IndexType *d_counters_pad;
 
-				IndexType *vertex_degree;
+  IndexType *d_new_frontier_cnt;
 
-				IndexType *buffer_np1_1, *buffer_np1_2;
+  IndexType *d_mu;
 
-				IndexType *frontier_vertex_degree;
+  IndexType *d_unvisited_cnt;
 
-				IndexType *exclusive_sum_frontier_vertex_degree;
+  IndexType *d_left_unvisited_cnt;
 
-				IndexType *unvisited_queue;
+  void *d_cub_exclusive_sum_storage;
 
-				IndexType *left_unvisited_queue; 
+  size_t cub_exclusive_sum_storage_bytes;
 
-				IndexType *exclusive_sum_frontier_vertex_buckets_offsets;
+  // Parameters for direction optimizing
 
+  IndexType alpha, beta;
 
+  cudaStream_t stream;
 
-				IndexType *d_counters_pad;
+  // resets pointers defined by d_counters_pad (see implem)
 
-				IndexType *d_new_frontier_cnt;
+  void resetDevicePointers();
 
-				IndexType *d_mu;
+  NVGRAPH_ERROR setup();
 
-				IndexType *d_unvisited_cnt;
+  void clean();
 
-				IndexType *d_left_unvisited_cnt;	
+#if CUDA_CHECK
+  const IndexType cached_max_num_blocks_;
+#endif
 
-			
+ public:
+  virtual ~Bfs(void) { clean(); };
 
-				void *d_cub_exclusive_sum_storage;
-
-				size_t cub_exclusive_sum_storage_bytes;
-
-	
-
-				//Parameters for direction optimizing
-
-				IndexType alpha, beta; 
-
-			
-
-				cudaStream_t stream;
-
-				//resets pointers defined by d_counters_pad (see implem)
-
-				void resetDevicePointers();
-
-				NVGRAPH_ERROR setup();
-
-				void clean();
-
-			public:
-
-				virtual ~Bfs(void) {
-
-					clean();
-
-				};
-
-
-
-				Bfs(IndexType _n, IndexType _nnz, IndexType *_row_offsets, IndexType *_col_indices, bool _directed, IndexType _alpha, IndexType _beta, cudaStream_t _stream = 0) : n(_n), nnz(_nnz), row_offsets(_row_offsets), col_indices(_col_indices), directed(_directed), alpha(_alpha), beta(_beta), stream(_stream) {
-
-					setup();
-
-				}
-
-
-
-				NVGRAPH_ERROR configure(IndexType *distances, IndexType *predecessors, int *edge_mask);
-
-				NVGRAPH_ERROR traverse(IndexType source_vertex);
-
-				//Used only for benchmarks
-
-				NVGRAPH_ERROR traverse(IndexType *source_vertices, IndexType nsources);
-
-		};
-
-
-
-} // end namespace nvgraph
-
-
-
+  Bfs(IndexType _n, IndexType _nnz, IndexType *_row_offsets,
+      IndexType *_col_indices, bool _directed, IndexType _alpha,
+      IndexType _beta, cudaStream_t _stream = 0)
+      : n(_n),
+        nnz(_nnz),
+        row_offsets(_row_offsets),
+        col_indices(_col_indices),
+        directed(_directed),
+        alpha(_alpha),
+        beta(_beta),
+        stream(_stream)
+#if CUDA_CHECK
+        ,
+        cached_max_num_blocks_(traverse_max_num_blocks(nnz))
+#endif
+  {
+    setup();
+  }
+
+  NVGRAPH_ERROR
+  configure(IndexType *distances, IndexType *predecessors, int *edge_mask);
+
+  NVGRAPH_ERROR traverse(IndexType source_vertex);
+
+  // Used only for benchmarks
+
+  NVGRAPH_ERROR traverse(IndexType *source_vertices, IndexType nsources);
+
+  static IndexType traverse_block_size();
+  static IndexType traverse_max_num_blocks(IndexType n_edges);
+};
+
+}  // end namespace nvgraph

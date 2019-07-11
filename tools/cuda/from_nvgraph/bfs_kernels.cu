@@ -1293,6 +1293,40 @@ namespace bfs_kernels {
   }
 
   template<typename IndexType>
+  IndexType frontier_expand_block_size() {
+    return TOP_DOWN_EXPAND_DIMX;
+  }
+
+  template <typename IndexType>
+  IndexType frontier_expand_max_num_blocks(IndexType n_edges) {
+    IndexType res = 0;
+#if CUDA_CHECK
+    IndexType max_arg = 0;
+#endif
+    constexpr IndexType block_size = TOP_DOWN_EXPAND_DIMX;
+    for (IndexType n = 1; n <= n_edges; ++n) {
+      IndexType max_items_per_thread =
+          (n + MAXBLOCKS * block_size - 1) / (MAXBLOCKS * block_size);
+      auto up = std::min((n + max_items_per_thread * block_size - 1) /
+                             (max_items_per_thread * block_size),
+                         (IndexType)MAXBLOCKS);
+      if (up > res) {
+#if CUDA_CHECK
+        max_arg = n;
+#endif
+        res = up;
+      }
+    }
+#if CUDA_CHECK
+    printf(
+        "*** DBG *** [frontier_expand_max_num_blocks] "
+        "max=%d\targ=%d\t(n-edges=%d)\n",
+        res, max_arg, n_edges);
+#endif
+    return res;
+  }
+
+  template<typename IndexType>
   void frontier_expand(const IndexType *row_ptr,
                 const IndexType *col_ind,
                 const IndexType *frontier,

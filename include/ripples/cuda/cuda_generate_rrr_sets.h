@@ -19,7 +19,7 @@
 #include "spdlog/sinks/stdout_color_sinks.h"
 #include "spdlog/spdlog.h"
 
-#define CUDA_CHECK 0
+#define CUDA_CHECK 1
 #define CUDA_PROFILE 1
 
 namespace ripples {
