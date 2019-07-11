@@ -886,7 +886,7 @@ namespace bfs_kernels {
   // We add it to the new frontier
   //
 
-  template<typename IndexType>
+  template<typename IndexType, typename PRNGeneratorTy>
   __global__ void topdown_expand_kernel(  const IndexType *row_ptr,
                             const IndexType *col_ind,
                             const IndexType *frontier,
@@ -903,7 +903,8 @@ namespace bfs_kernels {
                             IndexType *predecessors,
                             const int *edge_mask,
                             const int *isolated_bmap,
-                            bool directed) {
+                            bool directed,
+                            PRNGeneratorTy *d_trng_state) {
     //BlockScan
     typedef cub::BlockScan<IndexType, TOP_DOWN_EXPAND_DIMX> BlockScan;
     __shared__ typename BlockScan::TempStorage scan_storage;
@@ -925,6 +926,10 @@ namespace bfs_kernels {
     __shared__ IndexType shared_local_new_frontier_predecessors[TOP_DOWN_BATCH_SIZE
         * TOP_DOWN_EXPAND_DIMX];
     __shared__ IndexType block_n_frontier_candidates;
+
+    // cache rng state and create the uniform distribution
+    auto &rng(d_trng_state[blockDim.x * blockIdx.x + threadIdx.x]);
+    trng::uniform01_dist<float> u;
 
     IndexType block_offset = (blockDim.x * blockIdx.x) * max_items_per_thread;
     IndexType n_items_per_thread_left = (totaldegree - block_offset + TOP_DOWN_EXPAND_DIMX - 1)
@@ -1126,6 +1131,10 @@ namespace bfs_kernels {
 
             if (is_visited)
               vec_frontier_candidate[iv] = -1;
+            else
+              // TODO
+              if(u(rng) > 0.5f)
+                vec_frontier_candidate[iv] = -1;
           }
 
           if (directed) {
@@ -1326,7 +1335,7 @@ namespace bfs_kernels {
     return res;
   }
 
-  template<typename IndexType>
+  template<typename IndexType, typename PRNGeneratorTy>
   void frontier_expand(const IndexType *row_ptr,
                 const IndexType *col_ind,
                 const IndexType *frontier,
@@ -1344,7 +1353,8 @@ namespace bfs_kernels {
                 const int *isolated_bmap,
                 bool directed,
                 cudaStream_t m_stream,
-                bool deterministic) {
+                bool deterministic,
+                PRNGeneratorTy *d_trng_state) {
     if (!totaldegree)
       return;
 
@@ -1375,7 +1385,8 @@ namespace bfs_kernels {
                                         predecessors,
                                         edge_mask,
                                         isolated_bmap,
-                                        directed);
+                                        directed,
+                                        d_trng_state);
     cudaCheckError()
     ;
   }

@@ -33,8 +33,8 @@ namespace nvgraph {
     TOPDOWN, BOTTOMUP
   };
 
-  template<typename IndexType>
-  NVGRAPH_ERROR Bfs<IndexType>::setup() {
+  template<typename IndexType, typename PRNGeneratorTy>
+  NVGRAPH_ERROR Bfs<IndexType, PRNGeneratorTy>::setup() {
 
     // Determinism flag, false by default
     deterministic = false;
@@ -129,8 +129,8 @@ namespace nvgraph {
     return NVGRAPH_OK;
   }
 
-  template<typename IndexType>
-  NVGRAPH_ERROR Bfs<IndexType>::configure(  IndexType *_distances,
+  template<typename IndexType, typename PRNGeneratorTy>
+  NVGRAPH_ERROR Bfs<IndexType, PRNGeneratorTy>::configure(  IndexType *_distances,
                               IndexType *_predecessors,
                               int *_edge_mask)
                               {
@@ -151,18 +151,18 @@ namespace nvgraph {
     return NVGRAPH_OK;
   }
 
-  template<typename IndexType>
-  IndexType Bfs<IndexType>::traverse_block_size() {
+  template<typename IndexType, typename PRNGeneratorTy>
+  IndexType Bfs<IndexType, PRNGeneratorTy>::traverse_block_size() {
     return frontier_expand_block_size<IndexType>();
   }
 
-  template<typename IndexType>
-  IndexType Bfs<IndexType>::traverse_max_num_blocks(IndexType n_edges) {
+  template<typename IndexType, typename PRNGeneratorTy>
+  IndexType Bfs<IndexType, PRNGeneratorTy>::traverse_max_num_blocks(IndexType n_edges) {
     return frontier_expand_max_num_blocks(n_edges);
   }
 
-  template<typename IndexType>
-  NVGRAPH_ERROR Bfs<IndexType>::traverse(IndexType source_vertex) {
+  template<typename IndexType, typename PRNGeneratorTy>
+  NVGRAPH_ERROR Bfs<IndexType, PRNGeneratorTy>::traverse(IndexType source_vertex) {
 
     //Init visited_bmap
     //If the graph is undirected, we not that
@@ -328,7 +328,8 @@ namespace nvgraph {
                       exclusive_sum_frontier_vertex_degree,
                       exclusive_sum_frontier_vertex_buckets_offsets,
                       visited_bmap, distances, predecessors, edge_mask,
-                      isolated_bmap, directed, stream, deterministic);
+                      isolated_bmap, directed, stream, deterministic,
+                      d_trng_state_);
 
       mu -= mf;
 
@@ -371,23 +372,23 @@ namespace nvgraph {
   }
 
   //Just used for benchmarks now
-  template<typename IndexType>
-  NVGRAPH_ERROR Bfs<IndexType>::traverse(IndexType *source_vertices, IndexType nsources) {
+  template<typename IndexType, typename PRNGeneratorTy>
+  NVGRAPH_ERROR Bfs<IndexType, PRNGeneratorTy>::traverse(IndexType *source_vertices, IndexType nsources) {
     for (IndexType i = 0; i < nsources; ++i)
       traverse(source_vertices[i]);
 
     return NVGRAPH_OK;
   }
 
-  template<typename IndexType>
-  void Bfs<IndexType>::resetDevicePointers() {
+  template<typename IndexType, typename PRNGeneratorTy>
+  void Bfs<IndexType, PRNGeneratorTy>::resetDevicePointers() {
     cudaMemsetAsync(d_counters_pad, 0, 4 * sizeof(IndexType), stream);
     cudaCheckError()
     ;
   }
 
-  template<typename IndexType>
-  void Bfs<IndexType>::clean() {
+  template<typename IndexType, typename PRNGeneratorTy>
+  void Bfs<IndexType, PRNGeneratorTy>::clean() {
     cudaCheckError()
     ;
 
@@ -410,5 +411,5 @@ namespace nvgraph {
     ;
   }
 
-  template class Bfs<int>;
+  template class Bfs<int, ripples::cuda_PRNGeneratorTy>;
 } // end namespace nvgraph

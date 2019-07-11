@@ -34,7 +34,7 @@ namespace nvgraph
 
 {
 
-template <typename IndexType>
+template <typename IndexType, typename PRNGeneratorTy>
 
 class Bfs
 
@@ -111,6 +111,8 @@ class Bfs
 
   cudaStream_t stream;
 
+  PRNGeneratorTy *d_trng_state_{nullptr};
+
   // resets pointers defined by d_counters_pad (see implem)
 
   void resetDevicePointers();
@@ -156,6 +158,9 @@ class Bfs
 
   static IndexType traverse_block_size();
   static IndexType traverse_max_num_blocks(IndexType n_edges);
+  void rng(PRNGeneratorTy *d_trng_state) {
+	d_trng_state_ = d_trng_state;
+  }
 };
 
 }  // end namespace nvgraph

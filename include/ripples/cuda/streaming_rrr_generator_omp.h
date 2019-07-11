@@ -259,12 +259,14 @@ class StreamingRRRGenerator {
   };  // GPUWorkerLT
 
   class GPUWorkerIC : public GPUWorker {
+    using bfs_solver_t = nvgraph::Bfs<int, PRNGeneratorTy>;
+
    public:
    // TODO drop
     struct config_t {
       config_t(size_t n_edges) {
-        block_size_ = nvgraph::Bfs<int>::traverse_block_size();
-        num_blocks_ = nvgraph::Bfs<int>::traverse_max_num_blocks(n_edges);
+        block_size_ = bfs_solver_t::traverse_block_size();
+        num_blocks_ = bfs_solver_t::traverse_max_num_blocks(n_edges);
       }
 
       size_t num_gpu_threads() const {
@@ -309,6 +311,7 @@ class StreamingRRRGenerator {
       cuda_ic_rng_setup(d_trng_state_, master_rng, num_seqs, first_seq,
                         conf_.num_blocks_, conf_.block_size_,
                         this->G_.num_nodes());
+      solver.rng(d_trng_state_);
     }
 
    private:
@@ -317,7 +320,7 @@ class StreamingRRRGenerator {
     trng::uniform_int_dist u_;
 
     // nvgraph machinery
-    nvgraph::Bfs<int> solver;
+    bfs_solver_t solver;
 
     // memory buffers
     typename cuda_device_graph::vertex_t *ic_predecessors_, *d_ic_predecessors_;
