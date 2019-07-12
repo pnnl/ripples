@@ -46,6 +46,8 @@ class Bfs
 
   IndexType *col_indices;
 
+  float *weights;
+
   bool directed;
   bool deterministic;
 
@@ -129,12 +131,13 @@ class Bfs
   virtual ~Bfs(void) { clean(); };
 
   Bfs(IndexType _n, IndexType _nnz, IndexType *_row_offsets,
-      IndexType *_col_indices, bool _directed, IndexType _alpha,
-      IndexType _beta, cudaStream_t _stream = 0)
+      IndexType *_col_indices, float *_weights, bool _directed,
+      IndexType _alpha, IndexType _beta, cudaStream_t _stream = 0)
       : n(_n),
         nnz(_nnz),
         row_offsets(_row_offsets),
         col_indices(_col_indices),
+        weights(_weights),
         directed(_directed),
         alpha(_alpha),
         beta(_beta),

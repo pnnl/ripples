@@ -323,7 +323,7 @@ namespace nvgraph {
       }
 #endif
 
-      frontier_expand(row_offsets, col_indices, frontier, nf, mf, lvl,
+      frontier_expand(row_offsets, col_indices, weights, frontier, nf, mf, lvl,
                       new_frontier, d_new_frontier_cnt,
                       exclusive_sum_frontier_vertex_degree,
                       exclusive_sum_frontier_vertex_buckets_offsets,

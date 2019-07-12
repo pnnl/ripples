@@ -889,6 +889,7 @@ namespace bfs_kernels {
   template<typename IndexType, typename PRNGeneratorTy>
   __global__ void topdown_expand_kernel(  const IndexType *row_ptr,
                             const IndexType *col_ind,
+                            const float *weights,
                             const IndexType *frontier,
                             const IndexType frontier_size,
                             const IndexType totaldegree,
@@ -1042,6 +1043,7 @@ namespace bfs_kernels {
           IndexType vec_u[TOP_DOWN_BATCH_SIZE];
           IndexType local_buf1[TOP_DOWN_BATCH_SIZE];
           IndexType local_buf2[TOP_DOWN_BATCH_SIZE];
+          float local_buf3[TOP_DOWN_BATCH_SIZE];
 
           IndexType *vec_frontier_degrees_exclusive_sum_index = &local_buf2[0];
 
@@ -1075,6 +1077,7 @@ namespace bfs_kernels {
           }
 
           IndexType *vec_row_ptr_u = &local_buf1[0];
+          auto vec_weights_v = &local_buf3[0];
 #pragma unroll
           for (int iv = 0; iv < TOP_DOWN_BATCH_SIZE; ++iv) {
             IndexType u = vec_u[iv];
@@ -1104,6 +1107,9 @@ namespace bfs_kernels {
                         ? col_ind[edge]
                           :
                           -1;
+
+            //Weight of this edge
+            vec_weights_v[iv] = weights[edge];
           }
 
           //We don't need vec_frontier_degrees_exclusive_sum_index anymore
@@ -1131,9 +1137,7 @@ namespace bfs_kernels {
 
             if (is_visited)
               vec_frontier_candidate[iv] = -1;
-            else
-              // TODO
-              if(u(rng) > 0.5f)
+            else if(u(rng) > vec_weights_v[iv])
                 vec_frontier_candidate[iv] = -1;
           }
 
@@ -1338,6 +1342,7 @@ namespace bfs_kernels {
   template<typename IndexType, typename PRNGeneratorTy>
   void frontier_expand(const IndexType *row_ptr,
                 const IndexType *col_ind,
+                const float *weights,
                 const IndexType *frontier,
                 const IndexType frontier_size,
                 const IndexType totaldegree,
@@ -1371,6 +1376,7 @@ namespace bfs_kernels {
 
     topdown_expand_kernel<<<grid, block, 0, m_stream>>>(  row_ptr,
                                         col_ind,
+                                        weights,
                                         frontier,
                                         frontier_size,
                                         totaldegree,

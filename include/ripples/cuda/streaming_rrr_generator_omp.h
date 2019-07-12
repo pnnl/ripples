@@ -283,8 +283,8 @@ class StreamingRRRGenerator {
           u_(0, G.num_nodes()),
           // TODO stream
           solver(G.num_nodes(), G.num_edges(), cuda_graph_index(),
-                 cuda_graph_edges(), true, TRAVERSAL_DEFAULT_ALPHA,
-                 TRAVERSAL_DEFAULT_BETA) {
+                 cuda_graph_edges(), cuda_graph_weights(), true,
+                 TRAVERSAL_DEFAULT_ALPHA, TRAVERSAL_DEFAULT_BETA) {
       // allocate host/device memory
       ic_predecessors_ = (int *)malloc(
           G.num_nodes() * sizeof(typename cuda_device_graph::vertex_t));
