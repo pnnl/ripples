@@ -174,39 +174,21 @@ __global__ void kernel_lt_per_thread(size_t bs,
 void cuda_lt_kernel(size_t n_blocks, size_t block_size, size_t batch_size,
                     size_t num_nodes, size_t warp_step,
                     cuda_PRNGeneratorTy *d_trng_states,
-                    mask_word_t *d_res_masks, size_t num_mask_words) {
-  kernel_lt_per_thread<<<n_blocks, block_size>>>(
+                    mask_word_t *d_res_masks, size_t num_mask_words, cudaStream_t stream) {
+  kernel_lt_per_thread<<<n_blocks, block_size, 0, stream>>>(
       batch_size, cuda_ctx.d_graph->d_index_, cuda_ctx.d_graph->d_edges_,
       cuda_ctx.d_graph->d_weights_, num_nodes, warp_step, d_trng_states,
       d_res_masks, num_mask_words);
   cuda_check(__FILE__, __LINE__);
 }
 
-__global__ void kernel_ic(typename cuda_device_graph::vertex_t *index,
-                          typename cuda_device_graph::vertex_t *edges,
-                          typename cuda_device_graph::weight_t *weights,
-                          size_t num_nodes, cuda_PRNGeneratorTy *d_trng_states,
-                          typename cuda_device_graph::vertex_t *d_predecessors) {
-  using vertex_type = typename cuda_device_graph::vertex_t;
-
-  int tid = blockIdx.x * blockDim.x + threadIdx.x;
-  if (tid < num_nodes) {
-    d_predecessors[tid] = num_nodes;
-  }
-}
-
-void cuda_ic_kernel(size_t n_blocks, size_t block_size, size_t num_nodes,
-                    cuda_PRNGeneratorTy *d_trng_states,
-                    typename cuda_device_graph::vertex_t *d_predecessors) {
-  kernel_ic<<<n_blocks, block_size>>>(
-      cuda_ctx.d_graph->d_index_, cuda_ctx.d_graph->d_edges_,
-      cuda_ctx.d_graph->d_weights_, num_nodes, d_trng_states, d_predecessors);
+void cuda_d2h(mask_word_t *dst, mask_word_t *src, size_t size, cudaStream_t stream) {
+  cudaMemcpyAsync(dst, src, size, cudaMemcpyDeviceToHost, stream);
   cuda_check(__FILE__, __LINE__);
 }
 
-void cuda_d2h(mask_word_t *dst, mask_word_t *src, size_t size) {
-  cudaMemcpy(dst, src, size, cudaMemcpyDeviceToHost);
-  cuda_check(__FILE__, __LINE__);
+void cuda_sync(cudaStream_t stream) {
+  cudaStreamSynchronize(stream);
 }
 
 }  // namespace ripples

@@ -10,6 +10,8 @@
 #include <cstddef>
 #include <vector>
 
+#include <cuda_runtime.h>
+
 #include "trng/lcg64.hpp"
 
 #include "ripples/diffusion_simulation.h"
@@ -94,7 +96,8 @@ void cuda_graph_fini();
 
 void cuda_malloc(void **dst, size_t size);
 void cuda_free(void *ptr);
-void cuda_d2h(mask_word_t *dst, mask_word_t *src, size_t size);
+void cuda_d2h(mask_word_t *dst, mask_word_t *src, size_t size, cudaStream_t);
+void cuda_sync(cudaStream_t);
 
 void cuda_lt_rng_setup(cuda_PRNGeneratorTy *d_trng_state,
                        const cuda_PRNGeneratorTy &r, size_t num_seqs,
@@ -109,10 +112,8 @@ void cuda_ic_rng_setup(cuda_PRNGeneratorTy *d_trng_state,
 void cuda_lt_kernel(size_t n_blocks, size_t block_size, size_t batch_size,
                     size_t num_nodes, size_t warp_step,
                     cuda_PRNGeneratorTy *d_trng_states,
-                    mask_word_t *d_res_masks, size_t num_mask_words);
-void cuda_ic_kernel(size_t n_blocks, size_t block_size, size_t num_nodes,
-                    cuda_PRNGeneratorTy *d_trng_states,
-                    typename cuda_device_graph::vertex_t *d_predecessors);
+                    mask_word_t *d_res_masks, size_t num_mask_words,
+                    cudaStream_t);
 
 #if CUDA_PROFILE
 template <typename logst_t, typename sample_t>
