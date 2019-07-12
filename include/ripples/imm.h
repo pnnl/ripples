@@ -79,19 +79,15 @@ struct IMMConfiguration : public TIMConfiguration {
         ->group("Streaming-Engine Options");
     app.add_option("--streaming-gpu-workers", streaming_gpu_workers,
                    "The number of GPU workers for the CPU+GPU streaming engine.")
-        ->required()
         ->group("Streaming-Engine Options");
     app.add_option("--cuda-num-threads", cuda_num_threads,
                    "The number of active CUDA threads.")
-        ->required()
         ->group("Streaming-Engine Options");
     app.add_option("--cuda-block-density", cuda_block_density,
                    "The number of active CUDA threads per block.")
-        ->required()
         ->group("Streaming-Engine Options");
     app.add_option("--cuda-warp-density", cuda_warp_density,
                    "The number of active CUDA threads per warp.")
-        ->required()
         ->group("Streaming-Engine Options");
   }
 };

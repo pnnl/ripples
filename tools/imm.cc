@@ -98,8 +98,31 @@ ripples::ToolConfiguration<ripples::IMMConfiguration> configuration() {
 }  // namespace ripples
 
 int main(int argc, char **argv) {
+  auto console = spdlog::stdout_color_st("console");
+
   ripples::parse_command_line(argc, argv);
   auto CFG = ripples::configuration();
+
+  // check command line
+  if (CFG.cuda_parallel) {
+    if (!(CFG.streaming_workers > 0 &&
+          CFG.streaming_gpu_workers <= CFG.streaming_workers)) {
+      spdlog::get("console")->error("invalid number of streaming workers");
+      return -1;
+    }
+    if (CFG.diffusionModel == std::string{"LT"}) {
+      if (!(CFG.cuda_num_threads > 0 && CFG.cuda_block_density > 0 &&
+            CFG.cuda_warp_density > 0)) {
+        spdlog::get("console")->error("invalid CUDA configuration for LT");
+        return -1;
+      }
+    } else if (CFG.diffusionModel == std::string{"IC"}) {
+      if (CFG.cuda_num_threads || CFG.cuda_block_density ||
+          CFG.cuda_warp_density)
+        spdlog::get("console")->warn(
+            "IC will ignore user-provided CUDA configuration");
+    }
+  }  // CFG.cuda_parallel
 
   spdlog::set_level(spdlog::level::info);
 
@@ -111,7 +134,6 @@ int main(int argc, char **argv) {
       ripples::Graph<uint32_t, float, ripples::ForwardDirection<uint32_t>>;
   using GraphBwd =
       ripples::Graph<uint32_t, float, ripples::BackwardDirection<uint32_t>>;
-  auto console = spdlog::stdout_color_st("console");
   console->info("Loading...");
   GraphFwd Gf = ripples::loadGraph<GraphFwd>(CFG, weightGen);
   GraphBwd G = Gf.get_transpose();
