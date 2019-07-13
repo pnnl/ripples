@@ -76,11 +76,6 @@ typename cuda_device_graph::weight_t *cuda_graph_weights();
 //! \return The maximum number of CUDA blocks.
 size_t cuda_max_blocks();
 
-//! \brief Returns the GPU warp size.
-//!
-//! \return The GPU warp size.
-size_t cuda_warp_size();
-
 //! \brief Finalize CUDA execution context.
 void cuda_fini();
 
@@ -106,16 +101,14 @@ void cuda_sync(cudaStream_t);
 
 void cuda_lt_rng_setup(cuda_PRNGeneratorTy *d_trng_state,
                        const cuda_PRNGeneratorTy &r, size_t num_seqs,
-                       size_t first_seq, size_t n_blocks, size_t block_size,
-                       size_t warp_step);
+                       size_t first_seq, size_t n_blocks, size_t block_size);
 
 void cuda_ic_rng_setup(cuda_PRNGeneratorTy *d_trng_state,
                        const cuda_PRNGeneratorTy &r, size_t num_seqs,
                        size_t first_seq, size_t n_blocks, size_t block_size);
 
 void cuda_lt_kernel(size_t n_blocks, size_t block_size, size_t batch_size,
-                    size_t num_nodes, size_t warp_step,
-                    cuda_PRNGeneratorTy *d_trng_states,
+                    size_t num_nodes, cuda_PRNGeneratorTy *d_trng_states,
                     mask_word_t *d_res_masks, size_t num_mask_words,
                     cudaStream_t);
 

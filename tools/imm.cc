@@ -110,17 +110,6 @@ int main(int argc, char **argv) {
       spdlog::get("console")->error("invalid number of streaming workers");
       return -1;
     }
-    if (CFG.diffusionModel == std::string{"LT"}) {
-      if (!(CFG.cuda_block_density > 0 && CFG.cuda_warp_density > 0)) {
-        spdlog::get("console")->error("invalid CUDA configuration for LT");
-        return -1;
-      }
-    } else if (CFG.diffusionModel == std::string{"IC"}) {
-      if (CFG.cuda_num_threads || CFG.cuda_block_density ||
-          CFG.cuda_warp_density)
-        spdlog::get("console")->warn(
-            "IC will ignore user-provided CUDA configuration");
-    }
   }  // CFG.cuda_parallel
 
   spdlog::set_level(spdlog::level::info);

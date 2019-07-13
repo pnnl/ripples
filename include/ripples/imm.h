@@ -64,9 +64,6 @@ namespace ripples {
 struct IMMConfiguration : public TIMConfiguration {
   size_t streaming_workers{0};
   size_t streaming_gpu_workers{0};
-  size_t cuda_num_threads{0};
-  size_t cuda_block_density{0};
-  size_t cuda_warp_density{0};
 
   //! \brief Add command line options to configure IMM.
   //!
@@ -79,15 +76,6 @@ struct IMMConfiguration : public TIMConfiguration {
         ->group("Streaming-Engine Options");
     app.add_option("--streaming-gpu-workers", streaming_gpu_workers,
                    "The number of GPU workers for the CPU+GPU streaming engine.")
-        ->group("Streaming-Engine Options");
-    app.add_option("--cuda-num-threads", cuda_num_threads,
-                   "The number of active CUDA threads.")
-        ->group("Streaming-Engine Options");
-    app.add_option("--cuda-block-density", cuda_block_density,
-                   "The number of active CUDA threads per block.")
-        ->group("Streaming-Engine Options");
-    app.add_option("--cuda-warp-density", cuda_warp_density,
-                   "The number of active CUDA threads per warp.")
         ->group("Streaming-Engine Options");
   }
 };
