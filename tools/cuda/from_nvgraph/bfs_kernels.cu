@@ -21,7 +21,6 @@
 #include "ripples/cuda/from_nvgraph/sm_utils.h"
 #include "ripples/cuda/from_nvgraph/nvgraph_error.hxx"
 
-#define MAXBLOCKS 65535
 #define WARP_SIZE 32
 #define INT_SIZE 32
 
@@ -307,12 +306,13 @@ namespace bfs_kernels {
                     IndexType n,
                     IndexType *unvisited,
                     IndexType *unvisited_cnt,
+                    IndexType max_blocks,
                     cudaStream_t m_stream,
                     bool deterministic) {
     dim3 grid, block;
     block.x = FILL_UNVISITED_QUEUE_DIMX;
 
-    grid.x = min((IndexType) MAXBLOCKS, (visited_bmap_nints + block.x - 1) / block.x);
+    grid.x = min((IndexType) max_blocks, (visited_bmap_nints + block.x - 1) / block.x);
 
     fill_unvisited_queue_kernel<<<grid, block, 0, m_stream>>>(  visited_bmap,
                                             visited_bmap_nints,
@@ -375,10 +375,11 @@ namespace bfs_kernels {
                     const int *visited_bmap,
                     IndexType *node_degree,
                     IndexType *mu,
+                    IndexType max_blocks,
                     cudaStream_t m_stream) {
     dim3 grid, block;
     block.x = COUNT_UNVISITED_EDGES_DIMX;
-    grid.x = min((IndexType) MAXBLOCKS, (potentially_unvisited_size + block.x - 1) / block.x);
+    grid.x = min((IndexType) max_blocks, (potentially_unvisited_size + block.x - 1) / block.x);
 
     count_unvisited_edges_kernel<<<grid, block, 0, m_stream>>>(  potentially_unvisited,
                                             potentially_unvisited_size,
@@ -652,44 +653,6 @@ namespace bfs_kernels {
     }
   }
 
-  template<typename IndexType>
-  void bottom_up_main(  IndexType *unvisited,
-                IndexType unvisited_size,
-                IndexType *left_unvisited,
-                IndexType *d_left_unvisited_idx,
-                int *visited,
-                const IndexType *row_ptr,
-                const IndexType *col_ind,
-                IndexType lvl,
-                IndexType *new_frontier,
-                IndexType *new_frontier_idx,
-                IndexType *distances,
-                IndexType *predecessors,
-                int *edge_mask,
-                cudaStream_t m_stream,
-                bool deterministic) {
-    dim3 grid, block;
-    block.x = MAIN_BOTTOMUP_DIMX;
-
-    grid.x = min((IndexType) MAXBLOCKS, ((unvisited_size + block.x - 1)) / block.x);
-
-    main_bottomup_kernel<<<grid, block, 0, m_stream>>>(unvisited,
-                                      unvisited_size,
-                                      left_unvisited,
-                                      d_left_unvisited_idx,
-                                      visited,
-                                      row_ptr,
-                                      col_ind,
-                                      lvl,
-                                      new_frontier,
-                                      new_frontier_idx,
-                                      distances,
-                                      predecessors,
-                                      edge_mask);
-    cudaCheckError()
-    ;
-  }
-
   //
   // bottom_up_large_degree_kernel
   // finishing the work started in main_bottomup_kernel for vertex with degree > MAIN_BOTTOMUP_MAX_EDGES && no parent found
@@ -774,40 +737,6 @@ namespace bfs_kernels {
     }
   }
 
-  template<typename IndexType>
-  void bottom_up_large(IndexType *left_unvisited,
-                IndexType left_unvisited_size,
-                int *visited,
-                const IndexType *row_ptr,
-                const IndexType *col_ind,
-                IndexType lvl,
-                IndexType *new_frontier,
-                IndexType *new_frontier_idx,
-                IndexType *distances,
-                IndexType *predecessors,
-                int *edge_mask,
-                cudaStream_t m_stream,
-                bool deterministic) {
-    dim3 grid, block;
-    block.x = LARGE_BOTTOMUP_DIMX;
-    grid.x = min(  (IndexType) MAXBLOCKS,
-              ((left_unvisited_size + block.x - 1) * BOTTOM_UP_LOGICAL_WARP_SIZE) / block.x);
-
-    bottom_up_large_degree_kernel<<<grid, block, 0, m_stream>>>(left_unvisited,
-                                            left_unvisited_size,
-                                            visited,
-                                            row_ptr,
-                                            col_ind,
-                                            lvl,
-                                            new_frontier,
-                                            new_frontier_idx,
-                                            distances,
-                                            predecessors,
-                                            edge_mask);
-    cudaCheckError()
-    ;
-  }
-
   //
   //
   //  ------------------------------ Top down ------------------------------
@@ -846,11 +775,12 @@ namespace bfs_kernels {
                       IndexType *bucket_offsets,
                       IndexType frontier_size,
                       IndexType total_degree,
+                      IndexType max_blocks,
                       cudaStream_t m_stream) {
     dim3 grid, block;
     block.x = COMPUTE_BUCKET_OFFSETS_DIMX;
 
-    grid.x = min(  (IndexType) MAXBLOCKS,
+    grid.x = min(  (IndexType) max_blocks,
               ((total_degree - 1 + TOP_DOWN_EXPAND_DIMX) / TOP_DOWN_EXPAND_DIMX
                   * NBUCKETS_PER_BLOCK + 1 + block.x - 1) / block.x);
 
@@ -1310,35 +1240,6 @@ namespace bfs_kernels {
     return TOP_DOWN_EXPAND_DIMX;
   }
 
-  template <typename IndexType>
-  IndexType frontier_expand_max_num_blocks(IndexType n_edges) {
-    IndexType res = 0;
-#if CUDA_CHECK
-    IndexType max_arg = 0;
-#endif
-    constexpr IndexType block_size = TOP_DOWN_EXPAND_DIMX;
-    for (IndexType n = 1; n <= n_edges; ++n) {
-      IndexType max_items_per_thread =
-          (n + MAXBLOCKS * block_size - 1) / (MAXBLOCKS * block_size);
-      auto up = std::min((n + max_items_per_thread * block_size - 1) /
-                             (max_items_per_thread * block_size),
-                         (IndexType)MAXBLOCKS);
-      if (up > res) {
-#if CUDA_CHECK
-        max_arg = n;
-#endif
-        res = up;
-      }
-    }
-#if CUDA_CHECK
-    printf(
-        "*** DBG *** [frontier_expand_max_num_blocks] "
-        "max=%d\targ=%d\t(n-edges=%d)\n",
-        res, max_arg, n_edges);
-#endif
-    return res;
-  }
-
   template<typename IndexType, typename PRNGeneratorTy>
   void frontier_expand(const IndexType *row_ptr,
                 const IndexType *col_ind,
@@ -1357,6 +1258,7 @@ namespace bfs_kernels {
                 const int *edge_mask,
                 const int *isolated_bmap,
                 bool directed,
+                IndexType dyn_max_blocks,
                 cudaStream_t m_stream,
                 bool deterministic,
                 PRNGeneratorTy *d_trng_state) {
@@ -1366,13 +1268,13 @@ namespace bfs_kernels {
     dim3 block;
     block.x = TOP_DOWN_EXPAND_DIMX;
 
-    IndexType max_items_per_thread = (totaldegree + MAXBLOCKS * block.x - 1)
-        / (MAXBLOCKS * block.x);
+    IndexType max_items_per_thread = (totaldegree + dyn_max_blocks * block.x - 1)
+        / (dyn_max_blocks * block.x);
 
     dim3 grid;
     grid.x = min(  (totaldegree + max_items_per_thread * block.x - 1)
                   / (max_items_per_thread * block.x),
-              (IndexType) MAXBLOCKS);
+              (IndexType) dyn_max_blocks);
 
     topdown_expand_kernel<<<grid, block, 0, m_stream>>>(  row_ptr,
                                         col_ind,
@@ -1509,11 +1411,12 @@ namespace bfs_kernels {
                       const IndexType *row_ptr,
                       IndexType *degrees,
                       IndexType *nisolated,
+                      IndexType max_blocks,
                       cudaStream_t m_stream) {
     dim3 grid, block;
     block.x = FLAG_ISOLATED_VERTICES_DIMX;
 
-    grid.x = min(  (IndexType) MAXBLOCKS,
+    grid.x = min(  (IndexType) max_blocks,
               (n / FLAG_ISOLATED_VERTICES_VERTICES_PER_THREAD + 1 + block.x - 1) / block.x);
 
     flag_isolated_vertices_kernel<<<grid, block, 0, m_stream>>>(n,
@@ -1553,11 +1456,12 @@ namespace bfs_kernels {
 
   }
 
-  template<typename IndexType>
-  void fill(IndexType *vec, IndexType n, IndexType val, cudaStream_t m_stream) {
+  template <typename IndexType>
+  void fill(IndexType *vec, IndexType n, IndexType val, IndexType max_blocks,
+            cudaStream_t m_stream) {
     dim3 grid, block;
     block.x = 256;
-    grid.x = min((n + block.x - 1) / block.x, (IndexType) MAXBLOCKS);
+    grid.x = min((n + block.x - 1) / block.x, (IndexType) max_blocks);
     fill_kernel<<<grid, block, 0, m_stream>>>(vec, n, val);
     cudaCheckError()
     ;
@@ -1581,10 +1485,11 @@ namespace bfs_kernels {
                     IndexType *frontier,
                     const IndexType *degree,
                     IndexType n,
+                    IndexType max_blocks,
                     cudaStream_t m_stream) {
     dim3 grid, block;
     block.x = 256;
-    grid.x = min((n + block.x - 1) / block.x, (IndexType) MAXBLOCKS);
+    grid.x = min((n + block.x - 1) / block.x, (IndexType) max_blocks);
     set_frontier_degree_kernel<<<grid, block, 0, m_stream>>>(frontier_degree,
                                           frontier,
                                           degree,

@@ -116,7 +116,8 @@ namespace nvgraph {
 
     //Computing isolated_bmap
     //Only dependent on graph - not source vertex - done once
-    flag_isolated_vertices(n, isolated_bmap, row_offsets, vertex_degree, d_nisolated, stream);
+    flag_isolated_vertices(n, isolated_bmap, row_offsets, vertex_degree,
+                           d_nisolated, dyn_max_blocks, stream);
     cudaMemcpyAsync(&nisolated, d_nisolated, sizeof(IndexType), cudaMemcpyDeviceToHost, stream);
     cudaCheckError()
     ;
@@ -154,11 +155,6 @@ namespace nvgraph {
   template<typename IndexType, typename PRNGeneratorTy>
   IndexType Bfs<IndexType, PRNGeneratorTy>::traverse_block_size() {
     return frontier_expand_block_size<IndexType>();
-  }
-
-  template<typename IndexType, typename PRNGeneratorTy>
-  IndexType Bfs<IndexType, PRNGeneratorTy>::traverse_max_num_blocks(IndexType n_edges) {
-    return frontier_expand_max_num_blocks(n_edges);
   }
 
   template<typename IndexType, typename PRNGeneratorTy>
@@ -277,7 +273,8 @@ namespace nvgraph {
     nu = n - nisolated - nf;
 
     //Typical pre-top down workflow. set_frontier_degree + exclusive-scan
-    set_frontier_degree(frontier_vertex_degree, frontier, vertex_degree, nf, stream);
+    set_frontier_degree(frontier_vertex_degree, frontier, vertex_degree, nf,
+                        dyn_max_blocks, stream);
     exclusive_sum(  d_cub_exclusive_sum_storage,
               cub_exclusive_sum_storage_bytes,
               frontier_vertex_degree,
@@ -307,18 +304,18 @@ namespace nvgraph {
       // Executing algo
       compute_bucket_offsets(exclusive_sum_frontier_vertex_degree,
                              exclusive_sum_frontier_vertex_buckets_offsets, nf,
-                             mf, stream);
+                             mf, dyn_max_blocks, stream);
 
 #if CUDA_CHECK
       if (mf) {
         auto block_size = frontier_expand_block_size<IndexType>();
         IndexType max_items_per_thread =
-            (mf + MAXBLOCKS * block_size - 1) / (MAXBLOCKS * block_size);
+            (mf + dyn_max_blocks * block_size - 1) / (dyn_max_blocks * block_size);
         auto num_blocks = min((mf + max_items_per_thread * block_size - 1) /
-                         (max_items_per_thread * block_size),
-                     (IndexType)MAXBLOCKS);
+                                  (max_items_per_thread * block_size),
+                              dyn_max_blocks);
         auto max_num_threads =
-            cached_max_num_blocks_ * frontier_expand_block_size<IndexType>();
+          dyn_max_blocks * frontier_expand_block_size<IndexType>();
         assert(block_size * num_blocks <= max_num_threads);
       }
 #endif
@@ -328,8 +325,8 @@ namespace nvgraph {
                       exclusive_sum_frontier_vertex_degree,
                       exclusive_sum_frontier_vertex_buckets_offsets,
                       visited_bmap, distances, predecessors, edge_mask,
-                      isolated_bmap, directed, stream, deterministic,
-                      d_trng_state_);
+                      isolated_bmap, directed, dyn_max_blocks, stream,
+                      deterministic, d_trng_state_);
 
       mu -= mf;
 
@@ -344,7 +341,7 @@ namespace nvgraph {
       if (nf) {
         // Typical pre-top down workflow. set_frontier_degree + exclusive-scan
         set_frontier_degree(frontier_vertex_degree, new_frontier, vertex_degree,
-                            nf, stream);
+                            nf, dyn_max_blocks, stream);
         exclusive_sum(d_cub_exclusive_sum_storage,
                       cub_exclusive_sum_storage_bytes, frontier_vertex_degree,
                       exclusive_sum_frontier_vertex_degree, nf + 1, stream);

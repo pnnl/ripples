@@ -123,16 +123,15 @@ class Bfs
 
   void clean();
 
-#if CUDA_CHECK
-  const IndexType cached_max_num_blocks_;
-#endif
+  const IndexType dyn_max_blocks;
 
  public:
   virtual ~Bfs(void) { clean(); };
 
   Bfs(IndexType _n, IndexType _nnz, IndexType *_row_offsets,
       IndexType *_col_indices, float *_weights, bool _directed,
-      IndexType _alpha, IndexType _beta, cudaStream_t _stream = 0)
+      IndexType _alpha, IndexType _beta, IndexType _dyn_max_blocks,
+      cudaStream_t _stream = 0)
       : n(_n),
         nnz(_nnz),
         row_offsets(_row_offsets),
@@ -141,11 +140,8 @@ class Bfs
         directed(_directed),
         alpha(_alpha),
         beta(_beta),
+        dyn_max_blocks(_dyn_max_blocks),
         stream(_stream)
-#if CUDA_CHECK
-        ,
-        cached_max_num_blocks_(traverse_max_num_blocks(nnz))
-#endif
   {
     setup();
   }
@@ -160,7 +156,6 @@ class Bfs
   NVGRAPH_ERROR traverse(IndexType *source_vertices, IndexType nsources);
 
   static IndexType traverse_block_size();
-  static IndexType traverse_max_num_blocks(IndexType n_edges);
   void rng(PRNGeneratorTy *d_trng_state) {
 	d_trng_state_ = d_trng_state;
   }

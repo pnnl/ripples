@@ -71,6 +71,11 @@ typename cuda_device_graph::vertex_t *cuda_graph_index();
 typename cuda_device_graph::vertex_t *cuda_graph_edges();
 typename cuda_device_graph::weight_t *cuda_graph_weights();
 
+//! \brief Returns the maximum number of CUDA blocks.
+//!
+//! \return The maximum number of CUDA blocks.
+size_t cuda_max_blocks();
+
 //! \brief Returns the GPU warp size.
 //!
 //! \return The GPU warp size.
@@ -106,8 +111,7 @@ void cuda_lt_rng_setup(cuda_PRNGeneratorTy *d_trng_state,
 
 void cuda_ic_rng_setup(cuda_PRNGeneratorTy *d_trng_state,
                        const cuda_PRNGeneratorTy &r, size_t num_seqs,
-                       size_t first_seq, size_t n_blocks, size_t block_size,
-                       size_t num_active_threads);
+                       size_t first_seq, size_t n_blocks, size_t block_size);
 
 void cuda_lt_kernel(size_t n_blocks, size_t block_size, size_t batch_size,
                     size_t num_nodes, size_t warp_step,

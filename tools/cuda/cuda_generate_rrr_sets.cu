@@ -17,6 +17,11 @@ struct cuda_ctx_t {
   cuda_device_graph *d_graph = nullptr;
 } cuda_ctx;
 
+size_t cuda_max_blocks() {
+  // TODO query CUDA runtime
+  return 1 << 16;
+}
+
 size_t cuda_warp_size() {
   cudaDeviceProp cuda_prop;
   cudaGetDeviceProperties(&cuda_prop, 0);
@@ -37,13 +42,10 @@ __global__ void kernel_lt_trng_setup(cuda_PRNGeneratorTy *d_trng_states,
 
 __global__ void kernel_ic_trng_setup(cuda_PRNGeneratorTy *d_trng_states,
                                      cuda_PRNGeneratorTy r, size_t num_seqs,
-                                     size_t first_seq,
-                                     size_t num_active_threads) {
+                                     size_t first_seq) {
   int tid = blockIdx.x * blockDim.x + threadIdx.x;
-  if (tid < num_active_threads) {
-    d_trng_states[tid] = r;
-    d_trng_states[tid].split(num_seqs, first_seq + tid);
-  }
+  d_trng_states[tid] = r;
+  d_trng_states[tid].split(num_seqs, first_seq + tid);
 }
 
 void cuda_graph_init(const cuda_GraphTy &G) {
@@ -83,10 +85,9 @@ void cuda_lt_rng_setup(cuda_PRNGeneratorTy *d_trng_state,
 
 void cuda_ic_rng_setup(cuda_PRNGeneratorTy *d_trng_state,
   const cuda_PRNGeneratorTy &r, size_t num_seqs,
-  size_t first_seq, size_t n_blocks, size_t block_size,
-  size_t num_active_threads) {
+  size_t first_seq, size_t n_blocks, size_t block_size) {
   kernel_ic_trng_setup<<<n_blocks, block_size>>>(d_trng_state, r, num_seqs,
-                                                 first_seq, num_active_threads);
+                                                 first_seq);
   cuda_check(__FILE__, __LINE__);
 }
 

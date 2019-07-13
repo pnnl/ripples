@@ -270,16 +270,14 @@ class StreamingRRRGenerator {
    public:
    // TODO drop
     struct config_t {
-      config_t(size_t n_edges) {
-        block_size_ = bfs_solver_t::traverse_block_size();
-        num_blocks_ = bfs_solver_t::traverse_max_num_blocks(n_edges);
-      }
+      config_t(size_t num_workers)
+          : block_size_(bfs_solver_t::traverse_block_size()),
+            max_blocks_(num_workers ? cuda_max_blocks() / num_workers : 0) {}
 
-      size_t num_gpu_threads() const {
-        return num_blocks_ * block_size_;
-      }
+      size_t num_gpu_threads() const { return max_blocks_ * block_size_; }
 
-      size_t num_blocks_, block_size_;
+      const size_t max_blocks_;
+      const size_t block_size_;
     };
 
     GPUWorkerIC(const config_t &conf, const GraphTy &G,
@@ -290,7 +288,8 @@ class StreamingRRRGenerator {
           // TODO stream
           solver(G.num_nodes(), G.num_edges(), cuda_graph_index(),
                  cuda_graph_edges(), cuda_graph_weights(), true,
-                 TRAVERSAL_DEFAULT_ALPHA, TRAVERSAL_DEFAULT_BETA, cuda_stream) {
+                 TRAVERSAL_DEFAULT_ALPHA, TRAVERSAL_DEFAULT_BETA,
+                 conf_.max_blocks_, cuda_stream) {
       // allocate host/device memory
       ic_predecessors_ = (int *)malloc(
           G.num_nodes() * sizeof(typename cuda_device_graph::vertex_t));
@@ -315,8 +314,7 @@ class StreamingRRRGenerator {
     void rng_setup(const PRNGeneratorTy &master_rng, size_t num_seqs,
                    size_t first_seq) {
       cuda_ic_rng_setup(d_trng_state_, master_rng, num_seqs, first_seq,
-                        conf_.num_blocks_, conf_.block_size_,
-                        this->G_.num_nodes());
+                        conf_.max_blocks_, conf_.block_size_);
       solver.rng(d_trng_state_);
     }
 
@@ -370,13 +368,13 @@ class StreamingRRRGenerator {
     // TODO factorize
     std::vector<cudaStream_t> cuda_streams;
     if (std::is_same<diff_model_tag, ripples::independent_cascade_tag>::value) {
-      typename GPUWorkerIC::config_t gpu_conf(G.num_edges());
+      typename GPUWorkerIC::config_t gpu_conf(num_gpu_workers_);
       max_batch_size_ = 32;
       auto num_gpu_threads = gpu_conf.num_gpu_threads();
 
       auto num_rng_sequences =
-          num_cpu_workers + num_gpu_workers * (num_gpu_threads + 1);
-      auto gpu_seq_offset = num_cpu_workers + num_gpu_workers;
+          num_cpu_workers + num_gpu_workers_ * (num_gpu_threads + 1);
+      auto gpu_seq_offset = num_cpu_workers_ + num_gpu_workers_;
 
       // CPU workers
       for (size_t i = 0; i < num_cpu_workers_; ++i) {
@@ -388,7 +386,7 @@ class StreamingRRRGenerator {
       // GPU workers
       for (size_t i = 0; i < num_gpu_workers_; ++i) {
         auto rng = master_rng;
-        rng.split(num_rng_sequences, num_cpu_workers + i);
+        rng.split(num_rng_sequences, num_cpu_workers_ + i);
         cuda_streams.emplace_back();
         auto &stream(cuda_streams.back());
         cudaStreamCreate(&stream);
@@ -404,8 +402,8 @@ class StreamingRRRGenerator {
       max_batch_size_ = 32 * num_gpu_threads;
 
       auto num_rng_sequences =
-          num_cpu_workers + num_gpu_workers * (num_gpu_threads + 1);
-      auto gpu_seq_offset = num_cpu_workers + num_gpu_workers;
+          num_cpu_workers_ + num_gpu_workers_ * (num_gpu_threads + 1);
+      auto gpu_seq_offset = num_cpu_workers_ + num_gpu_workers_;
 
       // CPU workers
       for (size_t i = 0; i < num_cpu_workers_; ++i) {
@@ -474,6 +472,7 @@ class StreamingRRRGenerator {
                     (float)p.n_ * 1e03 / ms.count());
       console->info("+++ END iter {}", i);
     }
+    console->info("--- overall");
     console->info("n. sets               = {}", prof_bd.n);
     auto n_excs = std::accumulate(
         workers.begin(), workers.end(), 0, [](size_t acc, const Worker *w) {

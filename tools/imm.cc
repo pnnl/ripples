@@ -111,8 +111,7 @@ int main(int argc, char **argv) {
       return -1;
     }
     if (CFG.diffusionModel == std::string{"LT"}) {
-      if (!(CFG.cuda_num_threads > 0 && CFG.cuda_block_density > 0 &&
-            CFG.cuda_warp_density > 0)) {
+      if (!(CFG.cuda_block_density > 0 && CFG.cuda_warp_density > 0)) {
         spdlog::get("console")->error("invalid CUDA configuration for LT");
         return -1;
       }
