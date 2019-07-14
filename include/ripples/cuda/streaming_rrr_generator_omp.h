@@ -134,10 +134,10 @@ class StreamingRRRGenerator {
           assert(num_threads_ % block_size_ == 0);
           max_blocks_ = num_threads_ / block_size_;
 
-        printf(
-            "*** DBG *** > [GPUWorkerLT::config_t] "
-            "block_size_=%d\tnum_threads_=%d\tmax_blocks_=%d\n",
-            block_size_, num_threads_, max_blocks_);
+          printf(
+              "*** DBG *** > [GPUWorkerLT::config_t] "
+              "block_size_=%d\tnum_threads_=%d\tmax_blocks_=%d\n",
+              block_size_, num_threads_, max_blocks_);
       }
 
       size_t num_gpu_threads() const { return num_threads_; }
@@ -348,8 +348,9 @@ class StreamingRRRGenerator {
     // TODO factorize
     std::vector<cudaStream_t> cuda_streams;
     if (std::is_same<diff_model_tag, ripples::independent_cascade_tag>::value) {
-      typename GPUWorkerIC::config_t gpu_conf(num_gpu_workers_);
       max_batch_size_ = 32;
+      typename GPUWorkerIC::config_t gpu_conf(num_gpu_workers_);
+      assert(gpu_conf.max_blocks_ * num_gpu_workers <= cuda_max_blocks());
       auto num_gpu_threads_per_worker = gpu_conf.num_gpu_threads();
 
       auto num_rng_sequences =
@@ -377,8 +378,9 @@ class StreamingRRRGenerator {
       }
     } else if (std::is_same<diff_model_tag,
                             ripples::linear_threshold_tag>::value) {
-                              max_batch_size_ = 1 << 15;
+      max_batch_size_ = 1 << 15;
       typename GPUWorkerLT::config_t gpu_conf(max_batch_size_);
+      assert(gpu_conf.max_blocks_ * num_gpu_workers <= cuda_max_blocks());
       auto num_gpu_threads_per_worker = gpu_conf.num_gpu_threads();
 
       auto num_rng_sequences =
