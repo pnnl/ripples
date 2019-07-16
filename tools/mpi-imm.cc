@@ -91,13 +91,32 @@ auto GetExperimentRecord(const ToolConfiguration<IMMConfiguration> &CFG,
   return experiment;
 }
 
+ToolConfiguration<ripples::IMMConfiguration> CFG;
+
+void parse_command_line(int argc, char **argv) {
+  CFG.ParseCmdOptions(argc, argv);
+}
+
+ToolConfiguration<ripples::IMMConfiguration> configuration() {
+  return CFG;
+}
+
 }  // namespace ripples
 
 int main(int argc, char *argv[]) {
   MPI_Init(NULL, NULL);
 
-  ripples::ToolConfiguration<ripples::IMMConfiguration> CFG;
-  CFG.ParseCmdOptions(argc, argv);
+  ripples::parse_command_line(argc, argv);
+  auto CFG = ripples::configuration();
+
+  // check command line
+  if (CFG.cuda_parallel) {
+    if (!(CFG.streaming_workers > 0 &&
+          CFG.streaming_gpu_workers <= CFG.streaming_workers)) {
+      spdlog::get("console")->error("invalid number of streaming workers");
+      return -1;
+    }
+  }
 
   spdlog::set_level(spdlog::level::info);
 
@@ -125,21 +144,44 @@ int main(int argc, char *argv[]) {
   trng::lcg64 generator;
   generator.seed(0UL);
   generator.split(2, 1);
+  ripples::split_generator(generator);
 
-  if (CFG.diffusionModel == "IC") {
-    auto start = std::chrono::high_resolution_clock::now();
-    std::tie(seeds, R) = IMM(G, CFG.k, CFG.epsilon, 1.0, generator,
-                             ripples::independent_cascade_tag{},
-                             ripples::mpi_omp_parallel_tag{});
-    auto end = std::chrono::high_resolution_clock::now();
-    R.Total = end - start;
-  } else if (CFG.diffusionModel == "LT") {
-    auto start = std::chrono::high_resolution_clock::now();
-    std::tie(seeds, R) =
-        IMM(G, CFG.k, CFG.epsilon, 1, generator,
-            ripples::linear_threshold_tag{}, ripples::mpi_omp_parallel_tag{});
-    auto end = std::chrono::high_resolution_clock::now();
-    R.Total = end - start;
+  if (CFG.cuda_parallel) {
+    if (CFG.diffusionModel == "IC") {
+      ripples::cuda_init(G, generator, ripples::independent_cascade_tag{});
+      auto start = std::chrono::high_resolution_clock::now();
+      std::tie(seeds, R) = IMM(G, CFG.k, CFG.epsilon, 1.0, generator,
+                               ripples::independent_cascade_tag{},
+                               ripples::mpi_cuda_parallel_tag{});
+      auto end = std::chrono::high_resolution_clock::now();
+      ripples::cuda_fini();
+      R.Total = end - start;
+    } else if (CFG.diffusionModel == "LT") {
+      ripples::cuda_init(G, generator, ripples::linear_threshold_tag{});
+      auto start = std::chrono::high_resolution_clock::now();
+      std::tie(seeds, R) = IMM(G, CFG.k, CFG.epsilon, 1, generator,
+                               ripples::linear_threshold_tag{},
+                               ripples::mpi_cuda_parallel_tag{});
+      auto end = std::chrono::high_resolution_clock::now();
+      ripples::cuda_fini();
+      R.Total = end - start;
+    }
+  } else {
+    if (CFG.diffusionModel == "IC") {
+      auto start = std::chrono::high_resolution_clock::now();
+      std::tie(seeds, R) = IMM(G, CFG.k, CFG.epsilon, 1.0, generator,
+                               ripples::independent_cascade_tag{},
+                               ripples::mpi_cuda_parallel_tag{});
+      auto end = std::chrono::high_resolution_clock::now();
+      R.Total = end - start;
+    } else if (CFG.diffusionModel == "LT") {
+      auto start = std::chrono::high_resolution_clock::now();
+      std::tie(seeds, R) =
+          IMM(G, CFG.k, CFG.epsilon, 1, generator,
+              ripples::linear_threshold_tag{}, ripples::mpi_omp_parallel_tag{});
+      auto end = std::chrono::high_resolution_clock::now();
+      R.Total = end - start;
+    }
   }
   console->info("IMM parallel : {}ms", R.Total.count());
 

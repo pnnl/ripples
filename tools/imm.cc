@@ -85,13 +85,13 @@ auto GetExperimentRecord(const ToolConfiguration<IMMConfiguration> &CFG,
   return experiment;
 }
 
-ripples::ToolConfiguration<ripples::IMMConfiguration> CFG;
+ToolConfiguration<ripples::IMMConfiguration> CFG;
 
 void parse_command_line(int argc, char **argv) {
   CFG.ParseCmdOptions(argc, argv);
 }
 
-ripples::ToolConfiguration<ripples::IMMConfiguration> configuration() {
+ToolConfiguration<ripples::IMMConfiguration> configuration() {
   return CFG;
 }
 

@@ -66,7 +66,7 @@ namespace ripples {
 template <typename GraphTy, typename RRRset>
 auto FindMostInfluentialSet(const GraphTy &G, size_t k,
                             std::vector<RRRset> &RRRsets,
-                            mpi_omp_parallel_tag &ex_tag) {
+                            mpi_omp_parallel_tag &&ex_tag) {
   using vertex_type = typename GraphTy::vertex_type;
   std::vector<uint32_t> vertexCoverage(G.num_nodes(), 0);
   std::vector<uint32_t> reduceCoverageInfo(G.num_nodes(), 0);
