@@ -79,12 +79,15 @@ struct SimulatorConfiguration {
 };
 
 template <typename Sims>
-auto GetExperimentRecord(const SimulatorConfiguration &CFG, size_t seeds,
-                         float epsilon, const Sims &experiments) {
-  nlohmann::json experiment{{"Algorithm", "IMM"},
+auto GetExperimentRecord(const SimulatorConfiguration &CFG,
+                         const nlohmann::json & experimentRecord,
+                         const Sims &experiments) {
+  nlohmann::json experiment{{"Input", experimentRecord["Input"]},
+                            {"Algorithm", experimentRecord["Algorithm"]},
                             {"DiffusionModel", CFG.diffusionModel},
-                            {"Epsilon", epsilon},
-                            {"K", seeds},
+                            {"Epsilon", experimentRecord["Epsilon"]},
+                            {"K", experimentRecord["K"]},
+                            {"Seeds", experimentRecord["Seeds"]},
                             {"Simulations", experiments}};
   return experiment;
 }
@@ -159,8 +162,7 @@ int main(int argc, char **argv) {
       }
     }
     simRecordLog.push_back(ripples::GetExperimentRecord(
-        CFG, std::distance(seeds.begin(), seeds.end()), record["Epsilon"],
-        experiments));
+        CFG, record, experiments));
   }
   simRecord->info("{}", simRecordLog.dump(2));
 
