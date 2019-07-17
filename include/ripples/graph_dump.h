@@ -48,10 +48,12 @@
 namespace ripples {
 
 template <typename GraphTy, typename OStream>
-void dumpGraph(const GraphTy& G, OStream& OS) {
+void dumpGraph(const GraphTy& G, OStream& OS, bool normalize) {
   for (auto i = 0; i < G.num_nodes(); ++i) {
+    typename GraphTy::vertex_type src = normalize ? i + 1 : G.convertID(i);
     for (auto j : G.neighbors(i)) {
-      OS << G.convertID(i) << '\t' << G.convertID(j.vertex) << '\t' << j.weight
+      typename GraphTy::vertex_type dst = normalize ? j.vertex + 1 : G.convertID(j.vertex);
+      OS << src << " " << dst << " " << j.weight
          << std::endl;
     }
   }

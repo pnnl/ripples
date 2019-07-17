@@ -64,9 +64,9 @@ struct ForwardDirection {
   //!
   //! \param itr Iterator to the current edge.
   //! \return The source of the egde to be loaded in the graph.
-  template <typename ItrTy>
-  static VertexTy Source(ItrTy itr) {
-    return itr->source;
+  template <typename ItrTy, typename MapTy>
+  static VertexTy Source(ItrTy itr, const MapTy &m) {
+    return m.find(itr->source)->second;
   }
 
   //! \brief Edge Destination
@@ -75,9 +75,9 @@ struct ForwardDirection {
   //!
   //! \param itr Iterator to the current edge.
   //! \return The destination of the egde to be loaded in the graph.
-  template <typename ItrTy>
-  static VertexTy Destination(ItrTy itr) {
-    return itr->destination;
+  template <typename ItrTy, typename MapTy>
+  static VertexTy Destination(ItrTy itr, const MapTy & m) {
+    return m.find(itr->destination)->second;
   }
 };
 
@@ -92,9 +92,9 @@ struct BackwardDirection {
   //!
   //! \param itr Iterator to the current edge.
   //! \return The source of the egde to be loaded in the graph.
-  template <typename ItrTy>
-  static VertexTy Source(ItrTy itr) {
-    return itr->destination;
+  template <typename ItrTy, typename MapTy>
+  static VertexTy Source(ItrTy itr, const MapTy & m) {
+    return m.find(itr->destination)->second;
   }
 
   //! \brief Edge Destination
@@ -103,9 +103,9 @@ struct BackwardDirection {
   //!
   //! \param itr Iterator to the current edge.
   //! \return The destination of the egde to be loaded in the graph.
-  template <typename ItrTy>
-  static VertexTy Destination(ItrTy itr) {
-    return itr->source;
+  template <typename ItrTy, typename MapTy>
+  static VertexTy Destination(ItrTy itr, const MapTy & m) {
+    return m.find(itr->source)->second;
   }
 };
 
@@ -125,6 +125,12 @@ struct Edge {
   VertexTy destination;
   //! The weight on the edge.
   WeightTy weight;
+
+  bool operator==(const Edge & O) const {
+    return O.source == this->source
+        && O.destination == this->destination
+        && O.weight == this->weight;
+  }
 };
 
 //! \brief The Graph data structure.
@@ -153,6 +159,10 @@ class Graph {
   struct DestinationTy {
     VertexTy vertex;  //!< The destination of an edges.
     WeightTy weight;  //!< The edge weight.
+
+    bool operator==(const DestinationTy& O) const {
+      return this->vertex == O.vertex && this->weight == O.weight;
+    }
   };
 
   //! \brief The neighborhood of a vertex.
@@ -184,6 +194,35 @@ class Graph {
         edges(nullptr),
         idMap(),
         reverseMap() {}
+
+  Graph(const Graph &O)
+      : numNodes(O.numNodes)
+      , numEdges(O.numEdges)
+      , idMap(O.idMap)
+      , reverseMap(O.reverseMap) {
+    edges = new DestinationTy[numEdges];
+    index = new DestinationTy * [numNodes + 1];
+    std::copy(O.edges, O.edges + numEdges, edges);
+    std::transform(O.index, O.index + numNodes + 1, index,
+                   [=](const DestinationTy * p) -> DestinationTy * {
+                     return edges + p - O.index;
+                   });
+  }
+
+  Graph & operator=(const Graph &O) {
+    numNodes = O.numNodes;
+    numEdges = O.numEdges;
+    idMap = O.idMap;
+    reverseMap = O.reverseMap;
+
+    edges = new DestinationTy[numEdges];
+    index = new DestinationTy * [numNodes + 1];
+    std::copy(O.edges, O.edges + numEdges, edges);
+    std::transform(O.index, O.index + numNodes + 1, index,
+                   [=](const DestinationTy * p) -> DestinationTy * {
+                     return edges + p - O.index;
+                   });
+  }
 
   //! Move constructor.
   //! \param O The graph to be moved.
@@ -266,9 +305,7 @@ class Graph {
     }
 
     for (auto itr = begin; itr != end; ++itr) {
-      itr->source = idMap[itr->source];
-      itr->destination = idMap[itr->destination];
-      index[DirectionPolicy::Source(itr) + 1] += 1;
+      index[DirectionPolicy::Source(itr, idMap) + 1] += 1;
     }
 
     for (size_t i = 1; i <= num_nodes; ++i) {
@@ -277,9 +314,9 @@ class Graph {
 
     std::vector<DestinationTy *> ptrEdge(index, index + num_nodes);
     for (auto itr = begin; itr != end; ++itr) {
-      *ptrEdge[DirectionPolicy::Source(itr)] = {
-          DirectionPolicy::Destination(itr), itr->weight};
-      ++ptrEdge[DirectionPolicy::Source(itr)];
+      *ptrEdge[DirectionPolicy::Source(itr, idMap)] = {
+        DirectionPolicy::Destination(itr, idMap), itr->weight};
+      ++ptrEdge[DirectionPolicy::Source(itr, idMap)];
     }
   }
 
@@ -322,7 +359,7 @@ class Graph {
   void convertID(Itr b, Itr e, OutputItr o) const {
     using value_type = typename Itr::value_type;
     std::transform(b, e, o, [&](const value_type &v) -> value_type {
-      return reverseMap[v];
+        return reverseMap.at(v);
     });
   }
 
@@ -331,7 +368,9 @@ class Graph {
   //!
   //! \param v The input vertex ID.
   //! \return The original vertex ID in the input representation.
-  vertex_type convertID(const vertex_type v) const { return reverseMap[v]; }
+  vertex_type convertID(const vertex_type v) const {
+    return reverseMap.at(v);
+  }
 
   //! Convert a list of vertices from the original input edge list
   //! representation to the internal vertex representation.
@@ -345,13 +384,17 @@ class Graph {
   template <typename Itr, typename OutputItr>
   void transformID(Itr b, Itr e, OutputItr o) const {
     using value_type = typename Itr::value_type;
-    std::transform(b, e, o, [&](const value_type &v) -> value_type {
+    std::transform(b, e, o, [this](const value_type &v) -> value_type {
+        return transformID(v);
+    });
+  }
+
+  vertex_type transformID(const vertex_type v) const {
       auto itr = idMap.find(v);
       if (itr != idMap.end())
         return itr->second;
       else
         throw "Bad node";
-    });
   }
 
   //! Dump the internal representation to a binary stream.
@@ -472,6 +515,37 @@ class Graph {
   size_t numNodes;
   size_t numEdges;
 };
+
+
+template <typename BwdGraphTy, typename FwdGraphTy>
+auto getCommunitiesSubgraphs(const FwdGraphTy & Gf,
+                             const std::vector<typename FwdGraphTy::vertex_type> & communityVector) {
+  using vertex_type = typename FwdGraphTy::vertex_type;
+  size_t num_communities = *std::max_element(communityVector.begin(), communityVector.end()) + 1;
+  std::vector<BwdGraphTy> communities(num_communities);
+
+  using EdgeTy = typename FwdGraphTy::edge_type;
+  std::vector<std::vector<EdgeTy>> edge_lists(num_communities);
+  for (typename FwdGraphTy::vertex_type src = 0; src < Gf.num_nodes(); ++src) {
+    vertex_type original_src = Gf.convertID(src);
+
+    vertex_type community_src = communityVector[original_src - 1];
+    for (auto e : Gf.neighbors(src)) {
+      vertex_type original_dst = Gf.convertID(e.vertex);
+
+      vertex_type community_dst = communityVector[original_dst - 1];
+      if (community_dst == community_src) {
+        edge_lists[community_src].push_back({original_src, original_dst, e.weight});
+      }
+    }
+  }
+
+  for (size_t i = 0; i < num_communities; ++i) {
+    communities[i] = BwdGraphTy(edge_lists[i].begin(), edge_lists[i].end());
+  }
+
+  return communities;
+}
 
 }  // namespace ripples
 
