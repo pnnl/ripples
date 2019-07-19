@@ -66,7 +66,7 @@ namespace ripples {
 //! \param k The size of the seed set.
 //! \param num_nodes The number of nodes in the input graph.
 inline size_t ThetaPrime(ssize_t x, double epsilonPrime, double l, size_t k,
-                         size_t num_nodes, mpi_omp_parallel_tag &) {
+                         size_t num_nodes, mpi_omp_parallel_tag &&) {
   int world_size;
   MPI_Comm_size(MPI_COMM_WORLD, &world_size);
 
@@ -121,8 +121,8 @@ auto Sampling(const GraphTy &G, std::size_t k, double epsilon, double l,
   size_t thetaPrime = 0;
   for (ssize_t x = 1; x < std::log2(G.num_nodes()); ++x) {
     // Equation 9
-    ssize_t thetaPrime =
-        ThetaPrime(x, epsilonPrime, l, k, G.num_nodes(), ex_tag);
+    ssize_t thetaPrime = ThetaPrime(x, epsilonPrime, l, k, G.num_nodes(),
+                                    std::forward<mpi_omp_parallel_tag>(ex_tag));
 
     record.ThetaPrimeDeltas.push_back(thetaPrime - RR.size());
 
@@ -207,8 +207,8 @@ auto Sampling(const GraphTy &G, std::size_t k, double epsilon, double l,
   size_t thetaPrime = 0;
   for (ssize_t x = 1; x < std::log2(G.num_nodes()); ++x) {
     // Equation 9
-    ssize_t thetaPrime =
-        ThetaPrime(x, epsilonPrime, l, k, G.num_nodes(), ex_tag);
+    ssize_t thetaPrime = ThetaPrime(x, epsilonPrime, l, k, G.num_nodes(),
+                                    ripples::mpi_omp_parallel_tag{});
 
     record.ThetaPrimeDeltas.push_back(thetaPrime - RR.size());
 
