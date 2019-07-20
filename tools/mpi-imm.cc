@@ -147,31 +147,36 @@ int main(int argc, char *argv[]) {
   ripples::split_generator(generator);
 
   if (CFG.cuda_parallel) {
+    auto workers = CFG.streaming_workers;
+    auto gpu_workers = CFG.streaming_gpu_workers;
     if (CFG.diffusionModel == "IC") {
-      ripples::cuda_init(G, generator, ripples::independent_cascade_tag{});
+      ripples::StreamingRRRGenerator<decltype(G), decltype(generator),
+                                     ripples::independent_cascade_tag>
+          se(G, generator, workers - gpu_workers, gpu_workers);
       auto start = std::chrono::high_resolution_clock::now();
-      std::tie(seeds, R) = IMM(G, CFG.k, CFG.epsilon, 1.0, generator,
+      std::tie(seeds, R) = IMM(G, CFG.k, CFG.epsilon, 1.0, se,
                                ripples::independent_cascade_tag{},
                                ripples::mpi_cuda_parallel_tag{});
       auto end = std::chrono::high_resolution_clock::now();
-      ripples::cuda_fini();
       R.Total = end - start;
     } else if (CFG.diffusionModel == "LT") {
-      ripples::cuda_init(G, generator, ripples::linear_threshold_tag{});
+      ripples::StreamingRRRGenerator<decltype(G), decltype(generator),
+                                     ripples::linear_threshold_tag>
+          se(G, generator, workers - gpu_workers, gpu_workers);
       auto start = std::chrono::high_resolution_clock::now();
-      std::tie(seeds, R) = IMM(G, CFG.k, CFG.epsilon, 1, generator,
+      std::tie(seeds, R) = IMM(G, CFG.k, CFG.epsilon, 1.0, se,
                                ripples::linear_threshold_tag{},
                                ripples::mpi_cuda_parallel_tag{});
       auto end = std::chrono::high_resolution_clock::now();
-      ripples::cuda_fini();
       R.Total = end - start;
     }
+    console->info("IMM MPI+CUDA : {}ms", R.Total.count());
   } else {
     if (CFG.diffusionModel == "IC") {
       auto start = std::chrono::high_resolution_clock::now();
       std::tie(seeds, R) = IMM(G, CFG.k, CFG.epsilon, 1.0, generator,
                                ripples::independent_cascade_tag{},
-                               ripples::mpi_cuda_parallel_tag{});
+                               ripples::mpi_omp_parallel_tag{});
       auto end = std::chrono::high_resolution_clock::now();
       R.Total = end - start;
     } else if (CFG.diffusionModel == "LT") {
@@ -182,8 +187,8 @@ int main(int argc, char *argv[]) {
       auto end = std::chrono::high_resolution_clock::now();
       R.Total = end - start;
     }
+    console->info("IMM MPI+OpenMP : {}ms", R.Total.count());
   }
-  console->info("IMM parallel : {}ms", R.Total.count());
 
   size_t num_threads;
 #pragma omp single

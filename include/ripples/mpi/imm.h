@@ -7,7 +7,7 @@
 //===----------------------------------------------------------------------===//
 //
 // Copyright (c) 2019, Battelle Memorial Institute
-// 
+//
 // Battelle Memorial Institute (hereinafter Battelle) hereby grants permission
 // to any person or entity lawfully obtaining a copy of this software and
 // associated documentation files (hereinafter “the Software”) to redistribute
@@ -15,18 +15,18 @@
 // modification.  Such person or entity may use, copy, modify, merge, publish,
 // distribute, sublicense, and/or sell copies of the Software, and may permit
 // others to do so, subject to the following conditions:
-// 
+//
 // 1. Redistributions of source code must retain the above copyright notice,
 //    this list of conditions and the following disclaimers.
-// 
+//
 // 2. Redistributions in binary form must reproduce the above copyright notice,
 //    this list of conditions and the following disclaimer in the documentation
 //    and/or other materials provided with the distribution.
-// 
+//
 // 3. Other than as used herein, neither the name Battelle Memorial Institute or
 //    Battelle may be used in any form whatsoever without the express written
 //    consent of Battelle.
-// 
+//
 // THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
 // AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
 // IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
@@ -192,9 +192,11 @@ auto Sampling(const GraphTy &G, std::size_t k, double epsilon, double l,
 //! \param model_tag The diffusion model tag.
 //! \param ex_tag The execution policy tag.
 template <typename GraphTy, typename PRNGeneratorTy, typename diff_model_tag>
-auto Sampling(const GraphTy &G, std::size_t k, double epsilon, double l,
-              PRNGeneratorTy &generator, IMMExecutionRecord &record,
-              diff_model_tag &&model_tag, mpi_cuda_parallel_tag &&ex_tag) {
+auto Sampling(
+    const GraphTy &G, std::size_t k, double epsilon, double l,
+    StreamingRRRGenerator<GraphTy, PRNGeneratorTy, diff_model_tag> &generator,
+    IMMExecutionRecord &record, diff_model_tag &&model_tag,
+    mpi_cuda_parallel_tag &&ex_tag) {
   using vertex_type = typename GraphTy::vertex_type;
 
   // sqrt(2) * epsilon
@@ -224,8 +226,7 @@ auto Sampling(const GraphTy &G, std::size_t k, double epsilon, double l,
 
     double f;
     auto timeMostInfluential = measure<>::exec_time([&]() {
-      const auto &S = FindMostInfluentialSet(
-          G, k, RR, mpi_omp_parallel_tag{});
+      const auto &S = FindMostInfluentialSet(G, k, RR, mpi_omp_parallel_tag{});
       f = S.first;
     });
     record.ThetaEstimationMostInfluential.push_back(timeMostInfluential);
@@ -325,16 +326,15 @@ auto IMM(const GraphTy &G, std::size_t k, double epsilon, double l, PRNG &gen,
 //! \param model_tag The diffusion model tag.
 //! \param ex_tag The execution policy tag.
 template <typename GraphTy, typename diff_model_tag, typename PRNG>
-auto IMM(const GraphTy &G, std::size_t k, double epsilon, double l, PRNG &gen,
+auto IMM(const GraphTy &G, std::size_t k, double epsilon, double l,
+         StreamingRRRGenerator<GraphTy, PRNG, diff_model_tag> &se,
          diff_model_tag &&model_tag, ripples::mpi_cuda_parallel_tag &&ex_tag) {
   using vertex_type = typename GraphTy::vertex_type;
   IMMExecutionRecord record;
 
-  std::vector<trng::lcg64> generator;
-
   l = l * (1 + 1 / std::log2(G.num_nodes()));
 
-  auto R = Sampling(G, k, epsilon, l, generator, record,
+  auto R = Sampling(G, k, epsilon, l, se, record,
                     std::forward<diff_model_tag>(model_tag),
                     ripples::mpi_cuda_parallel_tag{});
 
