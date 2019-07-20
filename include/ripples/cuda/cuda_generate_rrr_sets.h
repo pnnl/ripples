@@ -52,20 +52,6 @@ struct cuda_device_graph {
 
 constexpr size_t CUDA_WALK_SIZE = 8;
 
-//! \brief Initialize CUDA execution context for LT model.
-//!
-//! \param G The input host-side graph.
-//! \param model_tag The diffusion model tag.
-void cuda_init(const cuda_GraphTy &G, const cuda_PRNGeneratorTy &,
-               ripples::linear_threshold_tag &&model_tag);
-
-//! \brief Initialize CUDA execution context for IC model.
-//!
-//! \param G The input host-side graph.
-//! \param model_tag The diffusion model tag.
-void cuda_init(const cuda_GraphTy &G, const cuda_PRNGeneratorTy &,
-               ripples::independent_cascade_tag &&model_tag);
-
 
 typename cuda_device_graph::vertex_t *cuda_graph_index();
 typename cuda_device_graph::vertex_t *cuda_graph_edges();
@@ -75,16 +61,6 @@ typename cuda_device_graph::weight_t *cuda_graph_weights();
 //!
 //! \return The maximum number of CUDA blocks.
 size_t cuda_max_blocks();
-
-//! \brief Finalize CUDA execution context.
-void cuda_fini();
-
-//! \brief Generate Random Reverse Reachability Sets with CUDA.
-//!
-//! \param theta The number of RRR sets to be generated.
-//!
-//! \return A list of theta Random Reverse Rachability Sets.
-cuda_res_t CudaGenerateRRRSets(size_t theta);
 
 //
 // host-device API

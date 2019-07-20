@@ -58,6 +58,8 @@
 #include "ripples/tim.h"
 #include "ripples/utility.h"
 
+#include "ripples/cuda/streaming_rrr_generator_omp.h"
+
 namespace ripples {
 
 //! The IMM algorithm configuration descriptor.
@@ -151,6 +153,27 @@ inline size_t Theta(double epsilon, double l, size_t k, double LB,
   return lamdaStar / LB;
 }
 
+//! \brief Generate Random Reverse Reachability Sets - CUDA.
+//!
+//! \tparam GraphTy The type of the graph.
+//! \tparam PRNGeneratorty The type of the random number generator.
+//! \tparam diff_model_tag The policy for the diffusion model.
+//!
+//! \param G The original graph.
+//! \param theta The number of RRR sets to be generated.
+//! \param generator The random numeber generator.
+//! \param model_tag The diffusion model tag.
+//! \param ex_tag The execution policy tag.
+//!
+//! \return A list of theta Random Reverse Rachability Sets.
+template <typename GraphTy, typename PRNGeneratorTy, typename diff_model_tag>
+std::vector<RRRset<GraphTy>> GenerateRRRSets(
+    const GraphTy &G, size_t theta,
+    StreamingRRRGenerator<GraphTy, PRNGeneratorTy, diff_model_tag> &se,
+    diff_model_tag &&, cuda_parallel_tag &&) {
+  return se.generate(theta);
+}
+
 //! Collect a set of Random Reverse Reachable set.
 //!
 //! \tparam GraphTy The type of the input graph.
@@ -166,10 +189,10 @@ inline size_t Theta(double epsilon, double l, size_t k, double LB,
 //! \param record Data structure storing timing and event counts.
 //! \param model_tag The diffusion model tag.
 //! \param ex_tag The execution policy tag.
-template <typename GraphTy, typename PRNGeneratorTy, typename diff_model_tag,
+template <typename GraphTy, typename RRRGenerator, typename diff_model_tag,
           typename execution_tag>
 auto Sampling(const GraphTy &G, std::size_t k, double epsilon, double l,
-              PRNGeneratorTy &generator, IMMExecutionRecord &record,
+              RRRGenerator &generator, IMMExecutionRecord &record,
               diff_model_tag &&model_tag, execution_tag &&ex_tag) {
   using vertex_type = typename GraphTy::vertex_type;
 
@@ -291,6 +314,50 @@ auto IMM(const GraphTy &G, std::size_t k, double epsilon, double l, PRNG &gen,
   auto start = std::chrono::high_resolution_clock::now();
   const auto &S =
       FindMostInfluentialSet(G, k, R, std::forward<execution_tag>(ex_tag));
+  auto end = std::chrono::high_resolution_clock::now();
+
+  record.FindMostInfluentialSet = end - start;
+
+  return std::make_pair(S.second, record);
+}
+
+//! The IMM algroithm for Influence Maximization
+//!
+//! \tparam GraphTy The type of the input graph.
+//! \tparam PRNG The type of the parallel random number generator.
+//! \tparam diff_model_tag Type-Tag to selecte the diffusion model.
+//! \tparam execution_tag Type-Tag to select the execution policy.
+//!
+//! \param G The input graph.  The graph is transoposed.
+//! \param k The size of the seed set.
+//! \param epsilon The parameter controlling the approximation guarantee.
+//! \param l Parameter usually set to 1.
+//! \param gen The parallel random number generator.
+//! \param model_tag The diffusion model tag.
+//! \param ex_tag The execution policy tag.
+template <typename GraphTy, typename GeneratorTy, typename diff_model_tag>
+auto IMM(const GraphTy &G, std::size_t k, double epsilon, double l, GeneratorTy &gen,
+         diff_model_tag &&model_tag, cuda_parallel_tag &&ex_tag) {
+  using vertex_type = typename GraphTy::vertex_type;
+  IMMExecutionRecord record;
+
+  l = l * (1 + 1 / std::log2(G.num_nodes()));
+
+  auto R = Sampling(G, k, epsilon, l, gen, record,
+                    std::forward<diff_model_tag>(model_tag),
+                    std::forward<cuda_parallel_tag>(ex_tag));
+
+#if CUDA_PROFILE
+  auto logst = spdlog::stdout_color_st("IMM-profile");
+  std::vector<size_t> rrr_sizes;
+  for(auto &rrr_set : R)
+	  rrr_sizes.push_back(rrr_set.size());
+  print_profile_counter(logst, rrr_sizes, "RRR sizes");
+#endif
+
+  auto start = std::chrono::high_resolution_clock::now();
+  const auto &S =
+      FindMostInfluentialSet(G, k, R, std::forward<cuda_parallel_tag>(ex_tag));
   auto end = std::chrono::high_resolution_clock::now();
 
   record.FindMostInfluentialSet = end - start;

@@ -50,8 +50,6 @@
 #include "ripples/loaders.h"
 #include "ripples/utility.h"
 
-#include "ripples/cuda/cuda_generate_rrr_sets.h"
-
 #include "omp.h"
 
 #include "CLI11/CLI11.hpp"
@@ -138,9 +136,10 @@ int main(int argc, char **argv) {
   generator.seed(0UL);
   generator.split(2, 1);
 
+  std::ofstream perf(CFG.OutputFile);
+
   if (CFG.OMPStrongScaling) {
     size_t max_threads = 1;
-    std::ofstream perf(CFG.OutputFile);
 #pragma omp single
     max_threads = omp_get_max_threads();
 
@@ -201,7 +200,6 @@ int main(int argc, char **argv) {
       perf << executionLog.dump(2);
     }
   } else if (CFG.parallel) {
-    std::ofstream perf(CFG.OutputFile);
     if (CFG.diffusionModel == "IC") {
       auto start = std::chrono::high_resolution_clock::now();
       std::tie(seeds, R) =
@@ -230,24 +228,27 @@ int main(int argc, char **argv) {
 
     perf << executionLog.dump(2);
   } else if (CFG.cuda_parallel) {
-    std::ofstream perf(CFG.OutputFile);
+    auto workers = CFG.streaming_workers;
+    auto gpu_workers = CFG.streaming_gpu_workers;
     if (CFG.diffusionModel == "IC") {
-      ripples::cuda_init(G, generator, ripples::independent_cascade_tag{});
+      ripples::StreamingRRRGenerator<decltype(G), decltype(generator),
+                                     ripples::independent_cascade_tag>
+          se(G, generator, workers - gpu_workers, gpu_workers);
       auto start = std::chrono::high_resolution_clock::now();
       std::tie(seeds, R) =
-          IMM(G, CFG.k, CFG.epsilon, 1, generator,
-              ripples::independent_cascade_tag{}, ripples::cuda_parallel_tag{});
+          IMM(G, CFG.k, CFG.epsilon, 1, se, ripples::independent_cascade_tag{},
+              ripples::cuda_parallel_tag{});
       auto end = std::chrono::high_resolution_clock::now();
-      ripples::cuda_fini();
       R.Total = end - start;
     } else if (CFG.diffusionModel == "LT") {
-      ripples::cuda_init(G, generator, ripples::linear_threshold_tag{});
+      ripples::StreamingRRRGenerator<decltype(G), decltype(generator),
+                                     ripples::linear_threshold_tag>
+          se(G, generator, workers - gpu_workers, gpu_workers);
       auto start = std::chrono::high_resolution_clock::now();
       std::tie(seeds, R) =
-          IMM(G, CFG.k, CFG.epsilon, 1, generator,
-              ripples::linear_threshold_tag{}, ripples::cuda_parallel_tag{});
+          IMM(G, CFG.k, CFG.epsilon, 1, se, ripples::linear_threshold_tag{},
+              ripples::cuda_parallel_tag{});
       auto end = std::chrono::high_resolution_clock::now();
-      ripples::cuda_fini();
       R.Total = end - start;
     }
     console->info("IMM CUDA : {}ms", R.Total.count());
@@ -259,7 +260,6 @@ int main(int argc, char **argv) {
     executionLog.push_back(experiment);
     perf << executionLog.dump(2);
   } else {
-    std::ofstream perf(CFG.OutputFile);
     if (CFG.diffusionModel == "IC") {
       auto start = std::chrono::high_resolution_clock::now();
       std::tie(seeds, R) =

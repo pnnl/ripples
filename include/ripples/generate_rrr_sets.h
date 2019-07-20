@@ -52,8 +52,6 @@
 #include "ripples/graph.h"
 #include "ripples/utility.h"
 
-#include "ripples/cuda/cuda_generate_rrr_sets.h"
-
 #include "trng/uniform01_dist.hpp"
 #include "trng/uniform_int_dist.hpp"
 
@@ -75,7 +73,7 @@ using RRRset = std::vector<typename GraphTy::vertex_type>;
 //! \param result The RRR set
 //! \param tag The diffusion model tag.
 template <typename GraphTy, typename PRNGeneratorTy, typename diff_model_tag>
-void AddRRRSet(GraphTy &G, typename GraphTy::vertex_type r,
+void AddRRRSet(const GraphTy &G, typename GraphTy::vertex_type r,
                PRNGeneratorTy &generator, RRRset<GraphTy> &result,
                diff_model_tag &&tag) {
   using vertex_type = typename GraphTy::vertex_type;
@@ -138,7 +136,7 @@ void AddRRRSet(GraphTy &G, typename GraphTy::vertex_type r,
 //!
 //! \return A list of theta Random Reverse Rachability Sets.
 template <typename GraphTy, typename PRNGeneratorTy, typename diff_model_tag>
-std::vector<RRRset<GraphTy>> GenerateRRRSets(GraphTy &G, size_t theta,
+std::vector<RRRset<GraphTy>> GenerateRRRSets(const GraphTy &G, size_t theta,
                                              PRNGeneratorTy &generator,
                                              diff_model_tag &&model_tag,
                                              sequential_tag &&ex_tag) {
@@ -169,7 +167,7 @@ std::vector<RRRset<GraphTy>> GenerateRRRSets(GraphTy &G, size_t theta,
 //!
 //! \return A list of theta Random Reverse Rachability Sets.
 template <typename GraphTy, typename PRNGeneratorTy, typename diff_model_tag>
-std::vector<RRRset<GraphTy>> GenerateRRRSets(GraphTy &G, size_t theta,
+std::vector<RRRset<GraphTy>> GenerateRRRSets(const GraphTy &G, size_t theta,
                                              PRNGeneratorTy &generator,
                                              diff_model_tag &&model_tag,
                                              omp_parallel_tag &&ex_tag) {
@@ -190,27 +188,6 @@ std::vector<RRRset<GraphTy>> GenerateRRRSets(GraphTy &G, size_t theta,
   }
 
   return rrrSets;
-}
-
-//! \brief Generate Random Reverse Reachability Sets - CUDA.
-//!
-//! \tparam GraphTy The type of the graph.
-//! \tparam PRNGeneratorty The type of the random number generator.
-//! \tparam diff_model_tag The policy for the diffusion model.
-//!
-//! \param G The original graph.
-//! \param theta The number of RRR sets to be generated.
-//! \param generator The random numeber generator.
-//! \param model_tag The diffusion model tag.
-//! \param ex_tag The execution policy tag.
-//!
-//! \return A list of theta Random Reverse Rachability Sets.
-template <typename GraphTy, typename PRNGeneratorTy, typename diff_model_tag>
-std::vector<RRRset<GraphTy>> GenerateRRRSets(GraphTy &G, size_t theta,
-                                             PRNGeneratorTy &,
-                                             diff_model_tag &&,
-                                             cuda_parallel_tag &&) {
-  return CudaGenerateRRRSets(theta);
 }
 
 }  // namespace ripples
