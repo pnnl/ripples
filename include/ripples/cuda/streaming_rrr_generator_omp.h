@@ -144,7 +144,7 @@ class GPUWalkWorker<GraphTy, PRNGeneratorTy, linear_threshold_tag>
 
  public:
   struct config_t {
-    config_t(size_t max_batch_size) : num_threads_(max_batch_size) {
+    config_t(size_t) {
       assert(num_threads_ % block_size_ == 0);
       max_blocks_ = num_threads_ / block_size_;
 
@@ -158,12 +158,16 @@ class GPUWalkWorker<GraphTy, PRNGeneratorTy, linear_threshold_tag>
 
     // configuration parameters
     static constexpr size_t block_size_ = 256;
-    const size_t num_threads_;
+    static constexpr size_t num_threads_ = 1 << 15;
     const size_t mask_words_ = 8;  // maximum walk size
 
     // inferred configuration
     size_t max_blocks_{0};
   };
+
+  static size_t max_batch_size(const config_t &config) {
+    return config.num_gpu_threads();
+  }
 
   GPUWalkWorker(const config_t &conf, const GraphTy &G, const PRNGeneratorTy &rng,
             cudaStream_t cuda_stream)
@@ -327,6 +331,10 @@ class GPUWalkWorker<GraphTy, PRNGeneratorTy, independent_cascade_tag>
     const size_t block_size_;
   };
 
+  static size_t max_batch_size(const config_t &config) {
+    return max_batch_size_;
+  }
+
   GPUWalkWorker(const config_t &conf, const GraphTy &G, const PRNGeneratorTy &rng,
             cudaStream_t cuda_stream)
       : WalkWorker<GraphTy>(G),
@@ -366,6 +374,7 @@ class GPUWalkWorker<GraphTy, PRNGeneratorTy, independent_cascade_tag>
   }
 
  private:
+  static constexpr size_t max_batch_size_ = 32;
   config_t conf_;
   cudaStream_t cuda_stream_;
   PRNGeneratorTy rng_;
@@ -467,72 +476,38 @@ class StreamingRRRGenerator {
                         size_t num_cpu_workers, size_t num_gpu_workers)
       : num_cpu_workers_(num_cpu_workers), num_gpu_workers_(num_gpu_workers) {
     // init GPU
-    cuda_graph_init(G);
+    if(num_gpu_workers_)
+      cuda_graph_init(G);
 
-    // TODO factorize
-    std::vector<cudaStream_t> cuda_streams;
-    if (std::is_same<diff_model_tag, independent_cascade_tag>::value) {
-      max_batch_size_ = 32;
-      typename gpu_worker_t::config_t gpu_conf(num_gpu_workers_);
-      assert(gpu_conf.max_blocks_ * num_gpu_workers <= cuda_max_blocks());
-      auto num_gpu_threads_per_worker = gpu_conf.num_gpu_threads();
+    std::vector<cudaStream_t> cuda_streams(num_gpu_workers_);
+    typename gpu_worker_t::config_t gpu_conf(num_gpu_workers_);
+    max_batch_size_ = gpu_worker_t::max_batch_size(gpu_conf);
 
-      auto num_rng_sequences =
-          num_cpu_workers_ +
-          num_gpu_workers_ * (num_gpu_threads_per_worker + 1);
-      auto gpu_seq_offset = num_cpu_workers_ + num_gpu_workers_;
+    assert(gpu_conf.max_blocks_ * num_gpu_workers_ <= cuda_max_blocks());
+    auto num_gpu_threads_per_worker = gpu_conf.num_gpu_threads();
 
-      // CPU workers
-      for (size_t i = 0; i < num_cpu_workers_; ++i) {
-        auto rng = master_rng;
-        rng.split(num_rng_sequences, i);
-        workers.push_back(new cpu_worker_t(G, rng));
-      }
+    auto num_rng_sequences =
+        num_cpu_workers_ + num_gpu_workers_ * (num_gpu_threads_per_worker + 1);
+    auto gpu_seq_offset = num_cpu_workers_ + num_gpu_workers_;
 
-      // GPU workers
-      for (size_t i = 0; i < num_gpu_workers_; ++i) {
-        auto rng = master_rng;
-        rng.split(num_rng_sequences, num_cpu_workers_ + i);
-        cuda_streams.emplace_back();
-        auto &stream(cuda_streams.back());
-        cudaStreamCreate(&stream);
-        auto w = new gpu_worker_t(gpu_conf, G, rng, stream);
-        w->rng_setup(master_rng, num_rng_sequences,
-                     gpu_seq_offset + i * num_gpu_threads_per_worker);
-        workers.push_back(w);
-      }
-    } else if (std::is_same<diff_model_tag,
-                            ripples::linear_threshold_tag>::value) {
-      max_batch_size_ = 1 << 15;
-      typename gpu_worker_t::config_t gpu_conf(max_batch_size_);
-      assert(gpu_conf.max_blocks_ * num_gpu_workers <= cuda_max_blocks());
-      auto num_gpu_threads_per_worker = gpu_conf.num_gpu_threads();
+    // CPU workers
+    for (size_t i = 0; i < num_cpu_workers_; ++i) {
+      auto rng = master_rng;
+      rng.split(num_rng_sequences, i);
+      workers.push_back(new cpu_worker_t(G, rng));
+    }
 
-      auto num_rng_sequences =
-          num_cpu_workers_ +
-          num_gpu_workers_ * (num_gpu_threads_per_worker + 1);
-      auto gpu_seq_offset = num_cpu_workers_ + num_gpu_workers_;
-
-      // CPU workers
-      for (size_t i = 0; i < num_cpu_workers_; ++i) {
-        auto rng = master_rng;
-        rng.split(num_rng_sequences, i);
-        workers.push_back(new cpu_worker_t(G, rng));
-      }
-
-      for (size_t i = 0; i < num_gpu_workers_; ++i) {
-        auto rng = master_rng;
-        rng.split(num_rng_sequences, num_cpu_workers + i);
-        cuda_streams.emplace_back();
-        auto &stream(cuda_streams.back());
-        cudaStreamCreate(&stream);
-        auto w = new gpu_worker_t(gpu_conf, G, rng, stream);
-        w->rng_setup(master_rng, num_rng_sequences,
-                     gpu_seq_offset + i * num_gpu_threads_per_worker);
-        workers.push_back(w);
-      }
-    } else
-      assert(false);
+    // GPU workers
+    for (size_t i = 0; i < num_gpu_workers_; ++i) {
+      auto rng = master_rng;
+      rng.split(num_rng_sequences, num_cpu_workers_ + i);
+      auto &stream(cuda_streams[i]);
+      cudaStreamCreate(&stream);
+      auto w = new gpu_worker_t(gpu_conf, G, rng, stream);
+      w->rng_setup(master_rng, num_rng_sequences,
+                   gpu_seq_offset + i * num_gpu_threads_per_worker);
+      workers.push_back(w);
+    }
   }
 
   ~StreamingRRRGenerator() {
