@@ -66,6 +66,8 @@ auto GetExperimentRecord(const ToolConfiguration<IMMConfiguration> &CFG,
                          const IMMExecutionRecord &R, const SeedSet &seeds) {
   nlohmann::json experiment{
       {"Algorithm", "IMM"},
+      {"Input", CFG.IFileName },
+      {"Output", CFG.OutputFile},
       {"DiffusionModel", CFG.diffusionModel},
       {"Epsilon", CFG.epsilon},
       {"K", CFG.k},

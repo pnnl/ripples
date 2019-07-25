@@ -71,7 +71,9 @@ auto GetExperimentRecord(const ToolConfiguration<IMMConfiguration> &CFG,
   MPI_Comm_size(MPI_COMM_WORLD, &world_size);
 
   nlohmann::json experiment{
-      {"Algorithm", "IMM"},
+      {"Algorithm", "MPI-IMM"},
+      {"Input", CFG.IFileName },
+      {"Output", CFG.OutputFile},
       {"DiffusionModel", CFG.diffusionModel},
       {"Epsilon", CFG.epsilon},
       {"K", CFG.k},

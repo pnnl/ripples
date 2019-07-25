@@ -115,6 +115,14 @@ command line options can be obtained through:
    $ ./build/tools/<tool_name> --help
 
 
+Ripples Team
+============
+
+- `Marco Mintutoli <marco.minutoli@pnnl.gov>`_
+- `Mahantesh Halappanavar <mahantesh.halappanavar@pnnl.gov>`_
+- `Ananth Kalyanaraman <ananth@wsu.edu>`_
+
+
 Disclamer Notice
 ================
 

@@ -58,6 +58,7 @@
 struct DumpOutputConfiguration {
   std::string OName{"output"};
   bool binaryDump{false};
+  bool normalize{false};
 
   void addCmdOptions(CLI::App &app) {
     app.add_option("-o,--output", OName, "The name of the output file name")
@@ -65,6 +66,9 @@ struct DumpOutputConfiguration {
         ->group("Output Options");
     app.add_flag("--dump-binary", binaryDump,
                  "Dump the Graph in binary format.")
+        ->group("Output Options");
+    app.add_flag("--normalize", normalize,
+                 "Dump the Graph in text format with vertices starting from 1")
         ->group("Output Options");
   }
 };
@@ -109,7 +113,7 @@ int main(int argc, char **argv) {
     file.close();
   } else {
     auto file = std::fstream(CFG.OName, std::ios::out);
-    dumpGraph(G, file);
+    dumpGraph(G, file, CFG.normalize);
     file.close();
   }
 
