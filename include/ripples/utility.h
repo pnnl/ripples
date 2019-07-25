@@ -43,7 +43,6 @@
 #ifndef RIPPLES_UTILITY_H
 #define RIPPLES_UTILITY_H
 
-#include <endian.h>
 #include <chrono>
 #include <utility>
 
