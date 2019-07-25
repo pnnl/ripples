@@ -60,13 +60,13 @@
 namespace ripples {
 
 template <typename GraphTy>
-class Worker {
+class WalkWorker {
   using vertex_t = typename GraphTy::vertex_type;
   using rrr_set_t = std::vector<vertex_t>;
 
  public:
-  Worker(const GraphTy &G) : G_(G) {}
-  virtual ~Worker() {}
+  WalkWorker(const GraphTy &G) : G_(G) {}
+  virtual ~WalkWorker() {}
   virtual void batch(rrr_set_t *first, size_t size) = 0;
 
  protected:
@@ -79,13 +79,13 @@ class Worker {
 };
 
 template <typename GraphTy, typename PRNGeneratorTy, typename diff_model_tag>
-class CPUWorker : public Worker<GraphTy> {
+class CPUWalkWorker : public WalkWorker<GraphTy> {
   using vertex_t = typename GraphTy::vertex_type;
   using rrr_set_t = std::vector<vertex_t>;
 
  public:
-  CPUWorker(const GraphTy &G, const PRNGeneratorTy &rng)
-      : Worker<GraphTy>(G), rng_(rng), u_(0, G.num_nodes()) {}
+  CPUWalkWorker(const GraphTy &G, const PRNGeneratorTy &rng)
+      : WalkWorker<GraphTy>(G), rng_(rng), u_(0, G.num_nodes()) {}
 
  private:
   PRNGeneratorTy rng_;
@@ -100,7 +100,7 @@ class CPUWorker : public Worker<GraphTy> {
       AddRRRSet(this->G_, root, rng_, *first, diff_model_tag{});
     }
 #if CUDA_PROFILE
-    auto &p(this->prof_bd.back());
+    auto &p(prof_bd.back());
     p.d_ += std::chrono::duration_cast<std::chrono::nanoseconds>(
         std::chrono::high_resolution_clock::now() - start);
     p.n_ += size;
@@ -108,38 +108,37 @@ class CPUWorker : public Worker<GraphTy> {
   }
 
 #if CUDA_PROFILE
-public:
+ public:
   struct iter_profile_t {
-    size_t n_{0}, num_exceedings_{0};
+    size_t n_{0};
     std::chrono::nanoseconds d_{0};
   };
   using profile_t = std::vector<iter_profile_t>;
   profile_t prof_bd;
 
- void begin_prof_iter() { prof_bd.emplace_back(); }
- void print_prof_iter(size_t i) {
-   auto console = spdlog::get("console");
-   assert(i < prof_bd.size());
-   auto &p(prof_bd[i]);
-   if (p.n_)
-     console->info(
-         "n-sets={}\tn-exc={}\tns={}\tb={}", p.n_, p.num_exceedings_,
-         p.d_.count(),
-         (float)p.n_ * 1e03 /
-             std::chrono::duration_cast<std::chrono::milliseconds>(p.d_)
-                 .count());
-   else
-     console->info("> idle worker");
- }
+  void begin_prof_iter() { prof_bd.emplace_back(); }
+  void print_prof_iter(size_t i) {
+    auto console = spdlog::get("console");
+    assert(i < prof_bd.size());
+    auto &p(prof_bd[i]);
+    if (p.n_)
+      console->info(
+          "n-sets={}\tns={}\tb={}", p.n_, p.d_.count(),
+          (float)p.n_ * 1e03 /
+              std::chrono::duration_cast<std::chrono::milliseconds>(p.d_)
+                  .count());
+    else
+      console->info("> idle worker");
+  }
 #endif
 };
 
 template <typename GraphTy, typename PRNGeneratorTy, typename diff_model_tag>
-class GPUWorker;
+class GPUWalkWorker;
 
 template <typename GraphTy, typename PRNGeneratorTy>
-class GPUWorker<GraphTy, PRNGeneratorTy, linear_threshold_tag>
-    : public Worker<GraphTy> {
+class GPUWalkWorker<GraphTy, PRNGeneratorTy, linear_threshold_tag>
+    : public WalkWorker<GraphTy> {
   using vertex_t = typename GraphTy::vertex_type;
   using rrr_set_t = std::vector<vertex_t>;
 
@@ -150,7 +149,7 @@ class GPUWorker<GraphTy, PRNGeneratorTy, linear_threshold_tag>
       max_blocks_ = num_threads_ / block_size_;
 
       printf(
-          "*** DBG *** > [GPUWorkerLT::config_t] "
+          "*** DBG *** > [GPUWalkWorkerLT::config_t] "
           "block_size_=%d\tnum_threads_=%d\tmax_blocks_=%d\n",
           block_size_, num_threads_, max_blocks_);
     }
@@ -166,9 +165,10 @@ class GPUWorker<GraphTy, PRNGeneratorTy, linear_threshold_tag>
     size_t max_blocks_{0};
   };
 
-  GPUWorker(const config_t &conf, const GraphTy &G, const PRNGeneratorTy &rng,
+  GPUWalkWorker(const config_t &conf, const GraphTy &G, const PRNGeneratorTy &rng,
             cudaStream_t cuda_stream)
-      : Worker<GraphTy>(G), cuda_stream_(cuda_stream),
+      : WalkWorker<GraphTy>(G),
+        cuda_stream_(cuda_stream),
         conf_(conf),
         u_(0, G.num_nodes()) {
     // allocate host/device memory
@@ -181,7 +181,7 @@ class GPUWorker<GraphTy, PRNGeneratorTy, linear_threshold_tag>
                 conf_.num_gpu_threads() * sizeof(PRNGeneratorTy));
   }
 
-  ~GPUWorker() {
+  ~GPUWalkWorker() {
     // free host/device memory
     free(lt_res_mask_);
     cuda_free(d_lt_res_mask_);
@@ -206,29 +206,45 @@ class GPUWorker<GraphTy, PRNGeneratorTy, linear_threshold_tag>
 
   void batch(rrr_set_t *first, size_t size) {
 #if CUDA_PROFILE
+    auto &p(prof_bd.back());
     auto start = std::chrono::high_resolution_clock::now();
 #endif
 
     cuda_lt_kernel(conf_.max_blocks_, conf_.block_size_, size,
                    this->G_.num_nodes(), d_trng_state_, d_lt_res_mask_,
-                   conf_.mask_words_, this->cuda_stream_);
+                   conf_.mask_words_, cuda_stream_);
+#if CUDA_PROFILE
+  cuda_sync(cuda_stream_);
+  auto t1 = std::chrono::high_resolution_clock::now();
+  p.dwalk_ += std::chrono::duration_cast<std::chrono::nanoseconds>(t1 - start);
+  auto t0 = t1;
+#endif
+
     cuda_d2h(lt_res_mask_, d_lt_res_mask_,
              size * conf_.mask_words_ * sizeof(mask_word_t),
-             this->cuda_stream_);
-    cuda_sync(this->cuda_stream_);
+             cuda_stream_);
+    cuda_sync(cuda_stream_);
+#if CUDA_PROFILE
+  t1 = std::chrono::high_resolution_clock::now();
+  p.dd2h_ += std::chrono::duration_cast<std::chrono::nanoseconds>(t1 - t0);
+  t0 = t1;
+#endif
+
     batch_lt_build(first, size);
+#if CUDA_PROFILE
+  t1 = std::chrono::high_resolution_clock::now();
+  p.dbuild_ += std::chrono::duration_cast<std::chrono::nanoseconds>(t1 - t0);
+#endif
 
 #if CUDA_PROFILE
-    auto &p(this->prof_bd.back());
-    p.d_ += std::chrono::duration_cast<std::chrono::nanoseconds>(
-        std::chrono::high_resolution_clock::now() - start);
+    p.d_ += std::chrono::duration_cast<std::chrono::nanoseconds>(t1 - start);
     p.n_ += size;
 #endif
   }
 
   void batch_lt_build(rrr_set_t *first, size_t batch_size) {
 #if CUDA_PROFILE
-    auto &p(this->prof_bd.back());
+    auto &p(prof_bd.back());
 #endif
 
     for (size_t i = 0; i < batch_size; ++i, ++first) {
@@ -257,35 +273,39 @@ class GPUWorker<GraphTy, PRNGeneratorTy, linear_threshold_tag>
   }
 
 #if CUDA_PROFILE
-public:
   struct iter_profile_t {
     size_t n_{0}, num_exceedings_{0};
-    std::chrono::nanoseconds d_{0};
+    std::chrono::nanoseconds d_{0}, dwalk_{0}, dd2h_{0}, dbuild_{0};
   };
   using profile_t = std::vector<iter_profile_t>;
   profile_t prof_bd;
 
+ public:
   void begin_prof_iter() { prof_bd.emplace_back(); }
   void print_prof_iter(size_t i) {
     auto console = spdlog::get("console");
     assert(i < prof_bd.size());
     auto &p(prof_bd[i]);
-    if (p.n_)
+    if (p.n_) {
       console->info(
           "n-sets={}\tn-exc={}\tns={}\tb={}", p.n_, p.num_exceedings_,
           p.d_.count(),
           (float)p.n_ * 1e03 /
               std::chrono::duration_cast<std::chrono::milliseconds>(p.d_)
                   .count());
-    else
+      console->info("walk={}\td2h={}\tbuild={}", p.dwalk_.count(),
+                    p.dd2h_.count(), p.dbuild_.count());
+      console->info("n. exceedings={} (/{}={})", p.num_exceedings_, p.n_,
+                    (float)p.num_exceedings_ / p.n_);
+    } else
       console->info("> idle worker");
   }
 #endif
 };
 
 template <typename GraphTy, typename PRNGeneratorTy>
-class GPUWorker<GraphTy, PRNGeneratorTy, independent_cascade_tag>
-    : public Worker<GraphTy> {
+class GPUWalkWorker<GraphTy, PRNGeneratorTy, independent_cascade_tag>
+    : public WalkWorker<GraphTy> {
   using vertex_t = typename GraphTy::vertex_type;
   using rrr_set_t = std::vector<vertex_t>;
   using bfs_solver_t = nvgraph::Bfs<int, PRNGeneratorTy>;
@@ -296,7 +316,7 @@ class GPUWorker<GraphTy, PRNGeneratorTy, independent_cascade_tag>
         : block_size_(bfs_solver_t::traverse_block_size()),
           max_blocks_(num_workers ? cuda_max_blocks() / num_workers : 0) {
       printf(
-          "*** DBG *** > [GPUWorkerIC::config_t] "
+          "*** DBG *** > [GPUWalkWorkerIC::config_t] "
           "max_blocks_=%d\tblock_size_=%d\n",
           max_blocks_, block_size_);
     }
@@ -307,9 +327,10 @@ class GPUWorker<GraphTy, PRNGeneratorTy, independent_cascade_tag>
     const size_t block_size_;
   };
 
-  GPUWorker(const config_t &conf, const GraphTy &G, const PRNGeneratorTy &rng,
+  GPUWalkWorker(const config_t &conf, const GraphTy &G, const PRNGeneratorTy &rng,
             cudaStream_t cuda_stream)
-      : Worker<GraphTy>(G), cuda_stream_(cuda_stream),
+      : WalkWorker<GraphTy>(G),
+        cuda_stream_(cuda_stream),
         conf_(conf),
         u_(0, G.num_nodes()),
         // TODO stream
@@ -330,7 +351,7 @@ class GPUWorker<GraphTy, PRNGeneratorTy, independent_cascade_tag>
     solver.configure(nullptr, d_ic_predecessors_, nullptr);
   }
 
-  ~GPUWorker() {
+  ~GPUWalkWorker() {
     // free host/device memory
     free(ic_predecessors_);
     cudaFree(d_ic_predecessors_);
@@ -359,19 +380,39 @@ class GPUWorker<GraphTy, PRNGeneratorTy, independent_cascade_tag>
 
   void batch(rrr_set_t *first, size_t size) {
 #if CUDA_PROFILE
+    auto &p(prof_bd.back());
     auto start = std::chrono::high_resolution_clock::now();
 #endif
     for (size_t wi = 0; wi < size; ++wi) {
+#if CUDA_PROFILE
+      auto t0 = std::chrono::high_resolution_clock::now();
+#endif      
       solver.traverse((int)u_(rng_));
+#if CUDA_PROFILE
+      cuda_sync(cuda_stream_);
+      auto t1 = std::chrono::high_resolution_clock::now();
+      p.dwalk_ += std::chrono::duration_cast<std::chrono::nanoseconds>(t1 - t0);
+      t0 = t1;
+#endif
+
       cuda_d2h(
           ic_predecessors_, d_ic_predecessors_,
           this->G_.num_nodes() * sizeof(typename cuda_device_graph::vertex_t),
-          this->cuda_stream_);
-      cuda_sync(this->cuda_stream_);
+          cuda_stream_);
+      cuda_sync(cuda_stream_);
+#if CUDA_PROFILE
+      t1 = std::chrono::high_resolution_clock::now();
+      p.dd2h_ += std::chrono::duration_cast<std::chrono::nanoseconds>(t1 - t0);
+      t0 = t1;
+#endif
+
       ic_build(first++);
+#if CUDA_PROFILE
+      t1 = std::chrono::high_resolution_clock::now();
+      p.dbuild_ += std::chrono::duration_cast<std::chrono::nanoseconds>(t1 - t0);
+#endif
     }
 #if CUDA_PROFILE
-    auto &p(this->prof_bd.back());
     p.d_ += std::chrono::duration_cast<std::chrono::nanoseconds>(
         std::chrono::high_resolution_clock::now() - start);
     p.n_ += size;
@@ -385,27 +426,28 @@ class GPUWorker<GraphTy, PRNGeneratorTy, independent_cascade_tag>
   }
 
 #if CUDA_PROFILE
- public:
   struct iter_profile_t {
-    size_t n_{0}, num_exceedings_{0};
-    std::chrono::nanoseconds d_{0};
+    size_t n_{0};
+    std::chrono::nanoseconds d_{0}, dwalk_{0}, dd2h_{0}, dbuild_{0};
   };
   using profile_t = std::vector<iter_profile_t>;
   profile_t prof_bd;
 
+ public:
   void begin_prof_iter() { prof_bd.emplace_back(); }
   void print_prof_iter(size_t i) {
     auto console = spdlog::get("console");
     assert(i < prof_bd.size());
     auto &p(prof_bd[i]);
-    if (p.n_)
+    if (p.n_) {
       console->info(
-          "n-sets={}\tn-exc={}\tns={}\tb={}", p.n_, p.num_exceedings_,
-          p.d_.count(),
+          "n-sets={}\tns={}\tb={}", p.n_, p.d_.count(),
           (float)p.n_ * 1e03 /
               std::chrono::duration_cast<std::chrono::milliseconds>(p.d_)
                   .count());
-    else
+      console->info("walk={}\td2h={}\tbuild={}", p.dwalk_.count(),
+                    p.dd2h_.count(), p.dbuild_.count());
+    } else
       console->info("> idle worker");
   }
 #endif
@@ -417,8 +459,8 @@ class StreamingRRRGenerator {
   using rrr_set_t = std::vector<vertex_t>;
   using rrr_sets_t = std::vector<rrr_set_t>;
 
-  using gpu_worker_t = GPUWorker<GraphTy, PRNGeneratorTy, diff_model_tag>;
-  using cpu_worker_t = CPUWorker<GraphTy, PRNGeneratorTy, diff_model_tag>;
+  using gpu_worker_t = GPUWalkWorker<GraphTy, PRNGeneratorTy, diff_model_tag>;
+  using cpu_worker_t = CPUWalkWorker<GraphTy, PRNGeneratorTy, diff_model_tag>;
 
  public:
   StreamingRRRGenerator(const GraphTy &G, const PRNGeneratorTy &master_rng,
@@ -519,19 +561,6 @@ class StreamingRRRGenerator {
     }
     console->info("--- overall");
     console->info("n. sets               = {}", prof_bd.n);
-    auto n_excs = std::accumulate(
-        first_gpu_worker, workers.end(), 0,
-        [](size_t acc, Worker<GraphTy> *w) {
-          return std::accumulate(
-              (dynamic_cast<gpu_worker_t *>(w))->prof_bd.begin(),
-              (dynamic_cast<gpu_worker_t *>(w))->prof_bd.end(), acc,
-              [](size_t acc,
-                 const typename gpu_worker_t::iter_profile_t &p) {
-                return acc + p.num_exceedings_;
-              });
-        });
-    console->info("n. exceedings         = {} (/{}={})", n_excs, prof_bd.n,
-                  (float)n_excs / prof_bd.n);
     console->info("n. iters              = {}", prof_bd.prof_bd.size());
     console->info("elapsed (ms)          = {}", ms.count());
     console->info("throughput (sets/sec) = {}",
@@ -580,7 +609,7 @@ class StreamingRRRGenerator {
  private:
   size_t num_cpu_workers_, num_gpu_workers_;
   size_t max_batch_size_;
-  std::vector<Worker<GraphTy> *> workers;
+  std::vector<WalkWorker<GraphTy> *> workers;
 
 #if CUDA_PROFILE
   struct iter_profile_t {
