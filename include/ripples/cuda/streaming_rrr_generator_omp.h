@@ -52,10 +52,12 @@
 #include "spdlog/spdlog.h"
 #include "trng/uniform_int_dist.hpp"
 
-#include "ripples/cuda/cuda_generate_rrr_sets.h"
 #include "ripples/generate_rrr_sets.h"
 
+#ifndef RIPPLES_DISABLE_CUDA
+#include "ripples/cuda/cuda_generate_rrr_sets.h"
 #include "ripples/cuda/from_nvgraph/bfs.hxx"
+#endif
 
 namespace ripples {
 
@@ -136,6 +138,7 @@ class CPUWalkWorker : public WalkWorker<GraphTy> {
 template <typename GraphTy, typename PRNGeneratorTy, typename diff_model_tag>
 class GPUWalkWorker;
 
+#ifndef RIPPLES_DISABLE_CUDA
 template <typename GraphTy, typename PRNGeneratorTy>
 class GPUWalkWorker<GraphTy, PRNGeneratorTy, linear_threshold_tag>
     : public WalkWorker<GraphTy> {
@@ -461,6 +464,7 @@ class GPUWalkWorker<GraphTy, PRNGeneratorTy, independent_cascade_tag>
   }
 #endif
 };
+#endif // RIPPLES_DISABLE_CUDA
 
 template <typename GraphTy, typename PRNGeneratorTy, typename diff_model_tag>
 class StreamingRRRGenerator {
@@ -476,28 +480,24 @@ class StreamingRRRGenerator {
   StreamingRRRGenerator(const GraphTy &G, const PRNGeneratorTy &master_rng,
                         size_t num_cpu_workers, size_t num_gpu_workers)
       : num_cpu_workers_(num_cpu_workers), num_gpu_workers_(num_gpu_workers) {
+#ifndef RIPPLES_DISABLE_CUDA
     // init GPU
-    if(num_gpu_workers_)
-      cuda_graph_init(G);
-
+    if (num_gpu_workers_) cuda_graph_init(G);
     std::vector<cudaStream_t> cuda_streams(num_gpu_workers_);
     typename gpu_worker_t::config_t gpu_conf(num_gpu_workers_);
     max_batch_size_ = gpu_worker_t::max_batch_size(gpu_conf);
-
     assert(gpu_conf.max_blocks_ * num_gpu_workers_ <= cuda_max_blocks());
     auto num_gpu_threads_per_worker = gpu_conf.num_gpu_threads();
-
     auto num_rng_sequences =
         num_cpu_workers_ + num_gpu_workers_ * (num_gpu_threads_per_worker + 1);
     auto gpu_seq_offset = num_cpu_workers_ + num_gpu_workers_;
+#else
+    assert(num_gpu_workers_ == 0);
+    max_batch_size_ = 32; //TODO parameter
+    size_t num_rng_sequences = num_cpu_workers_;
+#endif
 
-    // CPU workers
-    for (size_t i = 0; i < num_cpu_workers_; ++i) {
-      auto rng = master_rng;
-      rng.split(num_rng_sequences, i);
-      cpu_workers.push_back(new cpu_worker_t(G, rng));
-    }
-
+#ifndef RIPPLES_DISABLE_CUDA
     // GPU workers
     for (size_t i = 0; i < num_gpu_workers_; ++i) {
       auto rng = master_rng;
@@ -509,8 +509,15 @@ class StreamingRRRGenerator {
                    gpu_seq_offset + i * num_gpu_threads_per_worker);
       gpu_workers.push_back(w);
     }
-
     for(auto &wp : gpu_workers) workers.push_back(wp);
+#endif
+
+    // CPU workers
+    for (size_t i = 0; i < num_cpu_workers_; ++i) {
+      auto rng = master_rng;
+      rng.split(num_rng_sequences, i);
+      cpu_workers.push_back(new cpu_worker_t(G, rng));
+    }
     for(auto &wp : cpu_workers) workers.push_back(wp);
   }
 
@@ -524,9 +531,11 @@ class StreamingRRRGenerator {
       console->info("--- CPU workers");
       for (auto &wp : cpu_workers)
         wp->print_prof_iter(i);
+#ifndef RIPPLES_DISABLE_CUDA
       console->info("--- GPU workers");
       for (auto &wp : gpu_workers)
         wp->print_prof_iter(i);
+#endif
       console->info("--- overall");
       auto &p(prof_bd.prof_bd[i]);
       auto ms = std::chrono::duration_cast<std::chrono::milliseconds>(p.d_);
@@ -546,7 +555,10 @@ class StreamingRRRGenerator {
 #endif
 
     for (auto &w : workers) delete w;
+
+#ifndef RIPPLES_DISABLE_CUDA
     if (num_gpu_workers_) cuda_graph_fini();
+#endif
   }
 
   rrr_sets_t generate(size_t theta) {
@@ -587,7 +599,9 @@ class StreamingRRRGenerator {
   size_t num_cpu_workers_, num_gpu_workers_;
   size_t max_batch_size_;
   std::vector<cpu_worker_t *> cpu_workers;
+#ifndef RIPPLES_DISABLE_CUDA
   std::vector<gpu_worker_t *> gpu_workers;
+#endif
   std::vector<worker_t *> workers;
 
 #if CUDA_PROFILE
