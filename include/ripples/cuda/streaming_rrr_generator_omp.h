@@ -468,6 +468,7 @@ class StreamingRRRGenerator {
   using rrr_set_t = std::vector<vertex_t>;
   using rrr_sets_t = std::vector<rrr_set_t>;
 
+  using worker_t = WalkWorker<GraphTy>;
   using gpu_worker_t = GPUWalkWorker<GraphTy, PRNGeneratorTy, diff_model_tag>;
   using cpu_worker_t = CPUWalkWorker<GraphTy, PRNGeneratorTy, diff_model_tag>;
 
@@ -494,7 +495,7 @@ class StreamingRRRGenerator {
     for (size_t i = 0; i < num_cpu_workers_; ++i) {
       auto rng = master_rng;
       rng.split(num_rng_sequences, i);
-      workers.push_back(new cpu_worker_t(G, rng));
+      cpu_workers.push_back(new cpu_worker_t(G, rng));
     }
 
     // GPU workers
@@ -506,8 +507,11 @@ class StreamingRRRGenerator {
       auto w = new gpu_worker_t(gpu_conf, G, rng, stream);
       w->rng_setup(master_rng, num_rng_sequences,
                    gpu_seq_offset + i * num_gpu_threads_per_worker);
-      workers.push_back(w);
+      gpu_workers.push_back(w);
     }
+
+    for(auto &wp : gpu_workers) workers.push_back(wp);
+    for(auto &wp : cpu_workers) workers.push_back(wp);
   }
 
   ~StreamingRRRGenerator() {
@@ -515,16 +519,14 @@ class StreamingRRRGenerator {
     auto ms = std::chrono::duration_cast<std::chrono::milliseconds>(prof_bd.d);
     auto console = spdlog::get("console");
     console->info("*** BEGIN Streaming Engine profiling");
-    auto first_gpu_worker = workers.begin();
-    std::advance(first_gpu_worker, num_cpu_workers_);
     for (size_t i = 0; i < prof_bd.prof_bd.size(); ++i) {
       console->info("+++ BEGIN iter {}", i);
       console->info("--- CPU workers");
-      for (auto it = workers.begin(); it != first_gpu_worker; ++it)
-        (dynamic_cast<cpu_worker_t *>(*it))->print_prof_iter(i);
+      for (auto &wp : cpu_workers)
+        wp->print_prof_iter(i);
       console->info("--- GPU workers");
-      for (auto it = first_gpu_worker; it != workers.end(); ++it)
-        (dynamic_cast<gpu_worker_t *>(*it))->print_prof_iter(i);
+      for (auto &wp : gpu_workers)
+        wp->print_prof_iter(i);
       console->info("--- overall");
       auto &p(prof_bd.prof_bd[i]);
       auto ms = std::chrono::duration_cast<std::chrono::milliseconds>(p.d_);
@@ -584,7 +586,9 @@ class StreamingRRRGenerator {
  private:
   size_t num_cpu_workers_, num_gpu_workers_;
   size_t max_batch_size_;
-  std::vector<WalkWorker<GraphTy> *> workers;
+  std::vector<cpu_worker_t *> cpu_workers;
+  std::vector<gpu_worker_t *> gpu_workers;
+  std::vector<worker_t *> workers;
 
 #if CUDA_PROFILE
   struct iter_profile_t {
