@@ -44,19 +44,21 @@
 #include <cstdlib>
 #include <vector>
 
-#if CUDA_PROFILE
-#include <chrono>
-#endif
+#include "omp.h"
 
-#include "ripples/imm.h"
 #include "spdlog/spdlog.h"
 #include "trng/uniform_int_dist.hpp"
 
+#include "ripples/imm.h"
 #include "ripples/generate_rrr_sets.h"
 
 #ifndef RIPPLES_DISABLE_CUDA
 #include "ripples/cuda/cuda_generate_rrr_sets.h"
 #include "ripples/cuda/from_nvgraph/bfs.hxx"
+#endif
+
+#if CUDA_PROFILE
+#include <chrono>
 #endif
 
 namespace ripples {
