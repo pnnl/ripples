@@ -37,8 +37,8 @@
 //
 //===----------------------------------------------------------------------===//
 
-#ifndef RIPPLES_CUDA_STREAMING_RRR_GENERATOR_OMP_H
-#define RIPPLES_CUDA_STREAMING_RRR_GENERATOR_OMP_H
+#ifndef RIPPLES_STREAMING_RRR_GENERATOR_H
+#define RIPPLES_STREAMING_RRR_GENERATOR_H
 
 #include <algorithm>
 #include <cstdlib>
@@ -621,4 +621,4 @@ class StreamingRRRGenerator {
 };
 }  // namespace ripples
 
-#endif  // RIPPLES_CUDA_STREAMING_RRR_GENERATOR_H
+#endif  // RIPPLES_STREAMING_RRR_GENERATOR_H

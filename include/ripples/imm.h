@@ -58,7 +58,7 @@
 #include "ripples/tim.h"
 #include "ripples/utility.h"
 
-#include "ripples/cuda/streaming_rrr_generator_omp.h"
+#include "ripples/streaming_rrr_generator.h"
 
 namespace ripples {
 
