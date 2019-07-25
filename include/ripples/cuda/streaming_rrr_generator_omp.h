@@ -539,12 +539,12 @@ class StreamingRRRGenerator {
     console->info("n. iters              = {}", prof_bd.prof_bd.size());
     console->info("elapsed (ms)          = {}", ms.count());
     console->info("throughput (sets/sec) = {}",
-                  (float)prof_bd.n * 1e06 / ms.count());
+                  (float)prof_bd.n * 1e03 / ms.count());
     console->info("*** END Streaming Engine profiling");
 #endif
 
     for (auto &w : workers) delete w;
-    cuda_graph_fini();
+    if (num_gpu_workers_) cuda_graph_fini();
   }
 
   rrr_sets_t generate(size_t theta) {
