@@ -41,6 +41,8 @@
 #define RIPPLES_STREAMING_RRR_GENERATOR_H
 
 #include <algorithm>
+#include <atomic>
+#include <cassert>
 #include <cstdlib>
 #include <vector>
 
@@ -66,12 +68,14 @@ namespace ripples {
 template <typename GraphTy>
 class WalkWorker {
   using vertex_t = typename GraphTy::vertex_type;
-  using rrr_set_t = std::vector<vertex_t>;
 
  public:
+  using rrr_set_t = std::vector<vertex_t>;
+  using rrr_sets_t = std::vector<rrr_set_t>;
+
   WalkWorker(const GraphTy &G) : G_(G) {}
   virtual ~WalkWorker() {}
-  virtual void batch(rrr_set_t *first, size_t size) = 0;
+  virtual void svc_loop(std::atomic<size_t> &mpmc_head, rrr_sets_t &res) = 0;
 
  protected:
   const GraphTy &G_;
@@ -85,23 +89,39 @@ class WalkWorker {
 template <typename GraphTy, typename PRNGeneratorTy, typename diff_model_tag>
 class CPUWalkWorker : public WalkWorker<GraphTy> {
   using vertex_t = typename GraphTy::vertex_type;
-  using rrr_set_t = std::vector<vertex_t>;
+  using rrr_sets_t = typename WalkWorker<GraphTy>::rrr_sets_t;
 
  public:
   CPUWalkWorker(const GraphTy &G, const PRNGeneratorTy &rng)
       : WalkWorker<GraphTy>(G), rng_(rng), u_(0, G.num_nodes()) {}
+  
+  void svc_loop(std::atomic<size_t> &mpmc_head, rrr_sets_t &res) {
+    size_t offset = 0;
+    while((offset = mpmc_head.fetch_add(batch_size_)) < res.size()) {
+      auto first = res.begin();
+      std::advance(first, offset);
+      auto last = first;
+      std::advance(last, batch_size_);
+      if(last > res.end())
+        last = res.end();
+      batch(first, last);
+    }
+  }
 
  private:
+  static constexpr size_t batch_size_ = 32;
   PRNGeneratorTy rng_;
   trng::uniform_int_dist u_;
 
-  void batch(rrr_set_t *first, size_t size) {
+  void batch(typename rrr_sets_t::iterator first,
+             typename rrr_sets_t::iterator last) {
 #if CUDA_PROFILE
     auto start = std::chrono::high_resolution_clock::now();
 #endif
-    for (auto last = first + size; first != last; ++first) {
+    auto size = std::distance(first, last);
+    while(first != last) {
       vertex_t root = u_(rng_);
-      AddRRRSet(this->G_, root, rng_, *first, diff_model_tag{});
+      AddRRRSet(this->G_, root, rng_, *first++, diff_model_tag{});
     }
 #if CUDA_PROFILE
     auto &p(prof_bd.back());
@@ -145,7 +165,8 @@ template <typename GraphTy, typename PRNGeneratorTy>
 class GPUWalkWorker<GraphTy, PRNGeneratorTy, linear_threshold_tag>
     : public WalkWorker<GraphTy> {
   using vertex_t = typename GraphTy::vertex_type;
-  using rrr_set_t = std::vector<vertex_t>;
+  using rrr_set_t = typename WalkWorker<GraphTy>::rrr_set_t;
+  using rrr_sets_t = typename WalkWorker<GraphTy>::rrr_sets_t;
 
  public:
   struct config_t {
@@ -169,10 +190,6 @@ class GPUWalkWorker<GraphTy, PRNGeneratorTy, linear_threshold_tag>
     // inferred configuration
     size_t max_blocks_{0};
   };
-
-  static size_t max_batch_size(const config_t &config) {
-    return config.num_gpu_threads();
-  }
 
   GPUWalkWorker(const config_t &conf, const GraphTy &G, const PRNGeneratorTy &rng,
             cudaStream_t cuda_stream)
@@ -203,6 +220,19 @@ class GPUWalkWorker<GraphTy, PRNGeneratorTy, linear_threshold_tag>
                       conf_.max_blocks_, conf_.block_size_);
   }
 
+  void svc_loop(std::atomic<size_t> &mpmc_head, rrr_sets_t &res) {
+    size_t offset = 0;
+    auto batch_size = conf_.num_gpu_threads();
+    while ((offset = mpmc_head.fetch_add(batch_size)) < res.size()) {
+      auto first = res.begin();
+      std::advance(first, offset);
+      auto last = first;
+      std::advance(last, batch_size);
+      if (last > res.end()) last = res.end();
+      batch(first, last);
+    }
+  }
+
  private:
   config_t conf_;
   cudaStream_t cuda_stream_;
@@ -213,15 +243,18 @@ class GPUWalkWorker<GraphTy, PRNGeneratorTy, linear_threshold_tag>
   mask_word_t *lt_res_mask_, *d_lt_res_mask_;
   PRNGeneratorTy *d_trng_state_;
 
-  void batch(rrr_set_t *first, size_t size) {
+  void batch(typename rrr_sets_t::iterator first,
+             typename rrr_sets_t::iterator last) {
 #if CUDA_PROFILE
     auto &p(prof_bd.back());
     auto start = std::chrono::high_resolution_clock::now();
 #endif
+    auto size = std::distance(first, last);
 
-    cuda_lt_kernel(conf_.max_blocks_, conf_.block_size_, size,
-                   this->G_.num_nodes(), d_trng_state_, d_lt_res_mask_,
-                   conf_.mask_words_, cuda_stream_);
+    cuda_lt_kernel(conf_.max_blocks_, conf_.block_size_,
+                   size, this->G_.num_nodes(),
+                   d_trng_state_, d_lt_res_mask_, conf_.mask_words_,
+                   cuda_stream_);
 #if CUDA_PROFILE
   cuda_sync(cuda_stream_);
   auto t1 = std::chrono::high_resolution_clock::now();
@@ -251,7 +284,7 @@ class GPUWalkWorker<GraphTy, PRNGeneratorTy, linear_threshold_tag>
 #endif
   }
 
-  void batch_lt_build(rrr_set_t *first, size_t batch_size) {
+  void batch_lt_build(typename rrr_sets_t::iterator first, size_t batch_size) {
 #if CUDA_PROFILE
     auto &p(prof_bd.back());
 #endif
@@ -316,7 +349,9 @@ template <typename GraphTy, typename PRNGeneratorTy>
 class GPUWalkWorker<GraphTy, PRNGeneratorTy, independent_cascade_tag>
     : public WalkWorker<GraphTy> {
   using vertex_t = typename GraphTy::vertex_type;
-  using rrr_set_t = std::vector<vertex_t>;
+  using rrr_sets_t = typename WalkWorker<GraphTy>::rrr_sets_t;
+  using rrr_set_t = typename WalkWorker<GraphTy>::rrr_set_t;
+
   using bfs_solver_t = nvgraph::Bfs<int, PRNGeneratorTy>;
 
  public:
@@ -335,10 +370,6 @@ class GPUWalkWorker<GraphTy, PRNGeneratorTy, independent_cascade_tag>
     const size_t max_blocks_;
     const size_t block_size_;
   };
-
-  static size_t max_batch_size(const config_t &config) {
-    return max_batch_size_;
-  }
 
   GPUWalkWorker(const config_t &conf, const GraphTy &G, const PRNGeneratorTy &rng,
             cudaStream_t cuda_stream)
@@ -378,8 +409,21 @@ class GPUWalkWorker<GraphTy, PRNGeneratorTy, independent_cascade_tag>
     solver.rng(d_trng_state_);
   }
 
+  void svc_loop(std::atomic<size_t> &mpmc_head, rrr_sets_t &res) {
+    size_t offset = 0;
+    while((offset = mpmc_head.fetch_add(batch_size_)) < res.size()) {
+      auto first = res.begin();
+      std::advance(first, offset);
+      auto last = first;
+      std::advance(last, batch_size_);
+      if(last > res.end())
+        last = res.end();
+      batch(first, last);
+    }
+  }
+
  private:
-  static constexpr size_t max_batch_size_ = 32;
+  static constexpr size_t batch_size_ = 32;
   config_t conf_;
   cudaStream_t cuda_stream_;
   PRNGeneratorTy rng_;
@@ -392,11 +436,13 @@ class GPUWalkWorker<GraphTy, PRNGeneratorTy, independent_cascade_tag>
   typename cuda_device_graph::vertex_t *ic_predecessors_, *d_ic_predecessors_;
   PRNGeneratorTy *d_trng_state_;
 
-  void batch(rrr_set_t *first, size_t size) {
+  void batch(typename rrr_sets_t::iterator first,
+             typename rrr_sets_t::iterator last) {
 #if CUDA_PROFILE
     auto &p(prof_bd.back());
     auto start = std::chrono::high_resolution_clock::now();
 #endif
+    auto size = std::distance(first, last);
     for (size_t wi = 0; wi < size; ++wi) {
 #if CUDA_PROFILE
       auto t0 = std::chrono::high_resolution_clock::now();
@@ -433,7 +479,7 @@ class GPUWalkWorker<GraphTy, PRNGeneratorTy, independent_cascade_tag>
 #endif
   }
 
-  void ic_build(rrr_set_t *dst) {
+  void ic_build(typename rrr_sets_t::iterator dst) {
     auto &rrr_set(*dst);
     for (vertex_t i = 0; i < this->G_.num_nodes(); ++i)
       if (ic_predecessors_[i] != -1) rrr_set.push_back(i);
@@ -487,7 +533,6 @@ class StreamingRRRGenerator {
     if (num_gpu_workers_) cuda_graph_init(G);
     std::vector<cudaStream_t> cuda_streams(num_gpu_workers_);
     typename gpu_worker_t::config_t gpu_conf(num_gpu_workers_);
-    max_batch_size_ = gpu_worker_t::max_batch_size(gpu_conf);
     assert(gpu_conf.max_blocks_ * num_gpu_workers_ <= cuda_max_blocks());
     auto num_gpu_threads_per_worker = gpu_conf.num_gpu_threads();
     auto num_rng_sequences =
@@ -495,7 +540,6 @@ class StreamingRRRGenerator {
     auto gpu_seq_offset = num_cpu_workers_ + num_gpu_workers_;
 #else
     assert(num_gpu_workers_ == 0);
-    max_batch_size_ = 32; //TODO parameter
     size_t num_rng_sequences = num_cpu_workers_;
 #endif
 
@@ -570,20 +614,12 @@ class StreamingRRRGenerator {
 #endif
 
     rrr_sets_t res(theta);
-    auto sets_ptr_ = res.data();
-    auto last = sets_ptr_ + theta;
-    auto num_batches = (theta + max_batch_size_ - 1) / max_batch_size_;
+    mpmc_head.store(0);
 
 #pragma omp parallel num_threads(num_cpu_workers_ + num_gpu_workers_)
     {
       size_t rank = omp_get_thread_num();
-
-#pragma omp for schedule(dynamic)
-      for (size_t bi = 0; bi < num_batches; ++bi) {
-        auto batch_offset = bi * max_batch_size_;
-        auto batch_size = std::min(theta - batch_offset, max_batch_size_);
-        workers[rank]->batch(sets_ptr_ + batch_offset, batch_size);
-      }
+      workers[rank]->svc_loop(mpmc_head, res);
     }
 
 #if CUDA_PROFILE
@@ -605,6 +641,7 @@ class StreamingRRRGenerator {
   std::vector<gpu_worker_t *> gpu_workers;
 #endif
   std::vector<worker_t *> workers;
+  std::atomic<size_t> mpmc_head{0};
 
 #if CUDA_PROFILE
   struct iter_profile_t {
