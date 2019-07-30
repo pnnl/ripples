@@ -555,7 +555,6 @@ class StreamingRRRGenerator {
                    gpu_seq_offset + i * num_gpu_threads_per_worker);
       gpu_workers.push_back(w);
     }
-    for(auto &wp : gpu_workers) workers.push_back(wp);
 #endif
 
     // CPU workers
@@ -564,7 +563,13 @@ class StreamingRRRGenerator {
       rng.split(num_rng_sequences, i);
       cpu_workers.push_back(new cpu_worker_t(G, rng));
     }
+
+    // select CPU-GPU ordering
     for(auto &wp : cpu_workers) workers.push_back(wp);
+#ifndef RIPPLES_DISABLE_CUDA
+    for(auto &wp : gpu_workers) workers.push_back(wp);
+#endif
+
   }
 
   ~StreamingRRRGenerator() {
