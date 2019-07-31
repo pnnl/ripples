@@ -108,14 +108,16 @@ ToolConfiguration<ripples::IMMConfiguration> configuration() {
 int main(int argc, char *argv[]) {
   MPI_Init(NULL, NULL);
 
+  auto console = spdlog::stdout_color_st("console");
+
+  // process command line
   ripples::parse_command_line(argc, argv);
   auto CFG = ripples::configuration();
-
-  // check command line
   if (CFG.cuda_parallel) {
-    if (!(CFG.streaming_workers > 0 &&
-          CFG.streaming_gpu_workers <= CFG.streaming_workers)) {
-      spdlog::get("console")->error("invalid number of streaming workers");
+    if (ripples::streaming_command_line(CFG.gpu_mapping, CFG.streaming_workers,
+                                        CFG.streaming_gpu_workers,
+                                        CFG.gpu_mapping_string) != 0) {
+      console->error("invalid command line");
       return -1;
     }
   }
@@ -130,7 +132,6 @@ int main(int argc, char *argv[]) {
       ripples::Graph<uint32_t, float, ripples::ForwardDirection<uint32_t>>;
   using GraphBwd =
       ripples::Graph<uint32_t, float, ripples::BackwardDirection<uint32_t>>;
-  auto console = spdlog::stdout_color_st("console");
   console->info("Loading...");
   GraphFwd Gf = ripples::loadGraph<GraphFwd>(CFG, weightGen);
   GraphBwd G = Gf.get_transpose();
@@ -154,7 +155,7 @@ int main(int argc, char *argv[]) {
     if (CFG.diffusionModel == "IC") {
       ripples::StreamingRRRGenerator<decltype(G), decltype(generator),
                                      ripples::independent_cascade_tag>
-          se(G, generator, workers - gpu_workers, gpu_workers);
+          se(G, generator, workers - gpu_workers, gpu_workers, CFG.gpu_mapping);
       auto start = std::chrono::high_resolution_clock::now();
       std::tie(seeds, R) = IMM(G, CFG.k, CFG.epsilon, 1.0, se,
                                ripples::independent_cascade_tag{},
@@ -164,7 +165,7 @@ int main(int argc, char *argv[]) {
     } else if (CFG.diffusionModel == "LT") {
       ripples::StreamingRRRGenerator<decltype(G), decltype(generator),
                                      ripples::linear_threshold_tag>
-          se(G, generator, workers - gpu_workers, gpu_workers);
+          se(G, generator, workers - gpu_workers, gpu_workers, CFG.gpu_mapping);
       auto start = std::chrono::high_resolution_clock::now();
       std::tie(seeds, R) = IMM(G, CFG.k, CFG.epsilon, 1.0, se,
                                ripples::linear_threshold_tag{},

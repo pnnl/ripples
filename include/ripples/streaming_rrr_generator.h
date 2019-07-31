@@ -44,6 +44,7 @@
 #include <atomic>
 #include <cassert>
 #include <cstdlib>
+#include <sstream>
 #include <vector>
 
 #include "omp.h"
@@ -51,7 +52,6 @@
 #include "spdlog/spdlog.h"
 #include "trng/uniform_int_dist.hpp"
 
-#include "ripples/imm.h"
 #include "ripples/generate_rrr_sets.h"
 
 #ifndef RIPPLES_DISABLE_CUDA
@@ -64,6 +64,37 @@
 #endif
 
 namespace ripples {
+
+int streaming_command_line(std::set<size_t> &gpu_mapping,
+                           size_t streaming_workers,
+                           size_t streaming_gpu_workers,
+                           std::string gpu_mapping_string) {
+  auto console = spdlog::get("console");
+  if (!(streaming_workers > 0 &&
+        streaming_gpu_workers <= streaming_workers)) {
+    console->error("invalid number of streaming workers");
+    return -1;
+  }
+  if (!gpu_mapping_string.empty()) {
+    std::istringstream iss(gpu_mapping_string);
+    std::string token;
+    while (std::getline(iss, token, ',')) {
+      std::stringstream omp_num_ss(token);
+      size_t omp_num;
+      omp_num_ss >> omp_num;
+      if(!(omp_num < streaming_workers)) {
+        console->error("invalid OpenMP number in GPU mapping");
+        return -1;
+      }
+      gpu_mapping.insert(omp_num);
+    }
+    if(gpu_mapping.size() != streaming_gpu_workers) {
+      console->error("invalid length of GPU mapping string");
+      return -1;
+    }
+  }
+  return 0;
+}
 
 template <typename GraphTy>
 class WalkWorker {
@@ -526,7 +557,8 @@ class StreamingRRRGenerator {
 
  public:
   StreamingRRRGenerator(const GraphTy &G, const PRNGeneratorTy &master_rng,
-                        size_t num_cpu_workers, size_t num_gpu_workers)
+                        size_t num_cpu_workers, size_t num_gpu_workers,
+                        std::set<size_t> gpu_mapping)
       : num_cpu_workers_(num_cpu_workers), num_gpu_workers_(num_gpu_workers) {
 #ifndef RIPPLES_DISABLE_CUDA
     // init GPU
@@ -564,12 +596,45 @@ class StreamingRRRGenerator {
       cpu_workers.push_back(new cpu_worker_t(G, rng));
     }
 
-    // select CPU-GPU ordering
-    for(auto &wp : cpu_workers) workers.push_back(wp);
+    // map workers to OpenMP nums
+    if (gpu_mapping.empty()) {
+      size_t omp_num = 0;
+      // by default, GPU wprkers are mapped after CPU workers
+      for (auto &wp : cpu_workers) {
+        workers.push_back(wp);
+        printf("> mapping: omp=%d\t->\tCPU-worker\n", omp_num++);
+      }
 #ifndef RIPPLES_DISABLE_CUDA
-    for(auto &wp : gpu_workers) workers.push_back(wp);
+      for (auto &wp : gpu_workers) {
+        workers.push_back(wp);
+        printf("> mapping: omp=%d\t->\tGPU-worker\n", omp_num++);
+      }
 #endif
-
+    } else {
+#ifndef RIPPLES_DISABLE_CUDA
+        // translate user-mapping string into vector
+        auto cw = cpu_workers.begin();
+        auto gw = gpu_workers.begin();
+        auto m = gpu_mapping.begin();
+        for (size_t omp_num = 0; omp_num < num_cpu_workers + num_gpu_workers;
+             ++omp_num) {
+          if(m != gpu_mapping.end() && omp_num == *m) {
+            workers.push_back(*gw++);
+            printf("> mapping: omp=%d\t->\tGPU-worker\n", omp_num);
+            ++m;
+          }
+          else {
+            workers.push_back(*cw++);
+            printf("> mapping: omp=%d\t->\tCPU-worker\n", omp_num);
+          }
+        }
+        // check
+        assert(cw == cpu_workers.end());
+        assert(gw == gpu_workers.end());
+        assert(m == gpu_mapping.end());
+#endif
+    }
+    fflush(stdout);
   }
 
   ~StreamingRRRGenerator() {
