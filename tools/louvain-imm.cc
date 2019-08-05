@@ -59,7 +59,9 @@ template <typename SeedSet>
 auto GetExperimentRecord(const ToolConfiguration<ripples::LouvainIMMConfiguration> &CFG,
                          const IMMExecutionRecord &R, const SeedSet &seeds) {
   nlohmann::json experiment{
-      {"Algorithm", "IMM"},
+      {"Algorithm", "CommunityDetection-IMM"},
+      {"Input", CFG.IFileName },
+      {"Output", CFG.OutputFile},
       {"DiffusionModel", CFG.diffusionModel},
       {"Epsilon", CFG.epsilon},
       {"K", CFG.k},
@@ -113,27 +115,9 @@ int main(int argc, char *argv[]) {
 
   console->info("Communities Vector Size : {}", communityVector.size());
 
-  auto num_communities = *std::max_element(communityVector.begin(), communityVector.end()) + 1;
 
-  console->info("Number of Communities : {}", num_communities);
-
-  using EdgeTy = typename GraphFwd::edge_type;
-  std::vector<std::vector<EdgeTy>> edge_lists(num_communities);
-  for (typename GraphFwd::vertex_type src = 0; src < Gf.num_nodes(); ++src) {
-    typename GraphFwd::vertex_type community_src = communityVector[Gf.convertID(src)];
-    for (auto e : Gf.neighbors(src)) {
-      typename GraphFwd::vertex_type community_dst = communityVector[Gf.convertID(e.vertex)];
-      if (community_dst == community_src) {
-        edge_lists[community_src].push_back({Gf.convertID(src), Gf.convertID(e.vertex), e.weight});
-      }
-    }
-  }
-
-  std::vector<GraphBwd> communities(num_communities);
-  for (size_t i = 0; i < communities.size(); ++i) {
-    GraphBwd g(edge_lists[i].begin(), edge_lists[i].end());
-    communities[i] = std::move(g);
-  }
+  const auto communities = ripples::getCommunitiesSubgraphs<GraphBwd>(Gf, communityVector);
+  console->info("Number of Communities : {}", communities.size());
 
   nlohmann::json executionLog;
 
@@ -172,7 +156,7 @@ int main(int argc, char *argv[]) {
 
         R.NumThreads = num_threads;
 
-        console->info("IMM parallel : {}ms, T={}/{}", R.Total.count(),
+        console->info("Louvain IMM parallel : {}ms, T={}/{}", R.Total.count(),
                       num_threads, max_threads);
 
         auto experiment = GetExperimentRecord(CFG, R, seeds);
@@ -193,7 +177,7 @@ int main(int argc, char *argv[]) {
           auto end = std::chrono::high_resolution_clock::now();
           R.Total = end - start;
         }
-        console->info("IMM squential : {}ms, T={}/{}", R.Total.count(),
+        console->info("Louvain IMM squential : {}ms, T={}/{}", R.Total.count(),
                       num_threads, max_threads);
 
         R.NumThreads = num_threads;
@@ -221,7 +205,7 @@ int main(int argc, char *argv[]) {
       auto end = std::chrono::high_resolution_clock::now();
       R.Total = end - start;
     }
-    console->info("IMM parallel : {}ms", R.Total.count());
+    console->info("Louvain IMM parallel : {}ms", R.Total.count());
 
     size_t num_threads;
 #pragma omp single
@@ -249,7 +233,7 @@ int main(int argc, char *argv[]) {
       auto end = std::chrono::high_resolution_clock::now();
       R.Total = end - start;
     }
-    console->info("IMM squential : {}ms", R.Total.count());
+    console->info("Louvain IMM squential : {}ms", R.Total.count());
 
     R.NumThreads = 1;
 

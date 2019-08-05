@@ -40,8 +40,9 @@ def build(bld):
         target='test_main',
         use=['3rd-party'])
 
+    tests = ['pivoting.cc', 'community_extraction.cc']
     bld(features='cxx cxxprogram test',
-        source='pivoting.cc',
+        source=tests,
         target='run_tests',
         use=['project-headers', '3rd-party', 'TRNG', 'OpenMP', 'JSON', 'test_main'])
 

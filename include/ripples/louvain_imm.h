@@ -87,6 +87,8 @@ template <typename GraphTy, typename RRRset, typename execution_tag>
 auto FindMostInfluentialSet(const std::vector<GraphTy> &communities,
                             size_t k, std::vector<std::vector<RRRset>> &RRRcollection,
                             execution_tag &&ex_tag) {
+  spdlog::get("console")->info("SeedSelect start");
+
   using vertex_type = typename GraphTy::vertex_type;
 
   Compare<vertex_type> cmp;
@@ -119,20 +121,28 @@ auto FindMostInfluentialSet(const std::vector<GraphTy> &communities,
     queues[i] = std::move(priorityQueue(cmp, std::move(queue_storage)));
     ends[i] = RRRcollection[i].end();
 
-    total_delta += RRRcollection.size();
+    total_delta += RRRcollection[i].size();
   }
+
+  spdlog::get("console")->flush();
 
   // Init on heap per community
   using vertex_contribution_pair = std::pair<vertex_type, double>;
-  std::vector<vertex_contribution_pair> global_heap(k+1, {-1, -1});
+  std::vector<vertex_contribution_pair> global_heap(k + 1, vertex_contribution_pair{-1, -1.0});
   std::vector<uint64_t> active_communities(communities.size(), 1);
+
+  auto heap_cmp =
+      [](const vertex_contribution_pair & a, const vertex_contribution_pair &b) -> bool {
+    return a.second > b.second;
+  };
+
+  std::make_heap(global_heap.begin(), global_heap.end(), heap_cmp);
   // std::mutex global_heap_mutex;
 
   // for each communities do in parallel
+  size_t iteration = 0;
   while (!std::all_of(active_communities.begin(), active_communities.end(),
                       [](const uint64_t &v) -> bool { return v == 0; })) {
-
-    #pragma omp parallel for schedule(dynamic)
     for (size_t i = 0; i < communities.size(); ++i) {
       if (active_communities[i] == 0) continue;
 
@@ -171,8 +181,7 @@ auto FindMostInfluentialSet(const std::vector<GraphTy> &communities,
           std::fill(coverageVectors[i].begin(), coverageVectors[i].end(), 0);
         }
         CountOccurrencies(RRRcollection[i].begin(), itr, coverageVectors[i].begin(),
-                          coverageVectors[i].end(),
-                          std::forward<execution_tag>(ex_tag));
+                          coverageVectors[i].end(), std::forward<execution_tag>(ex_tag));
       }
 
       ends[i] = itr;
@@ -182,34 +191,26 @@ auto FindMostInfluentialSet(const std::vector<GraphTy> &communities,
 
       // Handle the global index insertion
       // std::lock_guard<std::mutex> _(global_heap_mutex);
-      #pragma omp critical
-      {
-        global_heap[k] = vcp;
+      std::pop_heap(global_heap.begin(), global_heap.end(), heap_cmp);
+      global_heap.back() = vcp;
+      std::push_heap(global_heap.begin(), global_heap.end(), heap_cmp);
 
-        std::sort(
-            global_heap.begin(), global_heap.end(),
-            [](const vertex_contribution_pair &a,
-               const vertex_contribution_pair &b) -> bool {
-              return a.second > b.second;
-            });
-
-        if (global_heap[k] == vcp)
-          active_communities[i] = 0;
-      }
+      if (global_heap.front() == vcp)
+        active_communities[i] = 0;
     }
   }
 
+  std::pop_heap(global_heap.begin(), global_heap.end(), heap_cmp);
   global_heap.pop_back();
 
   double coverage = 0;
   std::vector<typename GraphTy::vertex_type> seeds;
   seeds.reserve(k);
-  for (auto & e : global_heap) {
+  for (auto e : global_heap) {
     seeds.push_back(e.first);
     coverage += e.second;
   }
 
-  // return std::make_pair(seeds, coverage / total_delta);
   return seeds;
 }
 
@@ -258,7 +259,6 @@ auto LouvainIMM(const std::vector<GraphTy> &communities, std::size_t k,
   std::vector<RRRsetCollection> R(communities.size());
 
   // For each community do ThetaEstimation and Sampling
-  #pragma omp parallel for schedule(dynamic)
   for (size_t i = 0; i < communities.size(); ++i) {
     double l_1 = l * (1 + 1 / std::log2(communities[i].num_nodes()));
 

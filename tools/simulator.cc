@@ -79,10 +79,11 @@ struct SimulatorConfiguration {
 };
 
 template <typename Sims>
-auto GetExperimentRecord(const SimulatorConfiguration &CFG,
+auto GetExperimentRecord(const ToolConfiguration<SimulatorConfiguration> &CFG,
                          const nlohmann::json & experimentRecord,
                          const Sims &experiments) {
   nlohmann::json experiment{{"Input", experimentRecord["Input"]},
+                            {"Output", CFG.OutputFile},
                             {"Algorithm", experimentRecord["Algorithm"]},
                             {"DiffusionModel", CFG.diffusionModel},
                             {"Epsilon", experimentRecord["Epsilon"]},
