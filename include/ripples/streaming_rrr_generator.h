@@ -477,8 +477,9 @@ class GPUWalkWorker<GraphTy, PRNGeneratorTy, independent_cascade_tag>
     for (size_t wi = 0; wi < size; ++wi) {
 #if CUDA_PROFILE
       auto t0 = std::chrono::high_resolution_clock::now();
-#endif      
-      solver.traverse((int)u_(rng_));
+#endif
+      auto root = u_(rng_);
+      solver.traverse(reinterpret_cast<int>(root));
 #if CUDA_PROFILE
       cuda_sync(cuda_stream_);
       auto t1 = std::chrono::high_resolution_clock::now();
@@ -497,6 +498,7 @@ class GPUWalkWorker<GraphTy, PRNGeneratorTy, independent_cascade_tag>
       t0 = t1;
 #endif
 
+      ic_predecessors_[root] = root;
       ic_build(first++);
 #if CUDA_PROFILE
       t1 = std::chrono::high_resolution_clock::now();
@@ -634,7 +636,6 @@ class StreamingRRRGenerator {
         assert(m == gpu_mapping.end());
 #endif
     }
-    fflush(stdout);
   }
 
   ~StreamingRRRGenerator() {
