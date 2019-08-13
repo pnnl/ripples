@@ -422,9 +422,21 @@ class Graph {
     sequence_of<DestinationTy>::dump(FS, edges, edges + numEdges);
   }
 
+ private:
+  static constexpr bool isForward =
+      std::is_same<DirectionPolicy, ForwardDirection<VertexTy>>::value;
+  using transposed_direction =
+      typename std::conditional<isForward, BackwardDirection<VertexTy>,
+                                ForwardDirection<VertexTy>>::type;
+  using transposed_type =
+      Graph<vertex_type, edge_weight_type, transposed_direction>;
+
+  friend transposed_type;
+ public:
+
   //! Get the transposed graph.
   //! \return the transposed graph.
-  auto get_transpose() const {
+  transposed_type get_transpose() const {
     using out_dest_type = typename transposed_type::DestinationTy;
     transposed_type G;
     G.numEdges = numEdges;
@@ -468,16 +480,6 @@ DestinationTy *csr_edges() const {
  }
 
  private:
-  static constexpr bool isForward =
-      std::is_same<DirectionPolicy, ForwardDirection<VertexTy>>::value;
-  using transposed_direction =
-      typename std::conditional<isForward, BackwardDirection<VertexTy>,
-                                ForwardDirection<VertexTy>>::type;
-  using transposed_type =
-      Graph<vertex_type, edge_weight_type, transposed_direction>;
-
-  friend transposed_type;
-
   template <typename FStream>
   void load_binary(FStream &FS) {
     if (!FS.is_open()) throw "Bad things happened!!!";
