@@ -52,23 +52,28 @@ struct cuda_device_graph {
 
 constexpr size_t CUDA_WALK_SIZE = 8;
 
-
-typename cuda_device_graph::vertex_t *cuda_graph_index();
-typename cuda_device_graph::vertex_t *cuda_graph_edges();
-typename cuda_device_graph::weight_t *cuda_graph_weights();
-
-//! \brief Returns the maximum number of CUDA blocks.
-//!
-//! \return The maximum number of CUDA blocks.
+//! \brief CUDA runtime wrap functions.
 size_t cuda_max_blocks();
+size_t cuda_num_devices();
+void cuda_set_device(size_t);
+void cuda_stream_create(cudaStream_t *);
+void cuda_stream_destroy(cudaStream_t);
 
 //
 // host-device API
 //
 using mask_word_t = typename cuda_device_graph::vertex_t;
 
-void cuda_graph_init(const cuda_GraphTy &G);
-void cuda_graph_fini();
+struct cuda_ctx {
+  size_t gpu_id;
+  cuda_device_graph * d_graph;
+};
+
+cuda_ctx *cuda_make_ctx(const cuda_GraphTy &G, size_t gpu_id);
+void cuda_destroy_ctx(cuda_ctx *);
+typename cuda_device_graph::vertex_t *cuda_graph_index(cuda_ctx *);
+typename cuda_device_graph::vertex_t *cuda_graph_edges(cuda_ctx *);
+typename cuda_device_graph::weight_t *cuda_graph_weights(cuda_ctx *);
 
 void cuda_malloc(void **dst, size_t size);
 void cuda_free(void *ptr);
@@ -86,7 +91,7 @@ void cuda_ic_rng_setup(cuda_PRNGeneratorTy *d_trng_state,
 void cuda_lt_kernel(size_t n_blocks, size_t block_size, size_t batch_size,
                     size_t num_nodes, cuda_PRNGeneratorTy *d_trng_states,
                     mask_word_t *d_res_masks, size_t num_mask_words,
-                    cudaStream_t);
+                    cuda_ctx *ctx, cudaStream_t);
 
 #if CUDA_PROFILE
 template <typename logst_t, typename sample_t>

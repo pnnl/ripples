@@ -45,7 +45,7 @@
 
 #include <cmath>
 #include <cstddef>
-#include <set>
+#include <unordered_map>
 #include <vector>
 
 #include "nlohmann/json.hpp"
@@ -68,7 +68,7 @@ struct IMMConfiguration : public TIMConfiguration {
   size_t streaming_workers{0};
   size_t streaming_gpu_workers{0};
   std::string gpu_mapping_string{""};
-  std::set<size_t> gpu_mapping;
+  std::unordered_map<size_t, size_t> worker_to_gpu;
 
   //! \brief Add command line options to configure IMM.
   //!

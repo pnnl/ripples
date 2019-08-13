@@ -4,6 +4,8 @@
 //
 //===----------------------------------------------------------------------===//
 
+#include <unordered_map>
+
 #include "trng/uniform01_dist.hpp"
 #include "trng/uniform_int_dist.hpp"
 
@@ -13,13 +15,31 @@
 
 namespace ripples {
 
-struct cuda_ctx_t {
-  cuda_device_graph *d_graph = nullptr;
-} cuda_ctx;
-
 size_t cuda_max_blocks() {
   // TODO query CUDA runtime
   return 1 << 16;
+}
+
+size_t cuda_num_devices() {
+  int res;
+  auto e = cudaGetDeviceCount(&res);
+  cuda_check(e, __FILE__, __LINE__);
+  return res;
+}
+
+void cuda_set_device(size_t gpu_id) {
+  auto e = cudaSetDevice(gpu_id);
+  cuda_check(e, __FILE__, __LINE__);
+}
+
+void cuda_stream_create(cudaStream_t *sp) {
+  auto e = cudaStreamCreate(sp);
+  cuda_check(e, __FILE__, __LINE__);
+}
+
+void cuda_stream_destroy(cudaStream_t s) {
+  auto e = cudaStreamDestroy(s);
+  cuda_check(e, __FILE__, __LINE__);
 }
 
 __global__ void kernel_lt_trng_setup(cuda_PRNGeneratorTy *d_trng_states,
@@ -38,20 +58,16 @@ __global__ void kernel_ic_trng_setup(cuda_PRNGeneratorTy *d_trng_states,
   d_trng_states[tid].split(num_seqs, first_seq + tid);
 }
 
-void cuda_graph_init(const cuda_GraphTy &G) {
-  cuda_ctx.d_graph = make_cuda_graph(G);
+typename cuda_device_graph::vertex_t *cuda_graph_index(cuda_ctx *ctx) {
+  return ctx->d_graph->d_index_;
 }
 
-typename cuda_device_graph::vertex_t *cuda_graph_index() {
-  return cuda_ctx.d_graph->d_index_;
+typename cuda_device_graph::vertex_t *cuda_graph_edges(cuda_ctx *ctx) {
+  return ctx->d_graph->d_edges_;
 }
 
-typename cuda_device_graph::vertex_t *cuda_graph_edges() {
-  return cuda_ctx.d_graph->d_edges_;
-}
-
-typename cuda_device_graph::weight_t *cuda_graph_weights() {
-  return cuda_ctx.d_graph->d_weights_;
+typename cuda_device_graph::weight_t *cuda_graph_weights(cuda_ctx *ctx) {
+  return ctx->d_graph->d_weights_;
 }
 
 void cuda_malloc(void **dst, size_t size) {
@@ -67,10 +83,6 @@ void cuda_free(void *ptr) {
 void cuda_lt_rng_setup(cuda_PRNGeneratorTy *d_trng_state,
                        const cuda_PRNGeneratorTy &r, size_t num_seqs,
                        size_t first_seq, size_t n_blocks, size_t block_size) {
-  printf(
-      "*** DBG *** > [cuda_lt_rng_setup] "
-      "num_seqs=%d\tfirst_seq=%d\tn_blocks=%d\tblock_size=%d\n",
-      num_seqs, first_seq, n_blocks, block_size);
   kernel_lt_trng_setup<<<n_blocks, block_size>>>(d_trng_state, r, num_seqs,
                                                  first_seq);
   cuda_check(__FILE__, __LINE__);
@@ -79,18 +91,22 @@ void cuda_lt_rng_setup(cuda_PRNGeneratorTy *d_trng_state,
 void cuda_ic_rng_setup(cuda_PRNGeneratorTy *d_trng_state,
                        const cuda_PRNGeneratorTy &r, size_t num_seqs,
                        size_t first_seq, size_t n_blocks, size_t block_size) {
-  printf(
-      "*** DBG *** > [cuda_ic_rng_setup] "
-      "num_seqs=%d\tfirst_seq=%d\tn_blocks=%d\tblock_size=%d\n",
-      num_seqs, first_seq, n_blocks, block_size);
   kernel_ic_trng_setup<<<n_blocks, block_size>>>(d_trng_state, r, num_seqs,
                                                  first_seq);
   cuda_check(__FILE__, __LINE__);
 }
 
-void cuda_graph_fini() {
-  // cleanup
-  destroy_cuda_graph(cuda_ctx.d_graph);
+cuda_ctx *cuda_make_ctx(const cuda_GraphTy &G, size_t gpu_id) {
+  auto res = new cuda_ctx();
+  res->gpu_id = gpu_id;
+  cuda_set_device(gpu_id);
+  res->d_graph = make_cuda_graph(G);
+  return res;
+}
+
+void cuda_destroy_ctx(cuda_ctx *ctx) {
+  cuda_set_device(ctx->gpu_id);
+  destroy_cuda_graph(ctx->d_graph);
 }
 
 __global__ void kernel_lt_per_thread(
@@ -167,10 +183,10 @@ __global__ void kernel_lt_per_thread(
 void cuda_lt_kernel(size_t n_blocks, size_t block_size, size_t batch_size,
                     size_t num_nodes, cuda_PRNGeneratorTy *d_trng_states,
                     mask_word_t *d_res_masks, size_t num_mask_words,
-                    cudaStream_t stream) {
+                    cuda_ctx *ctx, cudaStream_t stream) {
   kernel_lt_per_thread<<<n_blocks, block_size, 0, stream>>>(
-      batch_size, cuda_ctx.d_graph->d_index_, cuda_ctx.d_graph->d_edges_,
-      cuda_ctx.d_graph->d_weights_, num_nodes, d_trng_states, d_res_masks,
+      batch_size, ctx->d_graph->d_index_, ctx->d_graph->d_edges_,
+      ctx->d_graph->d_weights_, num_nodes, d_trng_states, d_res_masks,
       num_mask_words);
   cuda_check(__FILE__, __LINE__);
 }

@@ -10,7 +10,7 @@ from waflib.Tools import ccroot, c_preproc
 from waflib.Configure import conf
 
 class cuda(Task.Task):
-	run_str = '${NVCC} ${CUDAFLAGS} ${CUDA_CXX_FLAGS} ${FRAMEWORKPATH_ST:FRAMEWORKPATH} ${CPPPATH_ST:INCPATHS} ${DEFINES_ST:DEFINES} ${CXX_SRC_F}${SRC} ${CXX_TGT_F} ${TGT}'
+	run_str = '${NVCC} ${CUDAFLAGS} -ccbin ${CXX} ${CUDA_CXX_FLAGS} ${FRAMEWORKPATH_ST:FRAMEWORKPATH} ${CPPPATH_ST:INCPATHS} ${DEFINES_ST:DEFINES} ${CXX_SRC_F}${SRC} ${CXX_TGT_F} ${TGT}'
 	color   = 'GREEN'
 	ext_in  = ['.h', '.cuh']
 	vars    = ['CCDEPS']

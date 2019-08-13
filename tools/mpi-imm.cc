@@ -114,7 +114,7 @@ int main(int argc, char *argv[]) {
   ripples::parse_command_line(argc, argv);
   auto CFG = ripples::configuration();
   if (CFG.cuda_parallel) {
-    if (ripples::streaming_command_line(CFG.gpu_mapping, CFG.streaming_workers,
+    if (ripples::streaming_command_line(CFG.worker_to_gpu, CFG.streaming_workers,
                                         CFG.streaming_gpu_workers,
                                         CFG.gpu_mapping_string) != 0) {
       console->error("invalid command line");
@@ -155,7 +155,8 @@ int main(int argc, char *argv[]) {
     if (CFG.diffusionModel == "IC") {
       ripples::StreamingRRRGenerator<decltype(G), decltype(generator),
                                      ripples::independent_cascade_tag>
-          se(G, generator, workers - gpu_workers, gpu_workers, CFG.gpu_mapping);
+          se(G, generator, workers - gpu_workers, gpu_workers,
+             CFG.worker_to_gpu);
       auto start = std::chrono::high_resolution_clock::now();
       std::tie(seeds, R) = IMM(G, CFG.k, CFG.epsilon, 1.0, se,
                                ripples::independent_cascade_tag{},
@@ -165,7 +166,8 @@ int main(int argc, char *argv[]) {
     } else if (CFG.diffusionModel == "LT") {
       ripples::StreamingRRRGenerator<decltype(G), decltype(generator),
                                      ripples::linear_threshold_tag>
-          se(G, generator, workers - gpu_workers, gpu_workers, CFG.gpu_mapping);
+          se(G, generator, workers - gpu_workers, gpu_workers,
+             CFG.worker_to_gpu);
       auto start = std::chrono::high_resolution_clock::now();
       std::tie(seeds, R) = IMM(G, CFG.k, CFG.epsilon, 1.0, se,
                                ripples::linear_threshold_tag{},
