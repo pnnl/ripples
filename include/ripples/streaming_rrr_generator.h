@@ -252,6 +252,7 @@ class GPUWalkWorker<GraphTy, PRNGeneratorTy, linear_threshold_tag>
                 const PRNGeneratorTy &rng, cuda_ctx *ctx)
       : WalkWorker<GraphTy>(G),
         conf_(conf),
+        rng_(rng),
         u_(0, G.num_nodes()),
         cuda_ctx_(ctx) {
     cuda_set_device(ctx->gpu_id);
@@ -441,6 +442,7 @@ class GPUWalkWorker<GraphTy, PRNGeneratorTy, independent_cascade_tag>
                 const PRNGeneratorTy &rng, cuda_ctx *ctx)
       : WalkWorker<GraphTy>(G),
         conf_(conf),
+        rng_(rng),
         u_(0, G.num_nodes()),
         cuda_ctx_(ctx) {
     cuda_set_device(ctx->gpu_id);
