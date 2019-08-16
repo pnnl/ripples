@@ -835,7 +835,9 @@ namespace bfs_kernels {
                             const int *edge_mask,
                             const int *isolated_bmap,
                             bool directed,
-                            PRNGeneratorTy *d_trng_state) {
+                            PRNGeneratorTy *d_trng_state,
+                            size_t rng_offset,
+                            size_t num_rngs) {
     //BlockScan
     typedef cub::BlockScan<IndexType, TOP_DOWN_EXPAND_DIMX> BlockScan;
     __shared__ typename BlockScan::TempStorage scan_storage;
@@ -859,7 +861,8 @@ namespace bfs_kernels {
     __shared__ IndexType block_n_frontier_candidates;
 
     // cache rng state and create the uniform distribution
-    auto &rng(d_trng_state[blockDim.x * blockIdx.x + threadIdx.x]);
+    auto tid = blockDim.x * blockIdx.x + threadIdx.x;
+    auto &rng(d_trng_state[(tid + rng_offset) % num_rngs]);
     trng::uniform01_dist<float> u;
 
     IndexType block_offset = (blockDim.x * blockIdx.x) * max_items_per_thread;
@@ -1261,7 +1264,9 @@ namespace bfs_kernels {
                 IndexType dyn_max_blocks,
                 cudaStream_t m_stream,
                 bool deterministic,
-                PRNGeneratorTy *d_trng_state) {
+                PRNGeneratorTy *d_trng_state,
+                size_t &rng_offset,
+                size_t num_rngs) {
     if (!totaldegree)
       return;
 
@@ -1294,9 +1299,13 @@ namespace bfs_kernels {
                                         edge_mask,
                                         isolated_bmap,
                                         directed,
-                                        d_trng_state);
+                                        d_trng_state,
+                                        rng_offset,
+                                        num_rngs);
     cudaCheckError()
     ;
+
+    rng_offset = (rng_offset + grid.x * block.x) % num_rngs;
   }
 
   template<typename IndexType>

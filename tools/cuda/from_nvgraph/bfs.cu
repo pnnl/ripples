@@ -326,7 +326,7 @@ namespace nvgraph {
                       exclusive_sum_frontier_vertex_buckets_offsets,
                       visited_bmap, distances, predecessors, edge_mask,
                       isolated_bmap, directed, dyn_max_blocks, stream,
-                      deterministic, d_trng_state_);
+                      deterministic, d_trng_state_, rng_offset_, num_rngs_);
 
       mu -= mf;
 

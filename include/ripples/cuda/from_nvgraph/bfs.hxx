@@ -114,6 +114,8 @@ class Bfs
   cudaStream_t stream;
 
   PRNGeneratorTy *d_trng_state_{nullptr};
+  size_t rng_offset_{0};
+  size_t num_rngs_;
 
   // resets pointers defined by d_counters_pad (see implem)
 
@@ -143,6 +145,7 @@ class Bfs
         dyn_max_blocks(_dyn_max_blocks),
         stream(_stream)
   {
+    num_rngs_ = dyn_max_blocks * traverse_block_size();
     setup();
   }
 
