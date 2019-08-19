@@ -73,6 +73,8 @@ auto GetExperimentRecord(const ToolConfiguration<IMMConfiguration> &CFG,
       {"K", CFG.k},
       {"L", 1},
       {"NumThreads", R.NumThreads},
+      {"NumWalkWorkers", CFG.streaming_workers},
+      {"NumGPUWalkWorkers", CFG.streaming_gpu_workers},
       {"Total", R.Total},
       {"ThetaPrimeDeltas", R.ThetaPrimeDeltas},
       {"ThetaEstimation", R.ThetaEstimationTotal},
@@ -257,7 +259,10 @@ int main(int argc, char **argv) {
     }
     console->info("IMM CUDA : {}ms", R.Total.count());
 
-    R.NumThreads = 1;
+    size_t num_threads;
+#pragma omp single
+    num_threads = omp_get_max_threads();
+    R.NumThreads = num_threads;
 
     G.convertID(seeds.begin(), seeds.end(), seeds.begin());
     auto experiment = GetExperimentRecord(CFG, R, seeds);
@@ -281,7 +286,10 @@ int main(int argc, char **argv) {
     }
     console->info("IMM squential : {}ms", R.Total.count());
 
-    R.NumThreads = 1;
+    size_t num_threads;
+#pragma omp single
+    num_threads = omp_get_max_threads();
+    R.NumThreads = num_threads;
 
     G.convertID(seeds.begin(), seeds.end(), seeds.begin());
     auto experiment = GetExperimentRecord(CFG, R, seeds);
