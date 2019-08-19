@@ -50,6 +50,7 @@
 
 #include "ripples/diffusion_simulation.h"
 #include "ripples/graph.h"
+#include "ripples/imm_execution_record.h"
 #include "ripples/utility.h"
 
 #include "trng/uniform01_dist.hpp"
@@ -138,6 +139,7 @@ void AddRRRSet(const GraphTy &G, typename GraphTy::vertex_type r,
 template <typename GraphTy, typename PRNGeneratorTy, typename diff_model_tag>
 std::vector<RRRset<GraphTy>> GenerateRRRSets(const GraphTy &G, size_t theta,
                                              PRNGeneratorTy &generator,
+                                             IMMExecutionRecord &,
                                              diff_model_tag &&model_tag,
                                              sequential_tag &&ex_tag) {
   using vertex_type = typename GraphTy::vertex_type;
@@ -169,6 +171,7 @@ std::vector<RRRset<GraphTy>> GenerateRRRSets(const GraphTy &G, size_t theta,
 template <typename GraphTy, typename PRNGeneratorTy, typename diff_model_tag>
 std::vector<RRRset<GraphTy>> GenerateRRRSets(const GraphTy &G, size_t theta,
                                              PRNGeneratorTy &generator,
+                                             IMMExecutionRecord &,
                                              diff_model_tag &&model_tag,
                                              omp_parallel_tag &&ex_tag) {
   using vertex_type = typename GraphTy::vertex_type;

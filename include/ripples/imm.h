@@ -56,6 +56,7 @@
 #include "ripples/configuration.h"
 #include "ripples/find_most_influential.h"
 #include "ripples/generate_rrr_sets.h"
+#include "ripples/imm_execution_record.h"
 #include "ripples/tim.h"
 #include "ripples/utility.h"
 
@@ -85,29 +86,6 @@ struct IMMConfiguration : public TIMConfiguration {
                    "A comma-separated set of OpenMP numbers for GPU workers.")
         ->group("Streaming-Engine Options");
   }
-};
-
-//! IMM execution record.
-struct IMMExecutionRecord {
-  using ex_time_ms = std::chrono::duration<double, std::milli>;
-  //! Number of threads used during the execution.
-  size_t NumThreads;
-  //! Number of RRR sets generated.
-  size_t Theta;
-  //! The list of how many RRR sets are produced during the estimation phase.
-  std::vector<size_t> ThetaPrimeDeltas;
-  //! Execution time of the Theta estimation phase.
-  ex_time_ms ThetaEstimationTotal;
-  //! Execution times of the GenerateRRRSets steps in Theta estimation.
-  std::vector<ex_time_ms> ThetaEstimationGenerateRRR;
-  //! Execution times of the FindMostInfluentialSet steps in Theta estimation.
-  std::vector<ex_time_ms> ThetaEstimationMostInfluential;
-  //! Execution time of the RRR sets generation phase.
-  ex_time_ms GenerateRRRSets;
-  //! Execution time of the maximum coverage phase.
-  ex_time_ms FindMostInfluentialSet;
-  //! Total execution time.
-  ex_time_ms Total;
 };
 
 //! Retrieve the configuration parsed from command line.
@@ -176,6 +154,7 @@ template <typename GraphTy, typename PRNGeneratorTy, typename diff_model_tag>
 std::vector<RRRset<GraphTy>> GenerateRRRSets(
     const GraphTy &G, size_t theta,
     StreamingRRRGenerator<GraphTy, PRNGeneratorTy, diff_model_tag> &se,
+    IMMExecutionRecord &record,
     diff_model_tag &&, cuda_parallel_tag &&) {
   return se.generate(theta);
 }
@@ -218,9 +197,10 @@ auto Sampling(const GraphTy &G, std::size_t k, double epsilon, double l,
     record.ThetaPrimeDeltas.push_back(thetaPrime - RR.size());
 
     auto timeRRRSets = measure<>::exec_time([&]() {
-      auto deltaRR = GenerateRRRSets(G, thetaPrime - RR.size(), generator,
-                                     std::forward<diff_model_tag>(model_tag),
-                                     std::forward<execution_tag>(ex_tag));
+      auto deltaRR =
+          GenerateRRRSets(G, thetaPrime - RR.size(), generator, record,
+                          std::forward<diff_model_tag>(model_tag),
+                          std::forward<execution_tag>(ex_tag));
 
       RR.insert(RR.end(), std::make_move_iterator(deltaRR.begin()),
                 std::make_move_iterator(deltaRR.end()));
@@ -253,7 +233,7 @@ auto Sampling(const GraphTy &G, std::size_t k, double epsilon, double l,
 
   record.GenerateRRRSets = measure<>::exec_time([&]() {
     if (theta > RR.size()) {
-      auto deltaRR = GenerateRRRSets(G, theta - RR.size(), generator,
+      auto deltaRR = GenerateRRRSets(G, theta - RR.size(), generator, record,
                                      std::forward<diff_model_tag>(model_tag),
                                      std::forward<execution_tag>(ex_tag));
 

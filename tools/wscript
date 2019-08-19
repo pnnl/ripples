@@ -40,8 +40,8 @@ def build(bld):
     if bld.env.ENABLE_CUDA:
         tools_deps += [ 'CUDA', 'CUDART' ]
 
-    bld(features='cxx cxxprogram', source='tim.cc', target='tim',
-        use=tools_deps)
+    # bld(features='cxx cxxprogram', source='tim.cc', target='tim',
+    #     use=tools_deps)
 
     if bld.env.ENABLE_CUDA:
         bld(features='cxx cxxstlib', source='cuda/cuda_utils.cu', target='cuda_utils', cuda=True, use=tools_deps)

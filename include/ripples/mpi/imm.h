@@ -53,6 +53,7 @@
 
 #include "ripples/generate_rrr_sets.h"
 #include "ripples/imm.h"
+#include "ripples/imm_execution_record.h"
 #include "ripples/mpi/find_most_influential.h"
 #include "ripples/utility.h"
 
@@ -127,9 +128,9 @@ auto Sampling(const GraphTy &G, std::size_t k, double epsilon, double l,
     record.ThetaPrimeDeltas.push_back(thetaPrime - RR.size());
 
     auto timeRRRSets = measure<>::exec_time([&]() {
-      auto deltaRR = GenerateRRRSets(G, thetaPrime - RR.size(), generator,
-                                     std::forward<diff_model_tag>(model_tag),
-                                     omp_parallel_tag{});
+      auto deltaRR = GenerateRRRSets(
+          G, thetaPrime - RR.size(), generator, record,
+          std::forward<diff_model_tag>(model_tag), omp_parallel_tag{});
 
       RR.insert(RR.end(), std::make_move_iterator(deltaRR.begin()),
                 std::make_move_iterator(deltaRR.end()));
@@ -163,7 +164,7 @@ auto Sampling(const GraphTy &G, std::size_t k, double epsilon, double l,
 
   start = std::chrono::high_resolution_clock::now();
   if (thetaLocal > RR.size()) {
-    auto deltaRR = GenerateRRRSets(G, thetaLocal - RR.size(), generator,
+    auto deltaRR = GenerateRRRSets(G, thetaLocal - RR.size(), generator, record,
                                    std::forward<diff_model_tag>(model_tag),
                                    omp_parallel_tag{});
 
@@ -215,9 +216,9 @@ auto Sampling(
     record.ThetaPrimeDeltas.push_back(thetaPrime - RR.size());
 
     auto timeRRRSets = measure<>::exec_time([&]() {
-      auto deltaRR = GenerateRRRSets(G, thetaPrime - RR.size(), generator,
-                                     std::forward<diff_model_tag>(model_tag),
-                                     cuda_parallel_tag{});
+      auto deltaRR = GenerateRRRSets(
+          G, thetaPrime - RR.size(), generator, record,
+          std::forward<diff_model_tag>(model_tag), cuda_parallel_tag{});
 
       RR.insert(RR.end(), std::make_move_iterator(deltaRR.begin()),
                 std::make_move_iterator(deltaRR.end()));
@@ -250,7 +251,7 @@ auto Sampling(
 
   start = std::chrono::high_resolution_clock::now();
   if (thetaLocal > RR.size()) {
-    auto deltaRR = GenerateRRRSets(G, thetaLocal - RR.size(), generator,
+    auto deltaRR = GenerateRRRSets(G, thetaLocal - RR.size(), generator, record,
                                    std::forward<diff_model_tag>(model_tag),
                                    cuda_parallel_tag{});
 
