@@ -41,6 +41,7 @@
 //===----------------------------------------------------------------------===//
 
 #include <iostream>
+#include <sstream>
 #include <string>
 
 #include "ripples/configuration.h"
@@ -60,6 +61,27 @@
 #include "spdlog/spdlog.h"
 
 namespace ripples {
+
+auto GetWalkIterationRecord(
+    const typename IMMExecutionRecord::walk_iteration_prof &iter) {
+  nlohmann::json res{{"NumSets", iter.NumSets}, {"Total", iter.Total}};
+  for(size_t wi = 0; wi < iter.CPUWalks.size(); ++wi) {
+    std::stringstream wname;
+    wname << "CPU Worker " << wi;
+    res[wname.str()] = nlohmann::json{{"NumSets", iter.CPUWalks[wi].NumSets},
+                                      {"Total", iter.CPUWalks[wi].Total}};
+  }
+  for(size_t wi = 0; wi < iter.GPUWalks.size(); ++wi) {
+    std::stringstream wname;
+    wname << "GPU Worker " << wi;
+    res[wname.str()] = nlohmann::json{{"NumSets", iter.GPUWalks[wi].NumSets},
+                                      {"Total", iter.GPUWalks[wi].Total},
+                                      {"Kernel", iter.GPUWalks[wi].Kernel},
+                                      {"D2H", iter.GPUWalks[wi].D2H},
+                                      {"Post", iter.GPUWalks[wi].Post}};
+  }
+  return res;
+}
 
 template <typename SeedSet>
 auto GetExperimentRecord(const ToolConfiguration<IMMConfiguration> &CFG,
@@ -84,6 +106,10 @@ auto GetExperimentRecord(const ToolConfiguration<IMMConfiguration> &CFG,
       {"GenerateRRRSets", R.GenerateRRRSets},
       {"FindMostInfluentialSet", R.FindMostInfluentialSet},
       {"Seeds", seeds}};
+  for (auto &ri : R.WalkIterations) {
+    experiment["Iterations"].push_back(
+        GetWalkIterationRecord(ri));
+  }
   return experiment;
 }
 
@@ -153,15 +179,15 @@ int main(int argc, char **argv) {
 
         if (CFG.diffusionModel == "IC") {
           auto start = std::chrono::high_resolution_clock::now();
-          std::tie(seeds, R) = IMM(G, CFG.k, CFG.epsilon, 1, generator,
+          seeds = IMM(G, CFG.k, CFG.epsilon, 1, generator, R,
                                    ripples::independent_cascade_tag{},
                                    ripples::omp_parallel_tag{});
           auto end = std::chrono::high_resolution_clock::now();
           R.Total = end - start;
         } else if (CFG.diffusionModel == "LT") {
           auto start = std::chrono::high_resolution_clock::now();
-          std::tie(seeds, R) =
-              IMM(G, CFG.k, CFG.epsilon, 1, generator,
+          seeds =
+              IMM(G, CFG.k, CFG.epsilon, 1, generator, R,
                   ripples::linear_threshold_tag{}, ripples::omp_parallel_tag{});
           auto end = std::chrono::high_resolution_clock::now();
           R.Total = end - start;
@@ -178,15 +204,15 @@ int main(int argc, char **argv) {
       } else {
         if (CFG.diffusionModel == "IC") {
           auto start = std::chrono::high_resolution_clock::now();
-          std::tie(seeds, R) = IMM(G, CFG.k, CFG.epsilon, 1, generator,
+          seeds = IMM(G, CFG.k, CFG.epsilon, 1, generator, R,
                                    ripples::independent_cascade_tag{},
                                    ripples::sequential_tag{});
           auto end = std::chrono::high_resolution_clock::now();
           R.Total = end - start;
         } else if (CFG.diffusionModel == "LT") {
           auto start = std::chrono::high_resolution_clock::now();
-          std::tie(seeds, R) =
-              IMM(G, CFG.k, CFG.epsilon, 1, generator,
+          seeds =
+              IMM(G, CFG.k, CFG.epsilon, 1, generator, R,
                   ripples::linear_threshold_tag{}, ripples::sequential_tag{});
           auto end = std::chrono::high_resolution_clock::now();
           R.Total = end - start;
@@ -206,15 +232,15 @@ int main(int argc, char **argv) {
   } else if (CFG.parallel) {
     if (CFG.diffusionModel == "IC") {
       auto start = std::chrono::high_resolution_clock::now();
-      std::tie(seeds, R) =
-          IMM(G, CFG.k, CFG.epsilon, 1, generator,
+      seeds =
+          IMM(G, CFG.k, CFG.epsilon, 1, generator, R,
               ripples::independent_cascade_tag{}, ripples::omp_parallel_tag{});
       auto end = std::chrono::high_resolution_clock::now();
       R.Total = end - start;
     } else if (CFG.diffusionModel == "LT") {
       auto start = std::chrono::high_resolution_clock::now();
-      std::tie(seeds, R) =
-          IMM(G, CFG.k, CFG.epsilon, 1, generator,
+      seeds =
+          IMM(G, CFG.k, CFG.epsilon, 1, generator, R,
               ripples::linear_threshold_tag{}, ripples::omp_parallel_tag{});
       auto end = std::chrono::high_resolution_clock::now();
       R.Total = end - start;
@@ -237,10 +263,10 @@ int main(int argc, char **argv) {
     if (CFG.diffusionModel == "IC") {
       ripples::StreamingRRRGenerator<decltype(G), decltype(generator),
                                      ripples::independent_cascade_tag>
-          se(G, generator, workers - gpu_workers, gpu_workers,
+          se(G, generator, R, workers - gpu_workers, gpu_workers,
              CFG.worker_to_gpu);
       auto start = std::chrono::high_resolution_clock::now();
-      std::tie(seeds, R) =
+      seeds =
           IMM(G, CFG.k, CFG.epsilon, 1, se, ripples::independent_cascade_tag{},
               ripples::cuda_parallel_tag{});
       auto end = std::chrono::high_resolution_clock::now();
@@ -248,10 +274,10 @@ int main(int argc, char **argv) {
     } else if (CFG.diffusionModel == "LT") {
       ripples::StreamingRRRGenerator<decltype(G), decltype(generator),
                                      ripples::linear_threshold_tag>
-          se(G, generator, workers - gpu_workers, gpu_workers,
+          se(G, generator, R, workers - gpu_workers, gpu_workers,
              CFG.worker_to_gpu);
       auto start = std::chrono::high_resolution_clock::now();
-      std::tie(seeds, R) =
+      seeds =
           IMM(G, CFG.k, CFG.epsilon, 1, se, ripples::linear_threshold_tag{},
               ripples::cuda_parallel_tag{});
       auto end = std::chrono::high_resolution_clock::now();
@@ -271,15 +297,15 @@ int main(int argc, char **argv) {
   } else {
     if (CFG.diffusionModel == "IC") {
       auto start = std::chrono::high_resolution_clock::now();
-      std::tie(seeds, R) =
-          IMM(G, CFG.k, CFG.epsilon, 1, generator,
+      seeds =
+          IMM(G, CFG.k, CFG.epsilon, 1, generator, R,
               ripples::independent_cascade_tag{}, ripples::sequential_tag{});
       auto end = std::chrono::high_resolution_clock::now();
       R.Total = end - start;
     } else if (CFG.diffusionModel == "LT") {
       auto start = std::chrono::high_resolution_clock::now();
-      std::tie(seeds, R) =
-          IMM(G, CFG.k, CFG.epsilon, 1, generator,
+      seeds =
+          IMM(G, CFG.k, CFG.epsilon, 1, generator, R,
               ripples::linear_threshold_tag{}, ripples::sequential_tag{});
       auto end = std::chrono::high_resolution_clock::now();
       R.Total = end - start;

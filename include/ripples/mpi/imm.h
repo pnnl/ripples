@@ -280,9 +280,9 @@ auto Sampling(
 //! \param ex_tag The execution policy tag.
 template <typename GraphTy, typename diff_model_tag, typename PRNG>
 auto IMM(const GraphTy &G, std::size_t k, double epsilon, double l, PRNG &gen,
-         diff_model_tag &&model_tag, ripples::mpi_omp_parallel_tag &&ex_tag) {
+         IMMExecutionRecord &record, diff_model_tag &&model_tag,
+         ripples::mpi_omp_parallel_tag &&ex_tag) {
   using vertex_type = typename GraphTy::vertex_type;
-  IMMExecutionRecord record;
 
   size_t max_num_threads(1);
 
@@ -310,7 +310,7 @@ auto IMM(const GraphTy &G, std::size_t k, double epsilon, double l, PRNG &gen,
 
   record.FindMostInfluentialSet = end - start;
 
-  return std::make_pair(S.second, record);
+  return S.second;
 }
 
 //! The IMM algroithm for Influence Maximization (MPI specialization).
@@ -331,7 +331,8 @@ auto IMM(const GraphTy &G, std::size_t k, double epsilon, double l,
          StreamingRRRGenerator<GraphTy, PRNG, diff_model_tag> &se,
          diff_model_tag &&model_tag, ripples::mpi_cuda_parallel_tag &&ex_tag) {
   using vertex_type = typename GraphTy::vertex_type;
-  IMMExecutionRecord record;
+
+  auto &record(se.execution_record());
 
   l = l * (1 + 1 / std::log2(G.num_nodes()));
 
@@ -346,7 +347,7 @@ auto IMM(const GraphTy &G, std::size_t k, double epsilon, double l,
 
   record.FindMostInfluentialSet = end - start;
 
-  return std::make_pair(S.second, record);
+  return S.second;
 }
 
 }  // namespace ripples

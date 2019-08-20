@@ -51,6 +51,26 @@ namespace ripples {
 //! IMM execution record.
 struct IMMExecutionRecord {
   using ex_time_ms = std::chrono::duration<double, std::milli>;
+  using ex_time_ns = std::chrono::nanoseconds;
+
+  struct cpu_walk_prof {
+    size_t NumSets;
+    ex_time_ms Total;
+  };
+
+  struct gpu_walk_prof {
+    size_t NumSets;
+    ex_time_ms Total;
+    ex_time_ns Kernel, D2H, Post;
+  };
+
+  struct walk_iteration_prof {
+    std::vector<cpu_walk_prof> CPUWalks;
+    std::vector<gpu_walk_prof> GPUWalks;
+    size_t NumSets{0};
+    ex_time_ms Total{0};
+  };
+
   //! Number of threads used during the execution.
   size_t NumThreads;
   //! Number of RRR sets generated.
@@ -69,6 +89,8 @@ struct IMMExecutionRecord {
   ex_time_ms FindMostInfluentialSet;
   //! Total execution time.
   ex_time_ms Total;
+  //! Iterations breakdown
+  std::vector<walk_iteration_prof> WalkIterations;
 };
 
 }  // namespace ripples

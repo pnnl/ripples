@@ -54,6 +54,7 @@
 #include "trng/uniform_int_dist.hpp"
 
 #include "ripples/generate_rrr_sets.h"
+#include "ripples/imm_execution_record.h"
 
 #ifndef RIPPLES_DISABLE_CUDA
 #include "ripples/cuda/cuda_generate_rrr_sets.h"
@@ -138,6 +139,8 @@ class WalkWorker {
 #if CUDA_PROFILE
  public:
   virtual void begin_prof_iter() = 0;
+  virtual void prof_record(typename IMMExecutionRecord::walk_iteration_prof &,
+                           size_t) = 0;
 #endif
 };
 
@@ -208,6 +211,15 @@ class CPUWalkWorker : public WalkWorker<GraphTy> {
                   .count());
     else
       console->info("> idle worker");
+  }
+  void prof_record(typename IMMExecutionRecord::walk_iteration_prof &r,
+                   size_t i) {
+    assert(i < prof_bd.size());
+    typename IMMExecutionRecord::cpu_walk_prof res;
+    auto &p(prof_bd[i]);
+    res.NumSets = p.n_;
+    res.Total = std::chrono::duration_cast<decltype(res.Total)>(p.d_);
+    r.CPUWalks.push_back(res);
   }
 #endif
 };
@@ -408,6 +420,18 @@ class GPUWalkWorker<GraphTy, PRNGeneratorTy, linear_threshold_tag>
     } else
       console->info("> idle worker");
   }
+  void prof_record(typename IMMExecutionRecord::walk_iteration_prof &r,
+                   size_t i) {
+    assert(i < prof_bd.size());
+    typename IMMExecutionRecord::gpu_walk_prof res;
+    auto &p(prof_bd[i]);
+    res.NumSets = p.n_;
+    res.Total = std::chrono::duration_cast<decltype(res.Total)>(p.d_);
+    res.Kernel = std::chrono::duration_cast<decltype(res.Kernel)>(p.dwalk_);
+    res.D2H = std::chrono::duration_cast<decltype(res.D2H)>(p.dd2h_);
+    res.Post = std::chrono::duration_cast<decltype(res.Post)>(p.dbuild_);
+    r.GPUWalks.push_back(res);
+  }
 #endif
 };
 
@@ -595,6 +619,18 @@ class GPUWalkWorker<GraphTy, PRNGeneratorTy, independent_cascade_tag>
     } else
       console->info("> idle worker");
   }
+  void prof_record(typename IMMExecutionRecord::walk_iteration_prof &r,
+                   size_t i) {
+    assert(i < prof_bd.size());
+    typename IMMExecutionRecord::gpu_walk_prof res;
+    auto &p(prof_bd[i]);
+    res.NumSets = p.n_;
+    res.Total = std::chrono::duration_cast<decltype(res.Total)>(p.d_);
+    res.Kernel = std::chrono::duration_cast<decltype(res.Kernel)>(p.dwalk_);
+    res.D2H = std::chrono::duration_cast<decltype(res.D2H)>(p.dd2h_);
+    res.Post = std::chrono::duration_cast<decltype(res.Post)>(p.dbuild_);
+    r.GPUWalks.push_back(res);
+  }
 #endif
 };
 #endif // RIPPLES_DISABLE_CUDA
@@ -611,9 +647,12 @@ class StreamingRRRGenerator {
 
  public:
   StreamingRRRGenerator(const GraphTy &G, const PRNGeneratorTy &master_rng,
-                        size_t num_cpu_workers, size_t num_gpu_workers,
+                        IMMExecutionRecord &record, size_t num_cpu_workers,
+                        size_t num_gpu_workers,
                         const std::unordered_map<size_t, size_t> &worker_to_gpu)
-      : num_cpu_workers_(num_cpu_workers), num_gpu_workers_(num_gpu_workers) {
+      : num_cpu_workers_(num_cpu_workers),
+        num_gpu_workers_(num_gpu_workers),
+        record_(record) {
     auto console = spdlog::get("console");
 
 #ifndef RIPPLES_DISABLE_CUDA
@@ -695,6 +734,10 @@ class StreamingRRRGenerator {
       console->info("throughput (sets/sec) = {}",
                     (float)p.n_ * 1e03 / ms.count());
       console->info("+++ END iter {}", i);
+      // execution record
+      for(auto &wp : workers) {
+        wp->prof_record(record_.WalkIterations[i], i);
+      }
     }
     console->info("--- overall");
     console->info("n. sets               = {}", prof_bd.n);
@@ -713,10 +756,15 @@ class StreamingRRRGenerator {
 #endif
   }
 
+  IMMExecutionRecord &execution_record() {
+    return record_;
+  }
+
   rrr_sets_t generate(size_t theta) {
 #if CUDA_PROFILE
     auto start = std::chrono::high_resolution_clock::now();
     for (auto &w : workers) w->begin_prof_iter();
+    record_.WalkIterations.emplace_back();
 #endif
 
     rrr_sets_t res(theta);
@@ -734,6 +782,9 @@ class StreamingRRRGenerator {
     prof_bd.prof_bd.emplace_back(theta, d);
     prof_bd.n += theta;
     prof_bd.d += std::chrono::duration_cast<std::chrono::microseconds>(d);
+    auto &ri(record_.WalkIterations.back());
+    ri.NumSets = theta;
+    ri.Total = std::chrono::duration_cast<decltype(ri.Total)>(d);
 #endif
 
     return res;
@@ -763,6 +814,7 @@ class StreamingRRRGenerator {
     std::vector<iter_profile_t> prof_bd;
   };
   profile_t prof_bd;
+  IMMExecutionRecord &record_;
 #endif
 };
 }  // namespace ripples
