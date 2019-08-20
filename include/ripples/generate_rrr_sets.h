@@ -48,6 +48,8 @@
 #include <utility>
 #include <vector>
 
+#include "omp.h"
+
 #include "ripples/diffusion_simulation.h"
 #include "ripples/graph.h"
 #include "ripples/utility.h"
@@ -127,68 +129,61 @@ void AddRRRSet(GraphTy &G, typename GraphTy::vertex_type r,
 //!
 //! \tparam GraphTy The type of the garph.
 //! \tparam PRNGeneratorty The type of the random number generator.
+//! \tparam ItrTy A random access iterator type.
 //! \tparam diff_model_tag The policy for the diffusion model.
 //!
 //! \param G The original graph.
-//! \param theta The number of RRR sets to be generated.
 //! \param generator The random numeber generator.
+//! \param begin The start of the sequence where to store RRR sets.
+//! \param end The end of the sequence where to store RRR sets.
 //! \param model_tag The diffusion model tag.
 //! \param ex_tag The execution policy tag.
-//!
-//! \return A list of theta Random Reverse Rachability Sets.
-template <typename GraphTy, typename PRNGeneratorTy, typename diff_model_tag>
-std::vector<RRRset<GraphTy>> GenerateRRRSets(GraphTy &G, size_t theta,
-                                             PRNGeneratorTy &generator,
-                                             diff_model_tag &&model_tag,
-                                             sequential_tag &&ex_tag) {
-  using vertex_type = typename GraphTy::vertex_type;
-  std::vector<RRRset<GraphTy>> rrrSets(theta);
-
+template <typename GraphTy, typename PRNGeneratorTy,
+          typename ItrTy, typename diff_model_tag>
+void GenerateRRRSets(GraphTy &G, PRNGeneratorTy &generator,
+                     ItrTy begin, ItrTy end,
+                     diff_model_tag &&model_tag,
+                     sequential_tag &&ex_tag) {
   trng::uniform_int_dist start(0, G.num_nodes());
 
-  for (size_t i = 0; i < theta; ++i) {
+  for (auto itr = begin; itr < end; ++itr) {
     typename GraphTy::vertex_type r = start(generator[0]);
-    AddRRRSet(G, r, generator[0], rrrSets[i],
+    AddRRRSet(G, r, generator[0], *itr,
               std::forward<diff_model_tag>(model_tag));
   }
-  return rrrSets;
 }
 
 //! \brief Generate Random Reverse Reachability Sets.
 //!
 //! \tparam GraphTy The type of the garph.
 //! \tparam PRNGeneratorty The type of the random number generator.
+//! \tparam ItrTy A random access iterator type.
 //! \tparam diff_model_tag The policy for the diffusion model.
 //!
 //! \param G The original graph.
-//! \param theta The number of RRR sets to be generated.
 //! \param generator The random numeber generator.
+//! \param begin The start of the sequence where to store RRR sets.
+//! \param end The end of the sequence where to store RRR sets.
 //! \param model_tag The diffusion model tag.
 //! \param ex_tag The execution policy tag.
-//!
-//! \return A list of theta Random Reverse Rachability Sets.
-template <typename GraphTy, typename PRNGeneratorTy, typename diff_model_tag>
-std::vector<RRRset<GraphTy>> GenerateRRRSets(GraphTy &G, size_t theta,
-                                             PRNGeneratorTy &generator,
-                                             diff_model_tag &&model_tag,
-                                             omp_parallel_tag &&ex_tag) {
-  using vertex_type = typename GraphTy::vertex_type;
-  std::vector<RRRset<GraphTy>> rrrSets(theta);
-
+template <typename GraphTy, typename PRNGeneratorTy,
+          typename ItrTy, typename diff_model_tag>
+void GenerateRRRSets(GraphTy &G, PRNGeneratorTy &generator,
+                     ItrTy begin, ItrTy end,
+                     diff_model_tag &&model_tag,
+                     omp_parallel_tag &&ex_tag) {
 #pragma omp parallel
   {
     size_t rank = omp_get_thread_num();
     trng::uniform_int_dist start(0, G.num_nodes());
 
 #pragma omp for schedule(guided)
-    for (size_t i = 0; i < theta; ++i) {
+    for (auto itr = begin; itr < end; ++itr) {
       typename GraphTy::vertex_type r = start(generator[rank]);
-      AddRRRSet(G, r, generator[rank], rrrSets[i],
+      AddRRRSet(G, r, generator[rank], *itr,
                 std::forward<diff_model_tag>(model_tag));
     }
   }
-
-  return rrrSets;
 }
 
 }  // namespace ripples

@@ -314,9 +314,10 @@ size_t ThetaEstimation(GraphTy &G, size_t k, double epsilon,
   size_t thetaPrime = (2 + epsPrime) * G.num_nodes() * log(G.num_nodes()) /
                       (epsPrime * epsPrime * kpt);
 
-  auto RR = GenerateRRRSets(G, thetaPrime, generator,
-                            std::forward<diff_model_tag>(model_tag),
-                            std::forward<execution_tag>(ex_tag));
+  std::vector<RRRset<GraphTy>> RR (thetaPrime);
+  GenerateRRRSets(G, generator, RR.begin(), RR.end(),
+                  std::forward<diff_model_tag>(model_tag),
+                  std::forward<execution_tag>(ex_tag));
 
   auto seeds =
       FindMostInfluentialSet(G, k, RR, std::forward<execution_tag>(ex_tag));
@@ -387,9 +388,11 @@ auto TIM(const GraphTy &G, size_t k, double epsilon, PRNG &gen,
   Record.Theta = theta;
 
   auto start = std::chrono::high_resolution_clock::now();
-  auto RR = GenerateRRRSets(G, theta, generator,
-                            std::forward<diff_model_tag>(model_tag),
-                            std::forward<execution_tag>(ex_tag));
+  std::vector<RRRset<GraphTy>> RR(theta);
+
+  GenerateRRRSets(G, generator, RR.begin(), RR.end(),
+                  std::forward<diff_model_tag>(model_tag),
+                  std::forward<execution_tag>(ex_tag));
   auto end = std::chrono::high_resolution_clock::now();
   Record.GenerateRRRSets = end - start;
 
