@@ -93,12 +93,16 @@ def build(bld):
 
     bld.recurse(directories)
 
+    from waflib.Tools import waf_unit_test
+    bld.add_post_fun(waf_unit_test.summary)
+
 
 def build_docs(bld):
     if bld.env.ENABLE_DOCS:
         bld(features='sphinx', sources='docs')
     else:
         bld.fatal('Please configure with --enable-docs')
+
 
 from waflib import Build
 class docs(Build.BuildContext):

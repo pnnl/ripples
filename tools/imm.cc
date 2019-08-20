@@ -262,6 +262,7 @@ int main(int argc, char **argv) {
     auto gpu_workers = CFG.streaming_gpu_workers;
     if (CFG.diffusionModel == "IC") {
       ripples::StreamingRRRGenerator<decltype(G), decltype(generator),
+                                     typename ripples::RRRsets<decltype(G)>::iterator,
                                      ripples::independent_cascade_tag>
           se(G, generator, R, workers - gpu_workers, gpu_workers,
              CFG.worker_to_gpu);
@@ -273,6 +274,7 @@ int main(int argc, char **argv) {
       R.Total = end - start;
     } else if (CFG.diffusionModel == "LT") {
       ripples::StreamingRRRGenerator<decltype(G), decltype(generator),
+                                     typename ripples::RRRsets<decltype(G)>::iterator,
                                      ripples::linear_threshold_tag>
           se(G, generator, R, workers - gpu_workers, gpu_workers,
              CFG.worker_to_gpu);

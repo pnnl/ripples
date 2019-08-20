@@ -139,30 +139,34 @@ inline size_t Theta(double epsilon, double l, size_t k, double LB,
 
 //! \brief Generate Random Reverse Reachability Sets - CUDA.
 //!
-//! \tparam GraphTy The type of the graph.
+//! \tparam GraphTy The type of the garph.
 //! \tparam PRNGeneratorty The type of the random number generator.
+//! \tparam ItrTy A random access iterator type.
+//! \tparam ExecRecordTy The type of the execution record
 //! \tparam diff_model_tag The policy for the diffusion model.
 //!
 //! \param G The original graph.
-//! \param theta The number of RRR sets to be generated.
 //! \param generator The random numeber generator.
+//! \param begin The start of the sequence where to store RRR sets.
+//! \param end The end of the sequence where to store RRR sets.
 //! \param model_tag The diffusion model tag.
 //! \param ex_tag The execution policy tag.
-//!
-//! \return A list of theta Random Reverse Rachability Sets.
-template <typename GraphTy, typename PRNGeneratorTy, typename diff_model_tag>
-std::vector<RRRset<GraphTy>> GenerateRRRSets(
-    const GraphTy &G, size_t theta,
-    StreamingRRRGenerator<GraphTy, PRNGeneratorTy, diff_model_tag> &se,
-    IMMExecutionRecord &record,
-    diff_model_tag &&, cuda_parallel_tag &&) {
-  return se.generate(theta);
+template <typename GraphTy, typename PRNGeneratorTy,
+          typename ItrTy, typename ExecRecordTy,
+          typename diff_model_tag>
+void GenerateRRRSets(const GraphTy &G,
+                     StreamingRRRGenerator<GraphTy, PRNGeneratorTy, ItrTy, diff_model_tag> &se,
+                     ItrTy begin, ItrTy end,
+                     ExecRecordTy &,
+                     diff_model_tag &&,
+                     cuda_parallel_tag &&) {
+  se.generate(begin, end);
 }
 
 //! Collect a set of Random Reverse Reachable set.
 //!
 //! \tparam GraphTy The type of the input graph.
-//! \tparam PRNGeneratorTy The type of the parallel random number generator.
+//! \tparam RRRGeneratorTy The type of the RRR generator.
 //! \tparam diff_model_tag Type-Tag to selecte the diffusion model.
 //! \tparam execution_tag Type-Tag to select the execution policy.
 //!
@@ -170,14 +174,14 @@ std::vector<RRRset<GraphTy>> GenerateRRRSets(
 //! \param k The size of the seed set.
 //! \param epsilon The parameter controlling the approximation guarantee.
 //! \param l Parameter usually set to 1.
-//! \param generator The parallel random number generator.
+//! \param generator The rrr sets generator.
 //! \param record Data structure storing timing and event counts.
 //! \param model_tag The diffusion model tag.
 //! \param ex_tag The execution policy tag.
-template <typename GraphTy, typename RRRGenerator, typename diff_model_tag,
+template <typename GraphTy, typename RRRGeneratorTy, typename diff_model_tag,
           typename execution_tag>
 auto Sampling(const GraphTy &G, std::size_t k, double epsilon, double l,
-              RRRGenerator &generator, IMMExecutionRecord &record,
+              RRRGeneratorTy &generator, IMMExecutionRecord &record,
               diff_model_tag &&model_tag, execution_tag &&ex_tag) {
   using vertex_type = typename GraphTy::vertex_type;
 
@@ -194,16 +198,17 @@ auto Sampling(const GraphTy &G, std::size_t k, double epsilon, double l,
     ssize_t thetaPrime = ThetaPrime(x, epsilonPrime, l, k, G.num_nodes(),
                                     std::forward<execution_tag>(ex_tag));
 
-    record.ThetaPrimeDeltas.push_back(thetaPrime - RR.size());
+    size_t delta = thetaPrime - RR.size();
+    record.ThetaPrimeDeltas.push_back(delta);
 
     auto timeRRRSets = measure<>::exec_time([&]() {
-      auto deltaRR =
-          GenerateRRRSets(G, thetaPrime - RR.size(), generator, record,
-                          std::forward<diff_model_tag>(model_tag),
-                          std::forward<execution_tag>(ex_tag));
+      RR.insert(RR.end(), delta, RRRset<GraphTy>{});
 
-      RR.insert(RR.end(), std::make_move_iterator(deltaRR.begin()),
-                std::make_move_iterator(deltaRR.end()));
+      auto begin = RR.end() - delta;
+
+      GenerateRRRSets(G, generator, begin, RR.end(), record,
+                      std::forward<diff_model_tag>(model_tag),
+                      std::forward<execution_tag>(ex_tag));
     });
     record.ThetaEstimationGenerateRRR.push_back(timeRRRSets);
 
@@ -233,12 +238,14 @@ auto Sampling(const GraphTy &G, std::size_t k, double epsilon, double l,
 
   record.GenerateRRRSets = measure<>::exec_time([&]() {
     if (theta > RR.size()) {
-      auto deltaRR = GenerateRRRSets(G, theta - RR.size(), generator, record,
-                                     std::forward<diff_model_tag>(model_tag),
-                                     std::forward<execution_tag>(ex_tag));
+      size_t final_delta = theta - RR.size();
+      RR.insert(RR.end(), final_delta, RRRset<GraphTy>{});
 
-      RR.insert(RR.end(), std::make_move_iterator(deltaRR.begin()),
-                std::make_move_iterator(deltaRR.end()));
+      auto begin = RR.end() - final_delta;
+
+      GenerateRRRSets(G, generator, begin, RR.end(), record,
+                      std::forward<diff_model_tag>(model_tag),
+                      std::forward<execution_tag>(ex_tag));
     }
   });
 

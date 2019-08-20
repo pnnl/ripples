@@ -42,6 +42,10 @@ def build(bld):
 
     bld(features='cxx cxxprogram test',
         source='pivoting.cc',
-        target='run_tests',
+        target='pivoting_tests',
         use=['project-headers', '3rd-party', 'TRNG', 'OpenMP', 'JSON', 'test_main'])
 
+    bld(features='cxx cxxprogram test',
+        source='rrr_set_generation.cc',
+        target='rrr_set_generation_tests',
+        use=['project-headers', '3rd-party', 'TRNG', 'OpenMP', 'JSON', 'test_main'])
