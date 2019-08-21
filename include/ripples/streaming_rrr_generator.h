@@ -256,7 +256,7 @@ class GPUWalkWorker<GraphTy, PRNGeneratorTy, ItrTy, linear_threshold_tag>
 
   GPUWalkWorker(const config_t &conf, const GraphTy &G,
                 const PRNGeneratorTy &rng, cuda_ctx *ctx)
-      : WalkWorker<GraphTy>(G),
+      : WalkWorker<GraphTy, ItrTy>(G),
         conf_(conf),
         rng_(rng),
         u_(0, G.num_nodes()),
@@ -290,7 +290,6 @@ class GPUWalkWorker<GraphTy, PRNGeneratorTy, ItrTy, linear_threshold_tag>
                       conf_.max_blocks_, conf_.block_size_);
   }
 
-  template <typename ItrTy>
   void svc_loop(std::atomic<size_t> &mpmc_head, ItrTy begin, ItrTy end) {
     cuda_set_device(cuda_ctx_->gpu_id);
     size_t offset = 0;
@@ -456,7 +455,7 @@ class GPUWalkWorker<GraphTy, PRNGeneratorTy, ItrTy, independent_cascade_tag>
 
   GPUWalkWorker(const config_t &conf, const GraphTy &G,
                 const PRNGeneratorTy &rng, cuda_ctx *ctx)
-      : WalkWorker<GraphTy>(G),
+      : WalkWorker<GraphTy, ItrTy>(G),
         conf_(conf),
         rng_(rng),
         u_(0, G.num_nodes()),
@@ -767,11 +766,11 @@ class StreamingRRRGenerator {
 #if CUDA_PROFILE
     auto d = std::chrono::duration_cast<std::chrono::nanoseconds>(
         std::chrono::high_resolution_clock::now() - start);
-    prof_bd.prof_bd.emplace_back(theta, d);
-    prof_bd.n += theta;
+    prof_bd.prof_bd.emplace_back(std::distance(begin, end), d);
+    prof_bd.n += std::distance(begin, end);
     prof_bd.d += std::chrono::duration_cast<std::chrono::microseconds>(d);
     auto &ri(record_.WalkIterations.back());
-    ri.NumSets = theta;
+    ri.NumSets = std::distance(begin, end);
     ri.Total = std::chrono::duration_cast<decltype(ri.Total)>(d);
 #endif
   }
