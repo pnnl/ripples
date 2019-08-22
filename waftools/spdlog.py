@@ -44,8 +44,13 @@ def options(opt):
 
 
 def configure(conf):
+    if conf.env.INCLUDES_spdlog:
+        conf.start_msg('Checking for library spdlog')
+        conf.end_msg('yes (by conan)')
+        return
+
     conf.check_cxx(
         includes=['{0}/include'.format(conf.options.spdlog_root)],
         header_name='spdlog/spdlog.h',
-        uselib_store='SPDLOG',
+        uselib_store='spdlog',
         msg='Checking for library spdlog')

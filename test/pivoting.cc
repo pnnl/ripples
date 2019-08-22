@@ -46,7 +46,7 @@
 #include <set>
 #include <vector>
 
-#include "catch/catch.hpp"
+#include "catch2/catch.hpp"
 #include "ripples/find_most_influential.h"
 #include "trng/lcg64.hpp"
 #include "trng/uniform_int_dist.hpp"

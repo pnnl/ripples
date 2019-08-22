@@ -33,8 +33,21 @@
 # (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS
 # SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
+"""Tool to detect CLI11."""
 
-def build(bld):
-    bld(includes = '.',
-        export_includes = '.',
-        name = '3rd-party')
+
+def options(opt):
+    opt_group = opt.add_option_group('Configuration options')
+    opt_group.add_option(
+        '--cli-root', action='store', default='/usr',
+        help='root directory of the installation of CLI11')
+
+def configure(conf):
+    if conf.env.INCLUDES_CLI11:
+        conf.start_msg('Checking for library CLI11')
+        conf.end_msg('yes (by conan)')
+        return
+    conf.check_cxx(uselib_store='CLI11',
+                   header_name='CLI/CLI.hpp',
+                   includes=['{0}/include/'.format(conf.options.cli_root)],
+                   msg='Checking for library CLI11')

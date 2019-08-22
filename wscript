@@ -60,6 +60,11 @@ def options(opt):
 
 
 def configure(conf):
+    try:
+        conf.load('waf_conan_libs_info', tooldir=['build'])
+    except:
+        pass
+
     conf.load('compiler_cxx')
     conf.load('clang_compilation_database')
     conf.load('waf_unit_test')
@@ -70,6 +75,8 @@ def configure(conf):
     conf.load('spdlog', tooldir='waftools')
     conf.load('libjson', tooldir='waftools')
     conf.load('trng4', tooldir='waftools')
+    conf.load('catch2', tooldir='waftools')
+    conf.load('cli', tooldir='waftools')
 
     conf.check_cxx(cxxflags=['-fopenmp'], ldflags=['-fopenmp'],
                    libpath=['{0}/lib/'.format(conf.options.openmp_root)],
