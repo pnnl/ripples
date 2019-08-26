@@ -51,12 +51,13 @@
 #include "omp.h"
 
 #include "spdlog/spdlog.h"
+#include "spdlog/sinks/stdout_color_sinks.h"
+
 #include "trng/uniform_int_dist.hpp"
 
-#include "ripples/generate_rrr_sets.h"
 #include "ripples/imm_execution_record.h"
 
-#ifndef RIPPLES_DISABLE_CUDA
+#ifdef RIPPLES_ENABLE_CUDA
 #include "ripples/cuda/cuda_generate_rrr_sets.h"
 #include "ripples/cuda/from_nvgraph/bfs.hxx"
 #endif
@@ -78,7 +79,7 @@ int streaming_command_line(std::unordered_map<size_t, size_t> &worker_to_gpu,
     return -1;
   }
 
-#ifndef RIPPLES_DISABLE_CUDA
+#ifdef RIPPLES_ENABLE_CUDA
   auto num_gpus = cuda_num_devices();
   if (!gpu_mapping_string.empty()) {
     size_t gpu_id = 0;
@@ -114,10 +115,10 @@ int streaming_command_line(std::unordered_map<size_t, size_t> &worker_to_gpu,
       if (gpu_id == num_gpus) gpu_id = 0;
     }
   }
-#else // RIPPLES_DISABLE_CUDA
+#else // RIPPLES_ENABLE_CUDA
 
   assert(streaming_gpu_workers == 0);
-#endif // RIPPLES_DISABLE_CUDA
+#endif // RIPPLES_ENABLE_CUDA
   return 0;
 }
 
@@ -223,7 +224,7 @@ template <typename GraphTy, typename PRNGeneratorTy,
           typename ItrTy, typename diff_model_tag>
 class GPUWalkWorker;
 
-#ifndef RIPPLES_DISABLE_CUDA
+#ifdef RIPPLES_ENABLE_CUDA
 template <typename GraphTy, typename PRNGeneratorTy, typename ItrTy>
 class GPUWalkWorker<GraphTy, PRNGeneratorTy, ItrTy, linear_threshold_tag>
     : public WalkWorker<GraphTy, ItrTy> {
@@ -623,7 +624,7 @@ class GPUWalkWorker<GraphTy, PRNGeneratorTy, ItrTy, independent_cascade_tag>
   }
 #endif
 };
-#endif // RIPPLES_DISABLE_CUDA
+#endif // RIPPLES_ENABLE_CUDA
 
 template <typename GraphTy, typename PRNGeneratorTy, typename ItrTy, typename diff_model_tag>
 class StreamingRRRGenerator {
@@ -640,10 +641,9 @@ class StreamingRRRGenerator {
                         const std::unordered_map<size_t, size_t> &worker_to_gpu)
       : num_cpu_workers_(num_cpu_workers),
         num_gpu_workers_(num_gpu_workers),
-        record_(record) {
-    auto console = spdlog::get("console");
-
-#ifndef RIPPLES_DISABLE_CUDA
+        record_(record),
+        console(spdlog::stdout_color_st("Streaming Generator")) {
+#ifdef RIPPLES_ENABLE_CUDA
     // init GPU contexts
     for(auto &m : worker_to_gpu) {
       auto gpu_id = m.second;
@@ -663,11 +663,10 @@ class StreamingRRRGenerator {
     size_t num_rng_sequences = num_cpu_workers_;
 #endif
 
-    // map workers to OpenMP nums
-#ifndef RIPPLES_DISABLE_CUDA
     // translate user-mapping string into vector
     for (size_t omp_num = 0; omp_num < num_cpu_workers + num_gpu_workers;
          ++omp_num) {
+#ifdef RIPPLES_ENABLE_CUDA
       if (worker_to_gpu.find(omp_num) != worker_to_gpu.end()) {
         assert(gpu_workers.size() < num_gpu_workers_);
         // create and add a GPU worker
@@ -683,7 +682,9 @@ class StreamingRRRGenerator {
             gpu_seq_offset + gpu_worker_id * num_gpu_threads_per_worker);
         gpu_workers.push_back(w);
         workers.push_back(w);
-      } else {
+      } else
+#endif
+      {
         // create and add a CPU worker
         console->info("> mapping: omp={}\t->\tCPU", omp_num);
         auto cpu_worker_id = cpu_workers.size();
@@ -695,6 +696,7 @@ class StreamingRRRGenerator {
     }
     // check
     assert(cpu_workers.size() == num_cpu_workers_);
+#ifdef RIPPLES_ENABLE_CUDA
     assert(gpu_workers.size() == num_gpu_workers_);
 #endif
   }
@@ -702,14 +704,13 @@ class StreamingRRRGenerator {
   ~StreamingRRRGenerator() {
 #if CUDA_PROFILE
     auto ms = std::chrono::duration_cast<std::chrono::milliseconds>(prof_bd.d);
-    auto console = spdlog::get("console");
     console->info("*** BEGIN Streaming Engine profiling");
     for (size_t i = 0; i < prof_bd.prof_bd.size(); ++i) {
       console->info("+++ BEGIN iter {}", i);
       console->info("--- CPU workers");
       for (auto &wp : cpu_workers)
         wp->print_prof_iter(i);
-#ifndef RIPPLES_DISABLE_CUDA
+#ifdef RIPPLES_ENABLE_CUDA
       console->info("--- GPU workers");
       for (auto &wp : gpu_workers)
         wp->print_prof_iter(i);
@@ -738,7 +739,7 @@ class StreamingRRRGenerator {
 
     for (auto &w : workers) delete w;
 
-#ifndef RIPPLES_DISABLE_CUDA
+#ifdef RIPPLES_ENABLE_CUDA
     for(auto &m : cuda_contexts_)
       cuda_destroy_ctx(m.second);
 #endif
@@ -779,7 +780,8 @@ class StreamingRRRGenerator {
   size_t num_cpu_workers_, num_gpu_workers_;
   size_t max_batch_size_;
   std::vector<cpu_worker_t *> cpu_workers;
-#ifndef RIPPLES_DISABLE_CUDA
+  std::shared_ptr<spdlog::logger> console;
+#ifdef RIPPLES_ENABLE_CUDA
   std::unordered_map<size_t, cuda_ctx *> cuda_contexts_;
   std::vector<gpu_worker_t *> gpu_workers;
 #endif

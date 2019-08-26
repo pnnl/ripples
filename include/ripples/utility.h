@@ -69,12 +69,8 @@ namespace ripples {
 struct sequential_tag {};
 //! Execution tag for the OpenMP parallel algorithms.
 struct omp_parallel_tag {};
-//! Execution tag for the CUDA parallel algorithms.
-struct cuda_parallel_tag {};
 //! Execution tag for the MPI+OpenMP parallel algorithms.
 struct mpi_omp_parallel_tag {};
-//! Execution tag for the MPI+CUDA parallel algorithms.
-struct mpi_cuda_parallel_tag {};
 
 //! Utility for measurements.
 template <typename TimeTy = std::chrono::milliseconds>

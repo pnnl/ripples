@@ -49,9 +49,10 @@ def build(bld):
         bld(features='cxx cxxstlib', source='cuda/cuda_generate_rrr_sets.cu', target='cuda_generate_rrr_sets', cuda=True, use=tools_deps)
         bld(features='cxx cxxstlib', source='cuda/from_nvgraph/bfs.cu', target='bfs', cuda=True, use=tools_deps)
         bld(features='cxx cxxprogram', source='imm.cc', target='imm',
-            use=tools_deps + ['cuda_generate_rrr_sets','bfs','cuda_graph','cuda_utils'], cuda=True)
+            use=tools_deps + ['cuda_generate_rrr_sets','bfs','cuda_graph','cuda_utils'], cuda=True,
+            cxxflags='-DRIPPLES_ENABLE_CUDA')
     else:
-        bld(features='cxx cxxprogram', source='imm.cc', target='imm', cxxflags='-DRIPPLES_DISABLE_CUDA',
+        bld(features='cxx cxxprogram', source='imm.cc', target='imm',
             use=tools_deps)
 
     bld(features='cxx cxxprogram', source='simulator.cc', target='simulator',
@@ -64,7 +65,8 @@ def build(bld):
         tools_deps = tools_deps + ['MPI']
         if bld.env.ENABLE_CUDA:
             bld(features='cxx cxxprogram', source='mpi-imm.cc', target='mpi-imm',
-                use=tools_deps + ['cuda_generate_rrr_sets','bfs','cuda_graph','cuda_utils'], cuda=True)
+                use=tools_deps + ['cuda_generate_rrr_sets','bfs','cuda_graph','cuda_utils'], cuda=True,
+                cxxflags='-DRIPPLES_ENABLE_CUDA')
         else:
-            bld(features='cxx cxxprogram', source='mpi-imm.cc', target='mpi-imm', cxxflags='-DRIPPLES_DISABLE_CUDA',
+            bld(features='cxx cxxprogram', source='mpi-imm.cc', target='mpi-imm',
                 use=tools_deps)

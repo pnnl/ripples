@@ -74,13 +74,6 @@ struct MPI_Plus_X<mpi_omp_parallel_tag> {
 };
 
 
-template<>
-struct MPI_Plus_X<mpi_cuda_parallel_tag> {
-  using generate_ex_tag = cuda_parallel_tag;
-  using seed_selection_ex_tag = mpi_omp_parallel_tag;
-};
-
-
 //! Compute ThetaPrime for the MPI implementation.
 //!
 //! \param x The index of the current iteration.

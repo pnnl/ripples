@@ -137,31 +137,6 @@ inline size_t Theta(double epsilon, double l, size_t k, double LB,
   return lamdaStar / LB;
 }
 
-//! \brief Generate Random Reverse Reachability Sets - CUDA.
-//!
-//! \tparam GraphTy The type of the garph.
-//! \tparam PRNGeneratorty The type of the random number generator.
-//! \tparam ItrTy A random access iterator type.
-//! \tparam ExecRecordTy The type of the execution record
-//! \tparam diff_model_tag The policy for the diffusion model.
-//!
-//! \param G The original graph.
-//! \param generator The random numeber generator.
-//! \param begin The start of the sequence where to store RRR sets.
-//! \param end The end of the sequence where to store RRR sets.
-//! \param model_tag The diffusion model tag.
-//! \param ex_tag The execution policy tag.
-template <typename GraphTy, typename PRNGeneratorTy,
-          typename ItrTy, typename ExecRecordTy,
-          typename diff_model_tag>
-void GenerateRRRSets(const GraphTy &G,
-                     StreamingRRRGenerator<GraphTy, PRNGeneratorTy, ItrTy, diff_model_tag> &se,
-                     ItrTy begin, ItrTy end,
-                     ExecRecordTy &,
-                     diff_model_tag &&,
-                     cuda_parallel_tag &&) {
-  se.generate(begin, end);
-}
 
 //! Collect a set of Random Reverse Reachable set.
 //!
@@ -257,7 +232,6 @@ auto Sampling(const GraphTy &G, std::size_t k, double epsilon, double l,
 //! \tparam GraphTy The type of the input graph.
 //! \tparam PRNG The type of the parallel random number generator.
 //! \tparam diff_model_tag Type-Tag to selecte the diffusion model.
-//! \tparam execution_tag Type-Tag to select the execution policy.
 //!
 //! \param G The input graph.  The graph is transoposed.
 //! \param k The size of the seed set.
@@ -266,35 +240,19 @@ auto Sampling(const GraphTy &G, std::size_t k, double epsilon, double l,
 //! \param gen The parallel random number generator.
 //! \param model_tag The diffusion model tag.
 //! \param ex_tag The execution policy tag.
-template <typename GraphTy, typename PRNG, typename diff_model_tag,
-          typename execution_tag>
+template <typename GraphTy, typename PRNG, typename diff_model_tag>
 auto IMM(const GraphTy &G, std::size_t k, double epsilon, double l, PRNG &gen,
          IMMExecutionRecord &record, diff_model_tag &&model_tag,
-         execution_tag &&ex_tag) {
+         sequential_tag &&ex_tag) {
   using vertex_type = typename GraphTy::vertex_type;
 
-  size_t max_num_threads(1);
-
-  if (std::is_same<execution_tag, omp_parallel_tag>::value) {
-#pragma omp single
-    max_num_threads = omp_get_max_threads();
-  }
-
-  std::vector<trng::lcg64> generator(max_num_threads, gen);
-
-  if (std::is_same<execution_tag, omp_parallel_tag>::value) {
-#pragma omp parallel
-    {
-      generator[omp_get_thread_num()].split(omp_get_num_threads(),
-                                            omp_get_thread_num());
-    }
-  }
+  std::vector<trng::lcg64> generator(1, gen);
 
   l = l * (1 + 1 / std::log2(G.num_nodes()));
 
   auto R = Sampling(G, k, epsilon, l, generator, record,
                     std::forward<diff_model_tag>(model_tag),
-                    std::forward<execution_tag>(ex_tag));
+                    std::forward<sequential_tag>(ex_tag));
 
 #if CUDA_PROFILE
   auto logst = spdlog::stdout_color_st("IMM-profile");
@@ -306,7 +264,7 @@ auto IMM(const GraphTy &G, std::size_t k, double epsilon, double l, PRNG &gen,
 
   auto start = std::chrono::high_resolution_clock::now();
   const auto &S =
-      FindMostInfluentialSet(G, k, R, std::forward<execution_tag>(ex_tag));
+      FindMostInfluentialSet(G, k, R, std::forward<sequential_tag>(ex_tag));
   auto end = std::chrono::high_resolution_clock::now();
 
   record.FindMostInfluentialSet = end - start;
@@ -331,7 +289,7 @@ auto IMM(const GraphTy &G, std::size_t k, double epsilon, double l, PRNG &gen,
 template <typename GraphTy, typename GeneratorTy, typename diff_model_tag>
 auto IMM(const GraphTy &G, std::size_t k, double epsilon, double l,
          GeneratorTy &gen, diff_model_tag &&model_tag,
-         cuda_parallel_tag &&ex_tag) {
+         omp_parallel_tag &&ex_tag) {
   using vertex_type = typename GraphTy::vertex_type;
 
   auto &record(gen.execution_record());
@@ -340,7 +298,7 @@ auto IMM(const GraphTy &G, std::size_t k, double epsilon, double l,
 
   auto R = Sampling(G, k, epsilon, l, gen, record,
                     std::forward<diff_model_tag>(model_tag),
-                    std::forward<cuda_parallel_tag>(ex_tag));
+                    std::forward<omp_parallel_tag>(ex_tag));
 
 #if CUDA_PROFILE
   auto logst = spdlog::stdout_color_st("IMM-profile");
@@ -352,7 +310,7 @@ auto IMM(const GraphTy &G, std::size_t k, double epsilon, double l,
 
   auto start = std::chrono::high_resolution_clock::now();
   const auto &S =
-      FindMostInfluentialSet(G, k, R, std::forward<cuda_parallel_tag>(ex_tag));
+      FindMostInfluentialSet(G, k, R, std::forward<omp_parallel_tag>(ex_tag));
   auto end = std::chrono::high_resolution_clock::now();
 
   record.FindMostInfluentialSet = end - start;

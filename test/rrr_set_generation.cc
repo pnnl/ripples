@@ -44,6 +44,7 @@
 #include "catch/catch.hpp"
 
 #include "ripples/graph.h"
+#include "ripples/imm.h"
 #include "ripples/generate_rrr_sets.h"
 
 #include "trng/lcg64.hpp"
@@ -143,25 +144,13 @@ SCENARIO("Generate RRR sets", "[rrrsets]") {
     GraphFwd Gfwd(karate.begin(), karate.end());
     GraphBwd G = Gfwd.get_transpose();
 
-    size_t max_num_threads(1);
-
-#pragma omp single
-    max_num_threads = omp_get_max_threads();
-
-    std::vector<trng::lcg64> generator(max_num_threads);
-#pragma omp parallel
-    {
-      generator[omp_get_thread_num()].split(omp_get_num_threads(),
-                                            omp_get_thread_num());
-    }
-
-    WHEN("I build the theta RRR sets sequentially") {
+   WHEN("I build the theta RRR sets sequentially") {
       size_t theta = 100;
       std::vector<ripples::RRRset<GraphBwd>> RR(theta);
       ripples::IMMExecutionRecord exRecord;
 
+      std::vector<trng::lcg64> generator(1);
       for (size_t i = 0; i < 2; ++i) {
-
         ripples::GenerateRRRSets(G, generator, RR.end() - theta, RR.end(), exRecord,
                                  ripples::independent_cascade_tag{},
                                  ripples::sequential_tag{});
@@ -185,8 +174,20 @@ SCENARIO("Generate RRR sets", "[rrrsets]") {
       std::vector<ripples::RRRset<GraphBwd>> RR(theta);
       ripples::IMMExecutionRecord exRecord;
 
-      for (size_t i = 0; i < 2; ++i) {
+      size_t max_num_threads(1);
+  #pragma omp single
+      max_num_threads = omp_get_max_threads();
 
+      trng::lcg64 gen;
+      ripples::IMMExecutionRecord R;
+      decltype(ripples::IMMConfiguration::worker_to_gpu) map;
+
+      ripples::StreamingRRRGenerator<decltype(G), decltype(gen),
+                                     typename ripples::RRRsets<decltype(G)>::iterator,
+                                     ripples::independent_cascade_tag>
+        generator(G, gen, R, max_num_threads, 0, map);
+
+      for (size_t i = 0; i < 2; ++i) {
         ripples::GenerateRRRSets(G, generator, RR.end() - theta, RR.end(), exRecord,
                                  ripples::independent_cascade_tag{},
                                  ripples::omp_parallel_tag{});

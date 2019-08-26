@@ -54,6 +54,7 @@
 #include "ripples/graph.h"
 #include "ripples/imm_execution_record.h"
 #include "ripples/utility.h"
+#include "ripples/streaming_rrr_generator.h"
 
 #include "trng/uniform01_dist.hpp"
 #include "trng/uniform_int_dist.hpp"
@@ -158,7 +159,7 @@ void GenerateRRRSets(GraphTy &G, PRNGeneratorTy &generator,
   }
 }
 
-//! \brief Generate Random Reverse Reachability Sets - OpenMP.
+//! \brief Generate Random Reverse Reachability Sets - CUDA.
 //!
 //! \tparam GraphTy The type of the garph.
 //! \tparam PRNGeneratorty The type of the random number generator.
@@ -175,23 +176,13 @@ void GenerateRRRSets(GraphTy &G, PRNGeneratorTy &generator,
 template <typename GraphTy, typename PRNGeneratorTy,
           typename ItrTy, typename ExecRecordTy,
           typename diff_model_tag>
-void GenerateRRRSets(GraphTy &G, PRNGeneratorTy &generator,
+void GenerateRRRSets(const GraphTy &G,
+                     StreamingRRRGenerator<GraphTy, PRNGeneratorTy, ItrTy, diff_model_tag> &se,
                      ItrTy begin, ItrTy end,
                      ExecRecordTy &,
-                     diff_model_tag &&model_tag,
-                     omp_parallel_tag &&ex_tag) {
-#pragma omp parallel
-  {
-    size_t rank = omp_get_thread_num();
-    trng::uniform_int_dist start(0, G.num_nodes());
-
-#pragma omp for schedule(guided)
-    for (auto itr = begin; itr < end; ++itr) {
-      typename GraphTy::vertex_type r = start(generator[rank]);
-      AddRRRSet(G, r, generator[rank], *itr,
-                std::forward<diff_model_tag>(model_tag));
-    }
-  }
+                     diff_model_tag &&,
+                     omp_parallel_tag &&) {
+  se.generate(begin, end);
 }
 
 }  // namespace ripples

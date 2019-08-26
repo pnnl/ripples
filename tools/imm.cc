@@ -131,7 +131,7 @@ int main(int argc, char **argv) {
   // process command line
   ripples::parse_command_line(argc, argv);
   auto CFG = ripples::configuration();
-  if (CFG.cuda_parallel) {
+  if (CFG.parallel) {
     if (ripples::streaming_command_line(CFG.worker_to_gpu, CFG.streaming_workers,
                                         CFG.streaming_gpu_workers,
                                         CFG.gpu_mapping_string) != 0) {
@@ -168,96 +168,7 @@ int main(int argc, char **argv) {
 
   std::ofstream perf(CFG.OutputFile);
 
-  if (CFG.OMPStrongScaling) {
-    size_t max_threads = 1;
-#pragma omp single
-    max_threads = omp_get_max_threads();
-
-    for (size_t num_threads = max_threads; num_threads >= 1; --num_threads) {
-      if (num_threads != 1) {
-        omp_set_num_threads(num_threads);
-
-        if (CFG.diffusionModel == "IC") {
-          auto start = std::chrono::high_resolution_clock::now();
-          seeds = IMM(G, CFG.k, CFG.epsilon, 1, generator, R,
-                                   ripples::independent_cascade_tag{},
-                                   ripples::omp_parallel_tag{});
-          auto end = std::chrono::high_resolution_clock::now();
-          R.Total = end - start;
-        } else if (CFG.diffusionModel == "LT") {
-          auto start = std::chrono::high_resolution_clock::now();
-          seeds =
-              IMM(G, CFG.k, CFG.epsilon, 1, generator, R,
-                  ripples::linear_threshold_tag{}, ripples::omp_parallel_tag{});
-          auto end = std::chrono::high_resolution_clock::now();
-          R.Total = end - start;
-        }
-
-        R.NumThreads = num_threads;
-
-        console->info("IMM parallel : {}ms, T={}/{}", R.Total.count(),
-                      num_threads, max_threads);
-
-        G.convertID(seeds.begin(), seeds.end(), seeds.begin());
-        auto experiment = GetExperimentRecord(CFG, R, seeds);
-        executionLog.push_back(experiment);
-      } else {
-        if (CFG.diffusionModel == "IC") {
-          auto start = std::chrono::high_resolution_clock::now();
-          seeds = IMM(G, CFG.k, CFG.epsilon, 1, generator, R,
-                                   ripples::independent_cascade_tag{},
-                                   ripples::sequential_tag{});
-          auto end = std::chrono::high_resolution_clock::now();
-          R.Total = end - start;
-        } else if (CFG.diffusionModel == "LT") {
-          auto start = std::chrono::high_resolution_clock::now();
-          seeds =
-              IMM(G, CFG.k, CFG.epsilon, 1, generator, R,
-                  ripples::linear_threshold_tag{}, ripples::sequential_tag{});
-          auto end = std::chrono::high_resolution_clock::now();
-          R.Total = end - start;
-        }
-        console->info("IMM squential : {}ms, T={}/{}", R.Total.count(),
-                      num_threads, max_threads);
-
-        R.NumThreads = num_threads;
-
-        G.convertID(seeds.begin(), seeds.end(), seeds.begin());
-        auto experiment = GetExperimentRecord(CFG, R, seeds);
-        executionLog.push_back(experiment);
-      }
-      perf.seekp(0);
-      perf << executionLog.dump(2);
-    }
-  } else if (CFG.parallel) {
-    if (CFG.diffusionModel == "IC") {
-      auto start = std::chrono::high_resolution_clock::now();
-      seeds =
-          IMM(G, CFG.k, CFG.epsilon, 1, generator, R,
-              ripples::independent_cascade_tag{}, ripples::omp_parallel_tag{});
-      auto end = std::chrono::high_resolution_clock::now();
-      R.Total = end - start;
-    } else if (CFG.diffusionModel == "LT") {
-      auto start = std::chrono::high_resolution_clock::now();
-      seeds =
-          IMM(G, CFG.k, CFG.epsilon, 1, generator, R,
-              ripples::linear_threshold_tag{}, ripples::omp_parallel_tag{});
-      auto end = std::chrono::high_resolution_clock::now();
-      R.Total = end - start;
-    }
-    console->info("IMM parallel : {}ms", R.Total.count());
-
-    size_t num_threads;
-#pragma omp single
-    num_threads = omp_get_max_threads();
-    R.NumThreads = num_threads;
-
-    G.convertID(seeds.begin(), seeds.end(), seeds.begin());
-    auto experiment = GetExperimentRecord(CFG, R, seeds);
-    executionLog.push_back(experiment);
-
-    perf << executionLog.dump(2);
-  } else if (CFG.cuda_parallel) {
+  if (CFG.parallel) {
     auto workers = CFG.streaming_workers;
     auto gpu_workers = CFG.streaming_gpu_workers;
     if (CFG.diffusionModel == "IC") {
@@ -269,7 +180,7 @@ int main(int argc, char **argv) {
       auto start = std::chrono::high_resolution_clock::now();
       seeds =
           IMM(G, CFG.k, CFG.epsilon, 1, se, ripples::independent_cascade_tag{},
-              ripples::cuda_parallel_tag{});
+              ripples::omp_parallel_tag{});
       auto end = std::chrono::high_resolution_clock::now();
       R.Total = end - start;
     } else if (CFG.diffusionModel == "LT") {
@@ -281,11 +192,11 @@ int main(int argc, char **argv) {
       auto start = std::chrono::high_resolution_clock::now();
       seeds =
           IMM(G, CFG.k, CFG.epsilon, 1, se, ripples::linear_threshold_tag{},
-              ripples::cuda_parallel_tag{});
+              ripples::omp_parallel_tag{});
       auto end = std::chrono::high_resolution_clock::now();
       R.Total = end - start;
     }
-    console->info("IMM CUDA : {}ms", R.Total.count());
+    console->info("IMM Parallel : {}ms", R.Total.count());
 
     size_t num_threads;
 #pragma omp single

@@ -115,7 +115,7 @@ int main(int argc, char *argv[]) {
   // process command line
   ripples::parse_command_line(argc, argv);
   auto CFG = ripples::configuration();
-  if (CFG.cuda_parallel) {
+  if (CFG.parallel) {
     if (ripples::streaming_command_line(CFG.worker_to_gpu, CFG.streaming_workers,
                                         CFG.streaming_gpu_workers,
                                         CFG.gpu_mapping_string) != 0) {
@@ -151,56 +151,34 @@ int main(int argc, char *argv[]) {
   generator.split(2, 1);
   ripples::mpi::split_generator(generator);
 
-  if (CFG.cuda_parallel) {
-    auto workers = CFG.streaming_workers;
-    auto gpu_workers = CFG.streaming_gpu_workers;
-    if (CFG.diffusionModel == "IC") {
-      ripples::StreamingRRRGenerator<decltype(G), decltype(generator),
-                                     typename ripples::RRRsets<decltype(G)>::iterator,
-                                     ripples::independent_cascade_tag>
-          se(G, generator, R, workers - gpu_workers, gpu_workers,
-             CFG.worker_to_gpu);
-      auto start = std::chrono::high_resolution_clock::now();
-      seeds = ripples::mpi::IMM(G, CFG.k, CFG.epsilon, 1.0, se, R,
-                  ripples::independent_cascade_tag{},
-                  ripples::mpi::MPI_Plus_X<ripples::mpi_cuda_parallel_tag>{});
-      auto end = std::chrono::high_resolution_clock::now();
-      R.Total = end - start;
-    } else if (CFG.diffusionModel == "LT") {
-      ripples::StreamingRRRGenerator<decltype(G), decltype(generator),
-                                     typename ripples::RRRsets<decltype(G)>::iterator,
-                                     ripples::linear_threshold_tag>
-          se(G, generator, R, workers - gpu_workers, gpu_workers,
-             CFG.worker_to_gpu);
-      auto start = std::chrono::high_resolution_clock::now();
-      seeds = ripples::mpi::IMM(G, CFG.k, CFG.epsilon, 1.0, se, R,
-                  ripples::linear_threshold_tag{},
-                  ripples::mpi::MPI_Plus_X<ripples::mpi_cuda_parallel_tag>{});
-      auto end = std::chrono::high_resolution_clock::now();
-      R.Total = end - start;
-    }
-    console->info("IMM MPI+CUDA : {}ms", R.Total.count());
-  } else {
-    auto generators = ripples::mpi::rank_split_generator(generator);
-    if (CFG.diffusionModel == "IC") {
-      auto start = std::chrono::high_resolution_clock::now();
-      
-      seeds = ripples::mpi::IMM(G, CFG.k, CFG.epsilon, 1.0, generators, R,
-                                ripples::independent_cascade_tag{},
-                                ripples::mpi::MPI_Plus_X<ripples::mpi_omp_parallel_tag>{});
-      auto end = std::chrono::high_resolution_clock::now();
-      R.Total = end - start;
-    } else if (CFG.diffusionModel == "LT") {
-      auto start = std::chrono::high_resolution_clock::now();
-      seeds =
-          ripples::mpi::IMM(G, CFG.k, CFG.epsilon, 1.0, generators, R,
-                            ripples::linear_threshold_tag{},
-                            ripples::mpi::MPI_Plus_X<ripples::mpi_omp_parallel_tag>{});
-      auto end = std::chrono::high_resolution_clock::now();
-      R.Total = end - start;
-    }
-    console->info("IMM MPI+OpenMP : {}ms", R.Total.count());
+  auto workers = CFG.streaming_workers;
+  auto gpu_workers = CFG.streaming_gpu_workers;
+  if (CFG.diffusionModel == "IC") {
+    ripples::StreamingRRRGenerator<decltype(G), decltype(generator),
+                                   typename ripples::RRRsets<decltype(G)>::iterator,
+                                   ripples::independent_cascade_tag>
+        se(G, generator, R, workers - gpu_workers, gpu_workers,
+           CFG.worker_to_gpu);
+    auto start = std::chrono::high_resolution_clock::now();
+    seeds = ripples::mpi::IMM(G, CFG.k, CFG.epsilon, 1.0, se, R,
+                              ripples::independent_cascade_tag{},
+                              ripples::mpi::MPI_Plus_X<ripples::mpi_omp_parallel_tag>{});
+    auto end = std::chrono::high_resolution_clock::now();
+    R.Total = end - start;
+  } else if (CFG.diffusionModel == "LT") {
+    ripples::StreamingRRRGenerator<decltype(G), decltype(generator),
+                                   typename ripples::RRRsets<decltype(G)>::iterator,
+                                   ripples::linear_threshold_tag>
+        se(G, generator, R, workers - gpu_workers, gpu_workers,
+           CFG.worker_to_gpu);
+    auto start = std::chrono::high_resolution_clock::now();
+    seeds = ripples::mpi::IMM(G, CFG.k, CFG.epsilon, 1.0, se, R,
+                              ripples::linear_threshold_tag{},
+                              ripples::mpi::MPI_Plus_X<ripples::mpi_omp_parallel_tag>{});
+    auto end = std::chrono::high_resolution_clock::now();
+    R.Total = end - start;
   }
+  console->info("IMM MPI+OpenMP+CUDA : {}ms", R.Total.count());
 
   size_t num_threads;
 #pragma omp single

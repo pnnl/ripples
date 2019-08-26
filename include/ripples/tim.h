@@ -75,8 +75,6 @@ struct TIMConfiguration {
   double epsilon{0.50};              //!< The epsilon of the IM algorithm
   bool parallel{false};              //!< The sequential vs parallel algorithm
   std::string diffusionModel{"IC"};  //!< The diffusion model to use.
-  bool OMPStrongScaling{false};      //!< OpenMP Strong Scaling experiment?
-  bool cuda_parallel{false};
 
   //! \brief Add command line options to configure TIM+.
   //!
@@ -91,15 +89,9 @@ struct TIMConfiguration {
     app.add_flag("-p,--parallel", parallel,
                  "Trigger the parallel implementation")
         ->group("Algorithm Options");
-    app.add_flag("--cuda-parallel", cuda_parallel,
-                 "Trigger the CUDA implementation")
-        ->group("Algorithm Options");
     app.add_option("-d,--diffusion-model", diffusionModel,
                    "The diffusion model to use (LT|IC)")
         ->required()
-        ->group("Algorithm Options");
-    app.add_flag("--omp_strong_scaling", OMPStrongScaling,
-                 "Trigger strong scaling experiments")
         ->group("Algorithm Options");
   }
 };
