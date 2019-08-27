@@ -99,6 +99,8 @@ ToolConfiguration<ripples::IMMConfiguration> CFG;
 
 void parse_command_line(int argc, char **argv) {
   CFG.ParseCmdOptions(argc, argv);
+#pragma omp single
+  CFG.streaming_workers = omp_get_max_threads();
 }
 
 ToolConfiguration<ripples::IMMConfiguration> configuration() {

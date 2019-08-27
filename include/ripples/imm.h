@@ -76,9 +76,6 @@ struct IMMConfiguration : public TIMConfiguration {
   //! \param app The command-line parser object.
   void addCmdOptions(CLI::App &app) {
     TIMConfiguration::addCmdOptions(app);
-    app.add_option("--streaming-workers", streaming_workers,
-                   "The number of workers for the CPU+GPU streaming engine.")
-        ->group("Streaming-Engine Options");
     app.add_option("--streaming-gpu-workers", streaming_gpu_workers,
                    "The number of GPU workers for the CPU+GPU streaming engine.")
         ->group("Streaming-Engine Options");
