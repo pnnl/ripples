@@ -62,7 +62,7 @@
 #include "ripples/generate_rrr_sets.h"
 #include "ripples/utility.h"
 
-#include "CLI11/CLI11.hpp"
+#include "CLI/CLI.hpp"
 #include "trng/lcg64.hpp"
 #include "trng/uniform01_dist.hpp"
 #include "trng/uniform_int_dist.hpp"

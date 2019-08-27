@@ -38,14 +38,14 @@ def build(bld):
     bld(features='cxx cxxstlib',
         source='test_main.cc',
         target='test_main',
-        use=['3rd-party'])
+        use=['Catch2'])
 
     bld(features='cxx cxxprogram test',
         source='pivoting.cc',
         target='pivoting_tests',
-        use=['project-headers', '3rd-party', 'TRNG', 'OpenMP', 'JSON', 'test_main'])
+        use=['project-headers', 'libtrng', 'OpenMP', 'jsonformoderncpp', 'Catch2', 'test_main'])
 
     bld(features='cxx cxxprogram test',
         source='rrr_set_generation.cc',
         target='rrr_set_generation_tests',
-        use=['project-headers', '3rd-party', 'TRNG', 'OpenMP', 'JSON', 'test_main'])
+        use=['project-headers', 'libtrng', 'OpenMP', 'jsonformoderncpp', 'Catch2', 'test_main'])

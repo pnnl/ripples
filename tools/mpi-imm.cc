@@ -52,7 +52,7 @@
 #include "ripples/mpi/imm.h"
 #include "ripples/utility.h"
 
-#include "CLI11/CLI11.hpp"
+#include "CLI/CLI.hpp"
 #include "nlohmann/json.hpp"
 
 #include "spdlog/fmt/ostr.h"

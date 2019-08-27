@@ -33,7 +33,7 @@
 # (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS
 # SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
-"""Tool to detect spdlog."""
+"""Tool to detect TRNG."""
 
 
 def options(opt):
@@ -43,6 +43,10 @@ def options(opt):
         help='root directory of the installation of trng4')
 
 def configure(conf):
-    conf.check_cxx(lib='trng4', uselib_store='TRNG',
+    if conf.env.INCLUDES_libtrng and conf.env.LIBPATH_libtrng:
+        conf.start_msg('Checking for library trng4')
+        conf.end_msg('yes (by conan)')
+        return
+    conf.check_cxx(lib='trng4', uselib_store='libtrng',
                    includes=['{0}/include/'.format(conf.options.trng4_root)],
                    libpath=['{0}/lib/'.format(conf.options.trng4_root)])

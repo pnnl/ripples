@@ -35,10 +35,10 @@
 
 
 def build(bld):
-    tools_deps = ['project-headers', '3rd-party', 'SPDLOG',
-                  'TRNG', 'OpenMP', 'JSON']
+    tools_deps = ['project-headers', 'spdlog',
+                  'libtrng', 'OpenMP', 'jsonformoderncpp', 'CLI11']
     if bld.env.ENABLE_CUDA:
-        tools_deps += [ 'CUDA', 'CUDART' ]
+        tools_deps += [ 'CUDA', 'CUDART', '3rd-party' ]
 
     # bld(features='cxx cxxprogram', source='tim.cc', target='tim',
     #     use=tools_deps)

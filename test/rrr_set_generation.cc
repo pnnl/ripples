@@ -41,7 +41,7 @@
 //===----------------------------------------------------------------------===//
 
 
-#include "catch/catch.hpp"
+#include "catch2/catch.hpp"
 
 #include "ripples/graph.h"
 #include "ripples/imm.h"

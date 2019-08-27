@@ -33,23 +33,21 @@
 # (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS
 # SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
-"""Tool to detect json library."""
+"""Tool to detect Catch2."""
 
 
 def options(opt):
     opt_group = opt.add_option_group('Configuration options')
-    opt.add_option(
-        '--nlohmann-json-root', action='store', default='/usr',
-        help='root directory of the installation of nlohmann/json')
-
+    opt_group.add_option(
+        '--catch2-root', action='store', default='/usr',
+        help='root directory of the installation of Catch2')
 
 def configure(conf):
-    if conf.env.INCLUDES_jsonformoderncpp:
-        conf.start_msg('Checking for library nlohmann/json')
+    if conf.env.INCLUDES_Catch2:
+        conf.start_msg('Checking for library Catch2')
         conf.end_msg('yes (by conan)')
         return
-    conf.check_cxx(
-        includes=['{0}/include'.format(conf.options.nlohmann_json_root)],
-        header_name='nlohmann/json.hpp',
-        uselib_store='jsonformoderncpp',
-        msg='Checking for library nlohmann/json')
+    conf.check_cxx(uselib_store='Catch2',
+                   header_name='catch2/catch.hpp',
+                   includes=['{0}/include/'.format(conf.options.catch2_root)],
+                   msg='Checking for library Catch2')

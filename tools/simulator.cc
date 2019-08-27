@@ -42,7 +42,7 @@
 
 #include <string>
 
-#include "CLI11/CLI11.hpp"
+#include "CLI/CLI.hpp"
 #include "nlohmann/json.hpp"
 #include "spdlog/sinks/basic_file_sink.h"
 #include "spdlog/sinks/rotating_file_sink.h"

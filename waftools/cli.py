@@ -33,23 +33,21 @@
 # (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS
 # SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
-"""Tool to detect json library."""
+"""Tool to detect CLI11."""
 
 
 def options(opt):
     opt_group = opt.add_option_group('Configuration options')
-    opt.add_option(
-        '--nlohmann-json-root', action='store', default='/usr',
-        help='root directory of the installation of nlohmann/json')
-
+    opt_group.add_option(
+        '--cli-root', action='store', default='/usr',
+        help='root directory of the installation of CLI11')
 
 def configure(conf):
-    if conf.env.INCLUDES_jsonformoderncpp:
-        conf.start_msg('Checking for library nlohmann/json')
+    if conf.env.INCLUDES_CLI11:
+        conf.start_msg('Checking for library CLI11')
         conf.end_msg('yes (by conan)')
         return
-    conf.check_cxx(
-        includes=['{0}/include'.format(conf.options.nlohmann_json_root)],
-        header_name='nlohmann/json.hpp',
-        uselib_store='jsonformoderncpp',
-        msg='Checking for library nlohmann/json')
+    conf.check_cxx(uselib_store='CLI11',
+                   header_name='CLI/CLI.hpp',
+                   includes=['{0}/include/'.format(conf.options.cli_root)],
+                   msg='Checking for library CLI11')

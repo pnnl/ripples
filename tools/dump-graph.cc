@@ -49,7 +49,7 @@
 #include "ripples/graph_dump.h"
 #include "ripples/loaders.h"
 
-#include "CLI11/CLI11.hpp"
+#include "CLI/CLI.hpp"
 #include "spdlog/sinks/stdout_color_sinks.h"
 #include "spdlog/spdlog.h"
 #include "trng/lcg64.hpp"
