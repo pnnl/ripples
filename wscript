@@ -61,7 +61,7 @@ def options(opt):
 
 def configure(conf):
     try:
-        conf.load('waf_conan_libs_info', tooldir=['build'])
+        conf.load('waf_conan_libs_info', tooldir=['build', '.'])
     except:
         pass
 
