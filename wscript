@@ -87,7 +87,7 @@ def configure(conf):
 
 
 def build(bld):
-    directories = ['3rd-party', 'include', 'tools', 'test']
+    directories = ['include', 'tools', 'test']
 
     bld.recurse(directories)
 
