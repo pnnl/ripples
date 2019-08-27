@@ -48,4 +48,4 @@ def build(bld):
     bld(features='cxx cxxprogram test',
         source='rrr_set_generation.cc',
         target='rrr_set_generation_tests',
-        use=['project-headers', 'libtrng', 'OpenMP', 'jsonformoderncpp', 'Catch2', 'test_main'])
+        use=['project-headers', 'libtrng', 'OpenMP', 'jsonformoderncpp', 'CLI11', 'spdlog', 'Catch2', 'test_main'])
