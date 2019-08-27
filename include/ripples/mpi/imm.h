@@ -108,15 +108,17 @@ auto Sampling(const GraphTy &G, std::size_t k, double epsilon, double l,
     ssize_t thetaPrime =
         ThetaPrime(x, epsilonPrime, l, k, G.num_nodes(), ex_tag);
 
+    size_t delta = thetaPrime - RR.size();
     record.ThetaPrimeDeltas.push_back(thetaPrime - RR.size());
 
     auto timeRRRSets = measure<>::exec_time([&]() {
-      auto deltaRR = GenerateRRRSets(G, thetaPrime - RR.size(), generator,
-                                     std::forward<diff_model_tag>(model_tag),
-                                     omp_parallel_tag{});
+      RR.insert(RR.end(), delta, RRRset<GraphTy>{});
 
-      RR.insert(RR.end(), std::make_move_iterator(deltaRR.begin()),
-                std::make_move_iterator(deltaRR.end()));
+      auto begin = RR.end() - delta;
+
+      GenerateRRRSets(G, generator, begin, RR.end(),
+                      std::forward<diff_model_tag>(model_tag),
+                      omp_parallel_tag{});
     });
     record.ThetaEstimationGenerateRRR.push_back(timeRRRSets);
 
@@ -146,12 +148,14 @@ auto Sampling(const GraphTy &G, std::size_t k, double epsilon, double l,
 
   start = std::chrono::high_resolution_clock::now();
   if (thetaLocal > RR.size()) {
-    auto deltaRR = GenerateRRRSets(G, thetaLocal - RR.size(), generator,
-                                   std::forward<diff_model_tag>(model_tag),
-                                   omp_parallel_tag{});
+    size_t final_delta = theta - RR.size();
+    RR.insert(RR.end(), final_delta, RRRset<GraphTy>{});
 
-    RR.insert(RR.end(), std::make_move_iterator(deltaRR.begin()),
-              std::make_move_iterator(deltaRR.end()));
+    auto begin = RR.end() - final_delta;
+
+    GenerateRRRSets(G, generator, begin, RR.end(),
+                    std::forward<diff_model_tag>(model_tag),
+                    omp_parallel_tag{});
   }
   end = std::chrono::high_resolution_clock::now();
 
