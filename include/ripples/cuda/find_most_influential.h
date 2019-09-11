@@ -40,62 +40,30 @@
 //
 //===----------------------------------------------------------------------===//
 
-#ifndef RIPPLES_IMM_EXECUTION_RECORD_H
-#define RIPPLES_IMM_EXECUTION_RECORD_H
+#ifndef RIPPLES_CUDA_FIND_MOST_INFLUENTIAL_H
+#define RIPPLES_CUDA_FIND_MOST_INFLUENTIAL_H
 
-#include <chrono>
-#include <vector>
+#include "ripples/cuda/cuda_generate_rrr_sets.h"
+
+#include <utility>
 
 namespace ripples {
 
-//! IMM execution record.
-struct IMMExecutionRecord {
-  using ex_time_ms = std::chrono::duration<double, std::milli>;
-  using ex_time_ns = std::chrono::nanoseconds;
+std::pair<uint32_t, size_t> CudaMaxElement(uint32_t * b, size_t N);
 
-  struct cpu_walk_prof {
-    size_t NumSets;
-    ex_time_ms Total;
-  };
+void
+CudaUpdateCounters(size_t batch_size, uint32_t *d_rr_vertices,
+                   uint32_t * d_rr_edges, char * d_mask,
+                   uint32_t * d_Counters, size_t num_nodes,
+                   uint32_t last_seed);
 
-  struct gpu_walk_prof {
-    size_t NumSets;
-    ex_time_ms Total;
-    ex_time_ns Kernel, D2H, Post;
-  };
 
-  struct walk_iteration_prof {
-    std::vector<cpu_walk_prof> CPUWalks;
-    std::vector<gpu_walk_prof> GPUWalks;
-    size_t NumSets{0};
-    ex_time_ms Total{0};
-  };
+void CudaCountOccurrencies(
+    uint32_t * d_Counters, uint32_t * d_rrr_sets,
+    size_t rrr_sets_size, size_t num_nodes);
 
-  //! Number of threads used during the execution.
-  size_t NumThreads;
-  //! Number of RRR sets generated.
-  size_t Theta;
-  //! The list of how many RRR sets are produced during the estimation phase.
-  std::vector<size_t> ThetaPrimeDeltas;
-  //! Execution time of the Theta estimation phase.
-  ex_time_ms ThetaEstimationTotal;
-  //! Execution times of the GenerateRRRSets steps in Theta estimation.
-  std::vector<ex_time_ms> ThetaEstimationGenerateRRR;
-  //! Execution times of the FindMostInfluentialSet steps in Theta estimation.
-  std::vector<ex_time_ms> ThetaEstimationMostInfluential;
-  std::vector<ex_time_ms> Counting;
-  std::vector<ex_time_ms> Pivoting;
-  //! Execution time of the RRR sets generation phase.
-  ex_time_ms GenerateRRRSets;
-  //! Execution time of the maximum coverage phase.
-  ex_time_ms FindMostInfluentialSet;
-  //! Total execution time.
-  ex_time_ms Total;
-  size_t RRRSetSize;
-  //! Iterations breakdown
-  std::vector<walk_iteration_prof> WalkIterations;
-};
+size_t CountZeros(char * d_rr_mask, size_t N);
 
 }  // namespace ripples
 
-#endif  // RIPPLES_IMM_EXECUTION_RECORD_H
+#endif /* RIPPLES_CUDA_FIND_MOST_INFLUENTIAL_H */

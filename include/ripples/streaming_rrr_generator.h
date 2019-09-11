@@ -663,6 +663,9 @@ class StreamingRRRGenerator {
     size_t num_rng_sequences = num_cpu_workers_;
 #endif
 
+    console->info("CPU Workers {}", num_cpu_workers);
+    console->info("GPU Workers {}", num_gpu_workers);
+
     // translate user-mapping string into vector
     for (size_t omp_num = 0; omp_num < num_cpu_workers + num_gpu_workers;
          ++omp_num) {
@@ -688,12 +691,15 @@ class StreamingRRRGenerator {
         // create and add a CPU worker
         console->info("> mapping: omp={}\t->\tCPU", omp_num);
         auto cpu_worker_id = cpu_workers.size();
+        console->info("cpu_worker_id = {}", cpu_worker_id);
         auto rng = master_rng;
         rng.split(num_rng_sequences, cpu_worker_id);
         cpu_workers.push_back(new cpu_worker_t(G, rng));
         workers.push_back(cpu_workers.back());
       }
     }
+
+    console->info("Configured");
     // check
     assert(cpu_workers.size() == num_cpu_workers_);
 #ifdef RIPPLES_ENABLE_CUDA

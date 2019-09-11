@@ -77,7 +77,12 @@ typename cuda_device_graph::weight_t *cuda_graph_weights(cuda_ctx *);
 
 void cuda_malloc(void **dst, size_t size);
 void cuda_free(void *ptr);
-void cuda_d2h(mask_word_t *dst, mask_word_t *src, size_t size, cudaStream_t);
+void cuda_d2h(void *dst, void *src, size_t size, cudaStream_t);
+void cuda_d2h(void *dst, void *src, size_t size);
+void cuda_h2d(void *dst, void *src, size_t size, cudaStream_t);
+void cuda_h2d(void *dst, void *src, size_t size);
+void cuda_memset(void *dst, int val, size_t size, cudaStream_t s);
+void cuda_memset(void *dst, int val, size_t size);
 void cuda_sync(cudaStream_t);
 
 void cuda_lt_rng_setup(cuda_PRNGeneratorTy *d_trng_state,

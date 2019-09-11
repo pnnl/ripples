@@ -180,6 +180,7 @@ __global__ void kernel_lt_per_thread(
   }  // end if active thread
 }
 
+
 void cuda_lt_kernel(size_t n_blocks, size_t block_size, size_t batch_size,
                     size_t num_nodes, cuda_PRNGeneratorTy *d_trng_states,
                     mask_word_t *d_res_masks, size_t num_mask_words,
@@ -191,9 +192,35 @@ void cuda_lt_kernel(size_t n_blocks, size_t block_size, size_t batch_size,
   cuda_check(__FILE__, __LINE__);
 }
 
-void cuda_d2h(mask_word_t *dst, mask_word_t *src, size_t size,
+void cuda_d2h(void *dst, void *src, size_t size,
               cudaStream_t stream) {
   cudaMemcpyAsync(dst, src, size, cudaMemcpyDeviceToHost, stream);
+  cuda_check(__FILE__, __LINE__);
+}
+
+void cuda_d2h(void *dst, void *src, size_t size) {
+  cudaMemcpy(dst, src, size, cudaMemcpyDeviceToHost);
+  cuda_check(__FILE__, __LINE__);
+}
+
+void cuda_h2d(void *dst, void *src, size_t size,
+              cudaStream_t stream) {
+  cudaMemcpyAsync(dst, src, size, cudaMemcpyHostToDevice, stream);
+  cuda_check(__FILE__, __LINE__);
+}
+
+void cuda_h2d(void *dst, void *src, size_t size) {
+  cudaMemcpy(dst, src, size, cudaMemcpyHostToDevice);
+  cuda_check(__FILE__, __LINE__);
+}
+
+void cuda_memset(void *dst, int val, size_t size, cudaStream_t s) {
+  cudaMemsetAsync(dst, val, size, s);
+  cuda_check(__FILE__, __LINE__);
+}
+
+void cuda_memset(void *dst, int val, size_t size) {
+  cudaMemset(dst, val, size);
   cuda_check(__FILE__, __LINE__);
 }
 

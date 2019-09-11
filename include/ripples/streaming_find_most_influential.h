@@ -40,62 +40,44 @@
 //
 //===----------------------------------------------------------------------===//
 
-#ifndef RIPPLES_IMM_EXECUTION_RECORD_H
-#define RIPPLES_IMM_EXECUTION_RECORD_H
 
-#include <chrono>
+#include <cstddef>
 #include <vector>
+
 
 namespace ripples {
 
-//! IMM execution record.
-struct IMMExecutionRecord {
-  using ex_time_ms = std::chrono::duration<double, std::milli>;
-  using ex_time_ns = std::chrono::nanoseconds;
+template <typename GraphTy>
+class FindMostInfluentialWorker {};
 
-  struct cpu_walk_prof {
-    size_t NumSets;
-    ex_time_ms Total;
-  };
+template <typename GraphTy>
+class GPUFindMostInfluentialWorker {};
 
-  struct gpu_walk_prof {
-    size_t NumSets;
-    ex_time_ms Total;
-    ex_time_ns Kernel, D2H, Post;
-  };
+template <typename GraphTy>
+class CPUFindMostInfluentialWorker {};
 
-  struct walk_iteration_prof {
-    std::vector<cpu_walk_prof> CPUWalks;
-    std::vector<gpu_walk_prof> GPUWalks;
-    size_t NumSets{0};
-    ex_time_ms Total{0};
-  };
+template <typename GraphTy, typename diff_model_tag>
+class StreamingFindMostInfluential {
+  using vertex_type = typename GraphTy::vertex_type;
+  using worker_type = FindMostInfluentialWorker<GraphTy>;
+  using cpu_worker_type = CPUFindMostInfluentialWorker<GraphTy>;
+  using gpu_worker_type = GPUFindMostInfluentialWorker<GraphTy>;
 
-  //! Number of threads used during the execution.
-  size_t NumThreads;
-  //! Number of RRR sets generated.
-  size_t Theta;
-  //! The list of how many RRR sets are produced during the estimation phase.
-  std::vector<size_t> ThetaPrimeDeltas;
-  //! Execution time of the Theta estimation phase.
-  ex_time_ms ThetaEstimationTotal;
-  //! Execution times of the GenerateRRRSets steps in Theta estimation.
-  std::vector<ex_time_ms> ThetaEstimationGenerateRRR;
-  //! Execution times of the FindMostInfluentialSet steps in Theta estimation.
-  std::vector<ex_time_ms> ThetaEstimationMostInfluential;
-  std::vector<ex_time_ms> Counting;
-  std::vector<ex_time_ms> Pivoting;
-  //! Execution time of the RRR sets generation phase.
-  ex_time_ms GenerateRRRSets;
-  //! Execution time of the maximum coverage phase.
-  ex_time_ms FindMostInfluentialSet;
-  //! Total execution time.
-  ex_time_ms Total;
-  size_t RRRSetSize;
-  //! Iterations breakdown
-  std::vector<walk_iteration_prof> WalkIterations;
+ public:
+  StreamingFindMostInfluential(const GraphTy & G) {
+  }
+
+  std::vector<vertex_type> find_seeds() {
+    // for each device get available memory.
+
+    // Allocate 1
+
+    // compute bype prefix sum
+  }
+
+ private:
+  size_t num_cpu_workers_, num_gpu_workers_;
+  
 };
 
 }  // namespace ripples
-
-#endif  // RIPPLES_IMM_EXECUTION_RECORD_H

@@ -188,7 +188,7 @@ auto Sampling(const GraphTy &G, std::size_t k, double epsilon, double l,
 
     auto timeMostInfluential = measure<>::exec_time([&]() {
       const auto &S =
-          FindMostInfluentialSet(G, k, RR, std::forward<execution_tag>(ex_tag));
+      FindMostInfluentialSet(G, k, RR, record, std::forward<execution_tag>(ex_tag));
 
       f = S.first;
     });
@@ -261,7 +261,7 @@ auto IMM(const GraphTy &G, std::size_t k, double epsilon, double l, PRNG &gen,
 
   auto start = std::chrono::high_resolution_clock::now();
   const auto &S =
-      FindMostInfluentialSet(G, k, R, std::forward<sequential_tag>(ex_tag));
+      FindMostInfluentialSet(G, k, R, record, std::forward<sequential_tag>(ex_tag));
   auto end = std::chrono::high_resolution_clock::now();
 
   record.FindMostInfluentialSet = end - start;
@@ -300,14 +300,19 @@ auto IMM(const GraphTy &G, std::size_t k, double epsilon, double l,
 #if CUDA_PROFILE
   auto logst = spdlog::stdout_color_st("IMM-profile");
   std::vector<size_t> rrr_sizes;
-  for(auto &rrr_set : R)
-	  rrr_sizes.push_back(rrr_set.size());
+  size_t sizeBytes = 0;
+  for(auto &rrr_set : R) {
+    rrr_sizes.push_back(rrr_set.size());
+    sizeBytes += rrr_set.size() * sizeof(rrr_set[0]);
+  }
+  record.RRRSetSize = sizeBytes;
   print_profile_counter(logst, rrr_sizes, "RRR sizes");
 #endif
 
   auto start = std::chrono::high_resolution_clock::now();
   const auto &S =
-      FindMostInfluentialSet(G, k, R, std::forward<omp_parallel_tag>(ex_tag));
+      FindMostInfluentialSet(G, k, R, record,
+                             std::forward<omp_parallel_tag>(ex_tag));
   auto end = std::chrono::high_resolution_clock::now();
 
   record.FindMostInfluentialSet = end - start;

@@ -71,6 +71,8 @@ struct sequential_tag {};
 struct omp_parallel_tag {};
 //! Execution tag for the MPI+OpenMP parallel algorithms.
 struct mpi_omp_parallel_tag {};
+//! Execution tag for the CUDA parallel algorithms.
+struct cuda_parallel_tag {};
 
 //! Utility for measurements.
 template <typename TimeTy = std::chrono::milliseconds>
