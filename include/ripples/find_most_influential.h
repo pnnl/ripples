@@ -50,7 +50,10 @@
 
 #include <omp.h>
 #include "ripples/utility.h"
+#include "ripples/partition.h"
+#include "ripples/counting.h"
 #include "ripples/imm_execution_record.h"
+#include "ripples/streaming_find_most_influential.h"
 
 #include "spdlog/sinks/stdout_color_sinks.h"
 #include "spdlog/spdlog.h"
@@ -64,301 +67,6 @@
 
 
 namespace ripples {
-//! Sequential swap ranges.
-//!
-//! \tparam ItrTy1 The iterator type of the first sequence.
-//! \tparam ItrTy2 The iterator type of the second sequence.
-//!
-//! \param B The begin of the first sequence.
-//! \param E The end of the second sequence.
-//! \param O The begin of the second sequence.
-//! \return The iterator to the one-past last element swapped.
-template <typename ItrTy1, typename ItrTy2>
-ItrTy2 swap_ranges(ItrTy1 B, ItrTy1 E, ItrTy2 O, sequential_tag) {
-  return std::swap_ranges(B, E, O);
-}
-
-//! Parallel swap ranges.
-//!
-//! \tparam ItrTy1 The iterator type of the first sequence.
-//! \tparam ItrTy2 The iterator type of the second sequence.
-//!
-//! \param B The begin of the first sequence.
-//! \param E The end of the second sequence.
-//! \param O The begin of the second sequence.
-//! \return The iterator to the one-past last element swapped.
-template <typename ItrTy1, typename ItrTy2>
-ItrTy2 swap_ranges(ItrTy1 B, ItrTy1 E, ItrTy2 O, omp_parallel_tag) {
-  size_t toBeSwaped = std::distance(B, E);
-#pragma omp parallel for
-  for (size_t i = 0; i < toBeSwaped; ++i) {
-    std::iter_swap(B + i, O + i);
-  }
-  return O + toBeSwaped;
-}
-
-//! Reorder a sequence in such a way that all the element for which a predicate
-//! is true preceed the one for which the predicate is false.
-//!
-//! \tparam ItrTy The type of the iterator of the input sequence.
-//! \tparam UnaryPredicate The type of a unary predicate object.
-//!
-//! \param B The start of the sequence to be partitioned.
-//! \param E The end of the sequence to be partitioned.
-//! \param P A C++ collable object implementing the predicate.
-//! \return An iterator to the first element for which the predicate is false.
-template <typename ItrTy, typename UnaryPredicate>
-ItrTy partition(ItrTy B, ItrTy E, UnaryPredicate P, sequential_tag) {
-  return std::partition(B, E, P);
-}
-
-namespace {
-
-template <typename ItrTy, typename ex_tag = omp_parallel_tag>
-struct PartitionIndices {
-  ItrTy begin;
-  ItrTy end;
-  ItrTy pivot;
-
-  PartitionIndices(PartitionIndices &&O)
-      : begin{std::move(O.begin)},
-        end{std::move(O.end)},
-        pivot{std::move(O.pivot)} {}
-
-  PartitionIndices &operator=(PartitionIndices &&O) {
-    this->begin = std::move(O.begin);
-    this->end = std::move(O.end);
-    this->pivot = std::move(O.pivot);
-    return *this;
-  }
-
-  PartitionIndices(const PartitionIndices &O)
-      : begin{O.begin}, end{O.end}, pivot{O.pivot} {}
-
-  PartitionIndices &operator=(const PartitionIndices &O) {
-    this->begin = O.begin;
-    this->end = O.end;
-    this->pivot = O.pivot;
-    return *this;
-  }
-
-  PartitionIndices(ItrTy B, ItrTy E, ItrTy P) : begin{B}, end{E}, pivot{P} {}
-
-  PartitionIndices(ItrTy B, ItrTy E) : PartitionIndices(B, E, E) {}
-
-  bool operator==(const PartitionIndices &O) const {
-    return this->begin == O.begin && this->end == O.end &&
-           this->pivot == O.pivot;
-  }
-
-  PartitionIndices operator+(const PartitionIndices &O) {
-    PartitionIndices result(*this);
-
-    if (this->pivot == this->begin && O.pivot == O.begin) {
-      result.end = O.end;
-      return result;
-    } else if (this->pivot == this->end) {
-      result.end = O.end;
-      result.pivot = O.pivot;
-      return result;
-    }
-
-    if (std::distance(this->pivot, this->end) <
-        std::distance(O.begin, O.pivot)) {
-      size_t toBeMoved = std::distance(this->pivot, this->end);
-      swap_ranges(this->pivot, this->end, std::prev(O.pivot, toBeMoved),
-                  ex_tag{});
-      result.pivot = std::prev(O.pivot, toBeMoved);
-    } else {
-      result.pivot = swap_ranges(O.begin, O.pivot, this->pivot, ex_tag{});
-    }
-    result.end = O.end;
-
-    return result;
-  }
-};
-
-}  // namespace
-
-//! Reorder a sequence in such a way that all the element for which a predicate
-//! is true preceed the one for which the predicate is false.
-
-//! \tparam ItrTy The type of the iterator of the input sequence.
-//! \tparam UnaryPredicate The type of a unary predicate object.
-//!
-//! \param B The start of the sequence to be partitioned.
-//! \param E The end of the sequence to be partitioned.
-//! \param P A C++ collable object implementing the predicate.
-//! \return An iterator to the first element for which the predicate is false.
-template <typename ItrTy, typename UnaryPredicate>
-ItrTy partition(ItrTy B, ItrTy E, UnaryPredicate P, omp_parallel_tag) {
-  size_t num_threads(1);
-
-#pragma omp single
-  { num_threads = omp_get_max_threads(); }
-
-  std::vector<PartitionIndices<ItrTy>> indices(num_threads,
-                                               PartitionIndices<ItrTy>(B, E));
-
-#pragma omp parallel
-  {
-    size_t num_elements = std::distance(B, E);
-    size_t threadnum = omp_get_thread_num(), numthreads = omp_get_num_threads();
-    size_t low = num_elements * threadnum / numthreads,
-           high = num_elements * (threadnum + 1) / numthreads;
-
-    indices[threadnum].begin = B + low;
-    indices[threadnum].end = std::min(E, B + high);
-    indices[threadnum].pivot =
-        std::partition(indices[threadnum].begin, indices[threadnum].end, P);
-  }
-
-  for (size_t j = 1; j < num_threads; j <<= 1) {
-#pragma omp parallel
-    {
-#pragma omp single nowait
-      for (size_t i = 0; (i + j) < num_threads; i += j * 2) {
-#pragma omp task firstprivate(i, j)
-        { indices[i] = indices[i] + indices[i + j]; }
-      }
-    }
-  }
-
-  return indices[0].pivot;
-}
-
-//! \brief Count the occurrencies of vertices in the RRR sets.
-//!
-//! \tparam InItr The input sequence iterator type.
-//! \tparam OutItr The output sequence iterator type.
-//!
-//! \param in_begin The begin of the sequence of RRR sets.
-//! \param in_end The end of the sequence of RRR sets.
-//! \param out_begin The begin of the sequence storing the counters for each
-//! vertex.
-//! \param out_end The end of the sequence storing the counters for each vertex.
-template <typename InItr, typename OutItr>
-void CountOccurrencies(InItr in_begin, InItr in_end, OutItr out_begin,
-                       OutItr out_end, sequential_tag &&) {
-  using rrr_set_type = typename std::iterator_traits<InItr>::value_type;
-  using vertex_type = typename rrr_set_type::value_type;
-  for (; in_begin != in_end; ++in_begin) {
-    std::for_each(in_begin->begin(), in_begin->end(),
-                  [&](const vertex_type v) { *(out_begin + v) += 1; });
-  }
-}
-
-
-//! \brief Count the occurrencies of vertices in the RRR sets.
-//!
-//! \tparam InItr The input sequence iterator type.
-//! \tparam OutItr The output sequence iterator type.
-//!
-//! \param in_begin The begin of the sequence of RRR sets.
-//! \param in_end The end of the sequence of RRR sets.
-//! \param out_begin The begin of the sequence storing the counters for each
-//! vertex.
-//! \param out_end The end of the sequence storing the counters for each vertex.
-template <typename InItr, typename OutItr>
-void CountOccurrencies(InItr in_begin, InItr in_end, OutItr out_begin,
-                       OutItr out_end, omp_parallel_tag &&) {
-  using rrr_set_type = typename std::iterator_traits<InItr>::value_type;
-  using vertex_type = typename rrr_set_type::value_type;
-
-#pragma omp parallel
-  {
-    size_t num_elements = std::distance(out_begin, out_end);
-    size_t threadnum = omp_get_thread_num(), numthreads = omp_get_num_threads();
-    vertex_type low = num_elements * threadnum / numthreads,
-                high = num_elements * (threadnum + 1) / numthreads;
-
-    for (auto itr = in_begin; itr != in_end; ++itr) {
-      auto begin = std::lower_bound(itr->begin(), itr->end(), low);
-      auto end = std::upper_bound(begin, itr->end(), high - 1);
-      std::for_each(begin, end,
-                    [&](const vertex_type v) { *(out_begin + v) += 1; });
-    }
-  }
-}
-
-//! \brief Initialize the Heap storage.
-//!
-//! \tparam InItr The input sequence iterator type.
-//! \tparam OutItr The output sequence iterator type.
-//!
-//! \param in_begin The begin of the sequence of vertex counters.
-//! \param in_end The end of the sequence of vertex counters.
-//! \param out_begin The begin of the sequence used as storage in the Heap.
-//! \param out_end The end of the sequence used as storage in the Heap.
-template <typename InItr, typename OutItr>
-void InitHeapStorage(InItr in_begin, InItr in_end, OutItr out_begin,
-                     OutItr out_end, sequential_tag &&) {
-  using value_type = typename std::iterator_traits<OutItr>::value_type;
-  using vertex_type = typename value_type::first_type;
-
-  for (vertex_type v = 0; in_begin != in_end; ++in_begin, ++v, ++out_begin) {
-    *out_begin = {v, *in_begin};
-  }
-}
-
-//! \brief Initialize the Heap storage.
-//!
-//! \tparam InItr The input sequence iterator type.
-//! \tparam OutItr The output sequence iterator type.
-//!
-//! \param in_begin The begin of the sequence of vertex counters.
-//! \param in_end The end of the sequence of vertex counters.
-//! \param out_begin The begin of the sequence used as storage in the Heap.
-//! \param out_end The end of the sequence used as storage in the Heap.
-template <typename InItr, typename OutItr>
-void InitHeapStorage(InItr in_begin, InItr in_end, OutItr out_begin,
-                     OutItr out_end, omp_parallel_tag &&) {
-  using value_type = typename std::iterator_traits<OutItr>::value_type;
-  using vertex_type = typename value_type::first_type;
-
-#pragma omp parallel for
-  for (vertex_type v = 0; v < std::distance(in_begin, in_end); ++v) {
-    *(out_begin + v) = {v, *(in_begin + v)};
-  }
-}
-
-//! \brief Update the coverage counters.
-//!
-//! \tparam RRRsetsItrTy The iterator type of the sequence of RRR sets.
-//! \tparam VertexCoverageVectorTy The type of the vector storing counters.
-//!
-//! \param B The start sequence of RRRsets covered by the just selected seed.
-//! \param E The start sequence of RRRsets covered by the just selected seed.
-//! \param vertexCoverage The vector storing the counters to be updated.
-template <typename RRRsetsItrTy, typename VertexCoverageVectorTy>
-void UpdateCounters(RRRsetsItrTy B, RRRsetsItrTy E,
-                    VertexCoverageVectorTy &vertexCoverage, sequential_tag &&) {
-  for (; B != E; ++B) {
-    for (auto v : *B) {
-      vertexCoverage[v] -= 1;
-    }
-  }
-}
-
-//! \brief Update the coverage counters.
-//!
-//! \tparam RRRsetsItrTy The iterator type of the sequence of RRR sets.
-//! \tparam VertexCoverageVectorTy The type of the vector storing counters.
-//!
-//! \param B The start sequence of RRRsets covered by the just selected seed.
-//! \param E The start sequence of RRRsets covered by the just selected seed.
-//! \param vertexCoverage The vector storing the counters to be updated.
-template <typename RRRsetsItrTy, typename VertexCoverageVectorTy>
-void UpdateCounters(RRRsetsItrTy B, RRRsetsItrTy E,
-                    VertexCoverageVectorTy &vertexCoverage,
-                    omp_parallel_tag &&) {
-  for (; B != E; ++B) {
-#pragma omp parallel for
-    for (size_t j = 0; j < (*B).size(); ++j) {
-      vertexCoverage[(*B)[j]] -= 1;
-    }
-  }
-}
 
 //! \brief Select k seeds starting from the a list of Random Reverse
 //! Reachability Sets.
@@ -374,11 +82,11 @@ void UpdateCounters(RRRsetsItrTy B, RRRsetsItrTy E,
 //!
 //! \return a pair where the size_t is the number of RRRset covered and
 //! the set of vertices selected as seeds.
-template <typename GraphTy, typename RRRset, typename execution_tag>
+template <typename GraphTy, typename RRRset>
 auto FindMostInfluentialSet(const GraphTy &G, size_t k,
                             std::vector<RRRset> &RRRsets,
                             IMMExecutionRecord & record,
-                            execution_tag &&ex_tag) {
+                            sequential_tag &&ex_tag) {
   using vertex_type = typename GraphTy::vertex_type;
 
   std::vector<uint32_t> vertexCoverage(G.num_nodes(), 0);
@@ -396,12 +104,12 @@ auto FindMostInfluentialSet(const GraphTy &G, size_t k,
 
   auto counting = measure<>::exec_time([&]() {
   CountOccurrencies(RRRsets.begin(), RRRsets.end(), vertexCoverage.begin(),
-                    vertexCoverage.end(), std::forward<execution_tag>(ex_tag));
+                    vertexCoverage.end(), std::forward<sequential_tag>(ex_tag));
     });
 
   InitHeapStorage(vertexCoverage.begin(), vertexCoverage.end(),
                   queue_storage.begin(), queue_storage.end(),
-                  std::forward<execution_tag>(ex_tag));
+                  std::forward<sequential_tag>(ex_tag));
 
   priorityQueue queue(cmp, std::move(queue_storage));
 
@@ -431,24 +139,18 @@ auto FindMostInfluentialSet(const GraphTy &G, size_t k,
 
     auto start = std::chrono::high_resolution_clock::now();
     auto itr = partition(RRRsets.begin(), end, cmp,
-                         std::forward<execution_tag>(ex_tag));
+                         std::forward<sequential_tag>(ex_tag));
     pivoting += (std::chrono::high_resolution_clock::now() - start);
 
     counting += measure<>::exec_time([&]() {
     if (std::distance(itr, end) < std::distance(RRRsets.begin(), itr)) {
       UpdateCounters(itr, end, vertexCoverage,
-                     std::forward<execution_tag>(ex_tag));
+                     std::forward<sequential_tag>(ex_tag));
     } else {
-      if (std::is_same<execution_tag, omp_parallel_tag>::value) {
-#pragma omp parallel for simd
-        for (size_t i = 0; i < vertexCoverage.size(); ++i)
-          vertexCoverage[i] = 0;
-      } else {
-        std::fill(vertexCoverage.begin(), vertexCoverage.end(), 0);
-      }
+      std::fill(vertexCoverage.begin(), vertexCoverage.end(), 0);
       CountOccurrencies(RRRsets.begin(), itr, vertexCoverage.begin(),
                         vertexCoverage.end(),
-                        std::forward<execution_tag>(ex_tag));
+                        std::forward<sequential_tag>(ex_tag));
     }
       });
     end = itr;
@@ -461,6 +163,17 @@ auto FindMostInfluentialSet(const GraphTy &G, size_t k,
   record.Pivoting.push_back(pivoting);
   return std::make_pair(f, result);
 }
+
+template <typename GraphTy, typename RRRset>
+auto FindMostInfluentialSet(const GraphTy &G, size_t k,
+                            std::vector<RRRset> &RRRsets,
+                            IMMExecutionRecord & record,
+                            omp_parallel_tag &&ex_tag) {
+  StreamingFindMostInfluential<GraphTy> SE(G, RRRsets);
+  return SE.find_most_influential_set(k);
+}
+
+
 
 
 #if RIPPLES_ENABLE_CUDA
