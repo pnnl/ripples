@@ -9,12 +9,14 @@
 
 #include <cstddef>
 #include <vector>
+#include <utility>
 
 #include <cuda_runtime.h>
 
 #include "trng/lcg64.hpp"
 
 #include "ripples/diffusion_simulation.h"
+#include "ripples/cuda/cuda_utils.h"
 #include "ripples/graph.h"
 
 #include "spdlog/fmt/ostr.h"
@@ -52,13 +54,6 @@ struct cuda_device_graph {
 
 constexpr size_t CUDA_WALK_SIZE = 8;
 
-//! \brief CUDA runtime wrap functions.
-size_t cuda_max_blocks();
-size_t cuda_num_devices();
-void cuda_set_device(size_t);
-void cuda_stream_create(cudaStream_t *);
-void cuda_stream_destroy(cudaStream_t);
-
 //
 // host-device API
 //
@@ -74,16 +69,6 @@ void cuda_destroy_ctx(cuda_ctx *);
 typename cuda_device_graph::vertex_t *cuda_graph_index(cuda_ctx *);
 typename cuda_device_graph::vertex_t *cuda_graph_edges(cuda_ctx *);
 typename cuda_device_graph::weight_t *cuda_graph_weights(cuda_ctx *);
-
-void cuda_malloc(void **dst, size_t size);
-void cuda_free(void *ptr);
-void cuda_d2h(void *dst, void *src, size_t size, cudaStream_t);
-void cuda_d2h(void *dst, void *src, size_t size);
-void cuda_h2d(void *dst, void *src, size_t size, cudaStream_t);
-void cuda_h2d(void *dst, void *src, size_t size);
-void cuda_memset(void *dst, int val, size_t size, cudaStream_t s);
-void cuda_memset(void *dst, int val, size_t size);
-void cuda_sync(cudaStream_t);
 
 void cuda_lt_rng_setup(cuda_PRNGeneratorTy *d_trng_state,
                        const cuda_PRNGeneratorTy &r, size_t num_seqs,

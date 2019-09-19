@@ -43,7 +43,7 @@
 #ifndef RIPPLES_CUDA_FIND_MOST_INFLUENTIAL_H
 #define RIPPLES_CUDA_FIND_MOST_INFLUENTIAL_H
 
-#include "ripples/cuda/cuda_generate_rrr_sets.h"
+#include "ripples/cuda/cuda_utils.h"
 
 #include <utility>
 
@@ -61,6 +61,12 @@ CudaUpdateCounters(size_t batch_size, uint32_t *d_rr_vertices,
 void CudaCountOccurrencies(
     uint32_t * d_Counters, uint32_t * d_rrr_sets,
     size_t rrr_sets_size, size_t num_nodes);
+
+void CudaCountOccurrencies(
+    uint32_t * d_Counters, uint32_t * d_rrr_sets,
+    size_t rrr_sets_size, size_t num_nodes, cudaStream_t S)
+
+void CudaReduceCounters(uint32_t * src, uint32_t * dest, size_t N);
 
 size_t CountZeros(char * d_rr_mask, size_t N);
 

@@ -40,7 +40,6 @@
 //
 //===----------------------------------------------------------------------===//
 
-
 #include <cstddef>
 #include <queue>
 #include <utility>
@@ -58,20 +57,76 @@ class FindMostInfluentialWorker {
  public:
   using vertex_type = typename GraphTy::vertex_type;
 
+  virtual ~FindMostInfluentialWorker() {}
+
   virtual void InitialCount() = 0;
 
   virtual void UpdateCounters(vertex_type last_seed) = 0;
+
+  virtual void ReduceCounters() = 0;
 };
 
+#if RIPPLES_ENABLE_CUDA
 template <typename GraphTy>
 class GPUFindMostInfluentialWorker : public FindMostInfluentialWorker<GraphTy>
 {
  public:
   using vertex_type = typename GraphTy::vertex_type;
 
-  void InitialCount() {}
+  GPUFindMostInfluentialWorker(size_t device_number, uint32_t * d_counters,
+                               uint32_t * d_rr_vertices_, uint32_t * d_rr_edges_,
+                               size_t num_nodes,
+                               std::vector<uint32_t *> & device_counters,
+                               std::vector<uint32_t> & global_counters,
+                               std::vector<std::pair<size_t, size_t>> & reduction_tree)
+      : device_number_(device_number)
+      , d_counters_(d_counters)
+      , d_rr_vertices_(d_rr_vertices)
+      , d_rr_edges_(d_rr_edges)
+      , num_nodes_(num_nodes)
+      , global_counters_(global_counters)
+  {
+    cuda_set_device(device_number);
+    cuda_stream_create(&stream_);
+    reduction_target_ = reduction_tree[device_number].first;
+    cuda_enable_p2p(reduction_target_);
+    reduction_step_ = reduction_tree[device_number].second;
+  }
+
+  ~GPUFindMostInfluentialWorker() {
+    cuda_disable_p2p(reduction_target_);
+    cuda_stream_destroy(stream_);
+  }
+
+  void InitialCount() {
+    CudaCountOccurrencies(d_counters_, d_rr_edges_,
+                          d_rr_set_size_, num_nodes_, stream_);
+  }
   void UpdateCounters(vertex_type last_seed) {}
+  void ReduceCounters(size_t step) {
+    if (step != reduction_step_) return;
+
+    // Accumulate in target array.
+    Cuda_ReduceCounters(stream_, d_counters_, d_counters_dest, num_nodes);
+  }
+
+ private:
+  cuda_Stream_t stream_;
+  size_t device_number_;
+  size_t reduction_step_;
+  size_t reduction_target_;
+  uint32_t * d_counters_;
+  uint32_t * d_counters_dest;
+  uint32_t * d_rr_vertices_;
+  uint32_t * d_rr_edges_;
+  size_t d_rr_set_size_;
+
+  char * d_mask;
+  size_t num_nodes;
+  std::vector<uint32_t> & global_counters_;
 };
+
+#endif
 
 template <typename GraphTy>
 class CPUFindMostInfluentialWorker : public FindMostInfluentialWorker<GraphTy> {
@@ -117,6 +172,8 @@ class CPUFindMostInfluentialWorker : public FindMostInfluentialWorker<GraphTy> {
     end_ = itr;
   }
 
+  void ReduceCounters() {}
+
  private:
   std::vector<vertex_type> & global_count_;
   std::vector<std::pair<vertex_type, size_t>> & queue_storage_;
@@ -142,7 +199,9 @@ class StreamingFindMostInfluential {
   using vertex_type = typename GraphTy::vertex_type;
   using worker_type = FindMostInfluentialWorker<GraphTy>;
   using cpu_worker_type = CPUFindMostInfluentialWorker<GraphTy>;
+#if RIPPLES_ENABLE_CUDA
   using gpu_worker_type = GPUFindMostInfluentialWorker<GraphTy>;
+#endif
 
   CompareHeap<GraphTy> cmpHeap;
   using priorityQueue =
@@ -161,13 +220,45 @@ class StreamingFindMostInfluential {
   {
     #pragma omp single
     { num_cpu_workers_ = omp_get_max_threads(); }
+#if RIPPLES_ENABLE_CUDA
+    // Get Number of device and allocate 1 thread each.
+    num_gpu_workers_ = cuda_num_devices();
+    num_cpu_workers_ -= num_gpu_workers_;
 
+    // Allocate Counters
+    d_counters_.reserve(num_gpu_workers_);
+    for (size_t i = 0; i < num_gpu_workers_; ++i) {
+      uint32_t * ptr;
+      cuda_malloc(&ptr, sizeof(uint32_t) * G.num_nodes());
+      d_counters_.push_back(ptr);
+    }
+
+    // Data loading into device
+
+    // Merge Procedure
+
+    // Define Reduction tree on GPU workers.
+    auto tree = cuda_build_topology_graph();
+
+    // Construct GPU workers
+#endif
     workers_.push_back(
         new CPUFindMostInfluentialWorker<GraphTy>(vertex_coverage_,
                                                   queue_storage_,
                                                   RRRsets_.begin(),
                                                   RRRsets_.end(),
                                                   num_cpu_workers_));
+  }
+
+  ~StreamingFindMostInfluential() {
+#if RIPPLES_ENABLE_CUDA
+    for (auto b : d_counters_) {
+      cuda_free(b);
+    }
+#endif
+    for (auto w : workers_) {
+      delete w;
+    }
   }
 
   void InitialCount() {
@@ -238,6 +329,7 @@ class StreamingFindMostInfluential {
   size_t num_cpu_workers_, num_gpu_workers_;
   RRRsets<GraphTy> &RRRsets_;
   std::vector<worker_type *> workers_;
+  std::vector<uint32_t *> d_counters_;
   std::vector<uint32_t> vertex_coverage_;
   std::vector<std::pair<vertex_type, size_t>> queue_storage_;
 };

@@ -73,14 +73,20 @@ void cuda_count_kernel(size_t n_blocks, size_t block_size, size_t batch_size,
 
 void CudaCountOccurrencies(
     uint32_t * d_Counters, uint32_t * d_rrr_sets,
+    size_t rrr_sets_size, size_t num_nodes, cudaStream_t S) {
+  cuda_count_kernel(
+      (rrr_sets_size + 255) / 256,
+      256, rrr_sets_size, num_nodes, d_Counters, d_rrr_sets, compute_stream);
+}
+
+void CudaCountOccurrencies(
+    uint32_t * d_Counters, uint32_t * d_rrr_sets,
     size_t rrr_sets_size, size_t num_nodes) {
   cudaStream_t compute_stream;
   cuda_stream_create(&compute_stream);
 
-  cuda_count_kernel(
-      (rrr_sets_size + 255) / 256,
-      256, rrr_sets_size, num_nodes, d_Counters, d_rrr_sets, compute_stream);
-
+  CudaCountOccurrencies(d_Counters, d_rrr_sets, rrr_sets_size,
+                        num_nodes, compute_stream);
   cuda_sync(compute_stream);
 }
 
@@ -168,6 +174,28 @@ size_t CountZeros(char * d_rr_mask, size_t N) {
   thrust::device_ptr<char> dev_ptr = thrust::device_pointer_cast(d_rr_mask);
   char zero = 0;
   return thrust::count(dev_ptr, dev_ptr + N, zero);
+}
+
+
+__global__ void sum_vectors(uint32_t * src, uint32_t * dst, size_t N) {
+  size_t pos = threadIdx.x + blockDim.x * blockIdx.x;
+  if (pos < N) {
+    if (src[pos]) {
+      atomicAdd(dst + pos, src[pos]);
+    }
+  }
+}
+
+
+void cuda_sum_vectors(size_t n_blocks, size_t block_size,
+                      size_t batch_size, uint32_t *src, uint32_t * dst,
+                      cudaStream_t stream) {
+  sum_vectors<<<n_blocks, block_size, 0, stream>>>(src, dst, batch_size);
+}
+
+void CudaReduceCounters(cudaStream_t S, uint32_t * src, uint32_t * dest, size_t N) {
+  cuda_sum_vectors((N + 255) / 256, 256, N, src, dest, S);
+  coda_sync(S);
 }
 
 } // namespace ripples
