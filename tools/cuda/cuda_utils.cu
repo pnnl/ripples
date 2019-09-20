@@ -124,7 +124,10 @@ cuda_build_topology_graph() {
 }
 
 std::vector<std::pair<size_t, size_t>> cuda_get_reduction_tree() {
-  auto [index, edges] = cuda_build_topology_graph();
+  auto topo = cuda_build_topology_graph();
+  auto & index = topo.first;
+  auto & edges = topo.second;
+  
   size_t num_devices = cuda_num_devices();
   std::vector<bool> visited(num_devices);
   // Predecessor and Level.
@@ -149,7 +152,7 @@ std::vector<std::pair<size_t, size_t>> cuda_get_reduction_tree() {
       if (!visited[n]) {
         visited[n] = true;
         queue.push_back(n);
-        results[n] = std::make_pair(v, level + 1);
+        result[n] = std::make_pair(v, level + 1);
       }
     }
 
@@ -197,7 +200,7 @@ void cuda_memset(void *dst, int val, size_t size) {
 void cuda_sync(cudaStream_t stream) { cudaStreamSynchronize(stream); }
 
 void cuda_enable_p2p(size_t dev_number) {
-  cudaDeviceEnablePeerAccess(dev_number);
+  cudaDeviceEnablePeerAccess(dev_number, 0);
 }
 
 void cuda_disable_p2p(size_t dev_number) {

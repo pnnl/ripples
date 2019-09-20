@@ -49,6 +49,11 @@
 
 #include "ripples/generate_rrr_sets.h"
 
+#if RIPPLES_ENABLE_CUDA
+#include "ripples/cuda/cuda_utils.h"
+#include "ripples/cuda/find_most_influential.h"
+#endif
+
 
 namespace ripples {
 
@@ -74,7 +79,7 @@ class GPUFindMostInfluentialWorker : public FindMostInfluentialWorker<GraphTy>
   using vertex_type = typename GraphTy::vertex_type;
 
   GPUFindMostInfluentialWorker(size_t device_number, uint32_t * d_counters,
-                               uint32_t * d_rr_vertices_, uint32_t * d_rr_edges_,
+                               uint32_t * d_rr_vertices, uint32_t * d_rr_edges,
                                size_t num_nodes,
                                std::vector<uint32_t *> & device_counters,
                                std::vector<uint32_t> & global_counters,
@@ -107,11 +112,11 @@ class GPUFindMostInfluentialWorker : public FindMostInfluentialWorker<GraphTy>
     if (step != reduction_step_) return;
 
     // Accumulate in target array.
-    Cuda_ReduceCounters(stream_, d_counters_, d_counters_dest, num_nodes);
+    CudaReduceCounters(stream_, d_counters_, d_counters_dest, num_nodes_);
   }
 
  private:
-  cuda_Stream_t stream_;
+  cudaStream_t stream_;
   size_t device_number_;
   size_t reduction_step_;
   size_t reduction_target_;
@@ -122,7 +127,7 @@ class GPUFindMostInfluentialWorker : public FindMostInfluentialWorker<GraphTy>
   size_t d_rr_set_size_;
 
   char * d_mask;
-  size_t num_nodes;
+  size_t num_nodes_;
   std::vector<uint32_t> & global_counters_;
 };
 
@@ -229,7 +234,7 @@ class StreamingFindMostInfluential {
     d_counters_.reserve(num_gpu_workers_);
     for (size_t i = 0; i < num_gpu_workers_; ++i) {
       uint32_t * ptr;
-      cuda_malloc(&ptr, sizeof(uint32_t) * G.num_nodes());
+      cuda_malloc(reinterpret_cast<void**>(&ptr), sizeof(uint32_t) * G.num_nodes());
       d_counters_.push_back(ptr);
     }
 
@@ -238,7 +243,7 @@ class StreamingFindMostInfluential {
     // Merge Procedure
 
     // Define Reduction tree on GPU workers.
-    auto tree = cuda_build_topology_graph();
+    auto tree = cuda_get_reduction_tree();
 
     // Construct GPU workers
 #endif

@@ -76,7 +76,7 @@ void CudaCountOccurrencies(
     size_t rrr_sets_size, size_t num_nodes, cudaStream_t S) {
   cuda_count_kernel(
       (rrr_sets_size + 255) / 256,
-      256, rrr_sets_size, num_nodes, d_Counters, d_rrr_sets, compute_stream);
+      256, rrr_sets_size, num_nodes, d_Counters, d_rrr_sets, S);
 }
 
 void CudaCountOccurrencies(
@@ -195,7 +195,7 @@ void cuda_sum_vectors(size_t n_blocks, size_t block_size,
 
 void CudaReduceCounters(cudaStream_t S, uint32_t * src, uint32_t * dest, size_t N) {
   cuda_sum_vectors((N + 255) / 256, 256, N, src, dest, S);
-  coda_sync(S);
+  cuda_sync(S);
 }
 
 } // namespace ripples

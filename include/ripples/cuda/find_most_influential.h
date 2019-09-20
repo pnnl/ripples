@@ -46,6 +46,8 @@
 #include "ripples/cuda/cuda_utils.h"
 
 #include <utility>
+#include <cstddef>
+#include <cstdint>
 
 namespace ripples {
 
@@ -64,9 +66,10 @@ void CudaCountOccurrencies(
 
 void CudaCountOccurrencies(
     uint32_t * d_Counters, uint32_t * d_rrr_sets,
-    size_t rrr_sets_size, size_t num_nodes, cudaStream_t S)
+    size_t rrr_sets_size, size_t num_nodes, cudaStream_t S);
 
 void CudaReduceCounters(uint32_t * src, uint32_t * dest, size_t N);
+void CudaReduceCounters(cudaStream_t S, uint32_t * src, uint32_t * dest, size_t N);
 
 size_t CountZeros(char * d_rr_mask, size_t N);
 
