@@ -54,6 +54,13 @@ namespace ripples {
 std::pair<uint32_t, size_t> CudaMaxElement(uint32_t * b, size_t N);
 
 void
+CudaUpdateCounters(cudaStream_t compute_stream,
+                   size_t batch_size, uint32_t *d_rr_vertices,
+                   uint32_t * d_rr_edges, char * d_mask,
+                   uint32_t * d_Counters, size_t num_nodes,
+                   uint32_t last_seed);
+
+void
 CudaUpdateCounters(size_t batch_size, uint32_t *d_rr_vertices,
                    uint32_t * d_rr_edges, char * d_mask,
                    uint32_t * d_Counters, size_t num_nodes,

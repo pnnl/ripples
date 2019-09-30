@@ -75,6 +75,8 @@ void cuda_sync(cudaStream_t);
 void cuda_enable_p2p(size_t dev_number);
 void cuda_disable_p2p(size_t dev_number);
 
+size_t cuda_available_memory();
+
 }  // namespace ripples
 
 #endif  // IM_CUDA_CUDA_UTILS_H

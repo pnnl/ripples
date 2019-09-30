@@ -144,14 +144,12 @@ void cuda_update_mask_kernel(size_t n_blocks, size_t block_size,
 }
 
 
-void
-CudaUpdateCounters(size_t batch_size, uint32_t *d_rr_vertices,
-                   uint32_t * d_rr_edges, char * d_mask,
-                   uint32_t * d_Counters, size_t num_nodes,
-                   uint32_t last_seed) {
-  cudaStream_t compute_stream;
+void CudaUpdateCounters(cudaStream_t compute_stream,
+                        size_t batch_size, uint32_t *d_rr_vertices,
+                        uint32_t * d_rr_edges, char * d_mask,
+                        uint32_t * d_Counters, size_t num_nodes,
+                        uint32_t last_seed) {
   cudaStream_t data_stream;
-  cuda_stream_create(&compute_stream);
   cuda_stream_create(&data_stream);
 
   cuda_update_mask_kernel((batch_size + 255) / 256, 256, batch_size,
@@ -168,6 +166,19 @@ CudaUpdateCounters(size_t batch_size, uint32_t *d_rr_vertices,
                               d_Counters, compute_stream);
 
   cuda_sync(compute_stream);
+}
+
+
+void
+CudaUpdateCounters(size_t batch_size, uint32_t *d_rr_vertices,
+                   uint32_t * d_rr_edges, char * d_mask,
+                   uint32_t * d_Counters, size_t num_nodes,
+                   uint32_t last_seed) {
+  cudaStream_t compute_stream;
+  cuda_stream_create(&compute_stream);
+
+  CudaUpdateCounters(compute_stream, batch_size, d_rr_vertices, d_rr_edges, d_mask,
+                     d_Counters, num_nodes, last_seed);
 }
 
 size_t CountZeros(char * d_rr_mask, size_t N) {

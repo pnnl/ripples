@@ -41,6 +41,7 @@
 //===----------------------------------------------------------------------===//
 
 #include <cstdio>
+#include <iostream>
 
 #include "ripples/cuda/cuda_utils.h"
 
@@ -107,7 +108,7 @@ cuda_build_topology_graph() {
 
   for (size_t i = 0; i < num_devices; ++i) {
     index[i + 1] = index[i];
-    for (size_t j = 0; j < num_devices; ++i) {
+    for (size_t j = 0; j < num_devices; ++j) {
       if (i == j) continue;
 
       int atomics = 0;
@@ -145,12 +146,12 @@ std::vector<std::pair<size_t, size_t>> cuda_get_reduction_tree() {
 
   while (itr != queue.end()) {
     size_t v = *itr;
+    visited[v] = true;
 
     for (size_t i = index[v]; i < index[v + 1]; ++i) {
       size_t n = edges[i];
 
       if (!visited[n]) {
-        visited[n] = true;
         queue.push_back(n);
         result[n] = std::make_pair(v, level + 1);
       }
@@ -205,6 +206,13 @@ void cuda_enable_p2p(size_t dev_number) {
 
 void cuda_disable_p2p(size_t dev_number) {
   cudaDeviceDisablePeerAccess(dev_number);
+}
+
+size_t cuda_available_memory() {
+  size_t total , free;
+  cudaMemGetInfo(&free, &total);
+  cuda_check(__FILE__, __LINE__);
+  return free;
 }
 
 }  // namespace ripples

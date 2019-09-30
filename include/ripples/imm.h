@@ -62,6 +62,8 @@
 
 #include "ripples/streaming_rrr_generator.h"
 
+#define CUDA_PROFILE 0
+
 namespace ripples {
 
 //! The IMM algorithm configuration descriptor.
@@ -188,6 +190,7 @@ auto Sampling(const GraphTy &G, std::size_t k, double epsilon, double l,
 
     auto timeMostInfluential = measure<>::exec_time([&]() {
       const auto &S =
+      // FindMostInfluentialSet(G, k, RR, record, cuda_parallel_tag{});
       FindMostInfluentialSet(G, k, RR, record, std::forward<execution_tag>(ex_tag));
 
       f = S.first;
@@ -297,6 +300,7 @@ auto IMM(const GraphTy &G, std::size_t k, double epsilon, double l,
                     std::forward<diff_model_tag>(model_tag),
                     std::forward<omp_parallel_tag>(ex_tag));
 
+
 #if CUDA_PROFILE
   auto logst = spdlog::stdout_color_st("IMM-profile");
   std::vector<size_t> rrr_sizes;
@@ -310,9 +314,18 @@ auto IMM(const GraphTy &G, std::size_t k, double epsilon, double l,
 #endif
 
   auto start = std::chrono::high_resolution_clock::now();
+  // const auto &S1 =
+  //     FindMostInfluentialSet(G, k, R, record, cuda_parallel_tag{});
   const auto &S =
       FindMostInfluentialSet(G, k, R, record,
                              std::forward<omp_parallel_tag>(ex_tag));
+
+  // auto imm = spdlog::stdout_color_st("IMM");
+  // if (S1 == S) {
+  //   imm->info("Success!!!");
+  // } else {
+  //   imm->info("Bummer!!!");
+  // }
   auto end = std::chrono::high_resolution_clock::now();
 
   record.FindMostInfluentialSet = end - start;

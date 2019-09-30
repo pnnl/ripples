@@ -44,6 +44,7 @@
 #define RIPPLES_PARTITION_H
 
 #include <algorithm>
+#include <iostream>
 
 #include "ripples/utility.h"
 
@@ -99,6 +100,11 @@ struct PartitionIndices {
   ItrTy begin;
   ItrTy end;
   ItrTy pivot;
+
+  PartitionIndices()
+      : begin{nullptr},
+        end{nullptr},
+        pivot{nullptr} {}
 
   PartitionIndices(PartitionIndices &&O)
       : begin{std::move(O.begin)},
@@ -158,31 +164,31 @@ struct PartitionIndices {
     return result;
   }
 
-  PartitionIndices operator+(const PartitionIndices &O) {
-    PartitionIndices result(*this);
+  // PartitionIndices operator+(const PartitionIndices &O) {
+  //   PartitionIndices result(*this);
 
-    if (this->pivot == this->begin && O.pivot == O.begin) {
-      result.end = O.end;
-      return result;
-    } else if (this->pivot == this->end) {
-      result.end = O.end;
-      result.pivot = O.pivot;
-      return result;
-    }
+  //   if (this->pivot == this->begin && O.pivot == O.begin) {
+  //     result.end = O.end;
+  //     return result;
+  //   } else if (this->pivot == this->end) {
+  //     result.end = O.end;
+  //     result.pivot = O.pivot;
+  //     return result;
+  //   }
 
-    if (std::distance(this->pivot, this->end) <
-        std::distance(O.begin, O.pivot)) {
-      size_t toBeMoved = std::distance(this->pivot, this->end);
-      swap_ranges(this->pivot, this->end, std::prev(O.pivot, toBeMoved),
-                  ex_tag{});
-      result.pivot = std::prev(O.pivot, toBeMoved);
-    } else {
-      result.pivot = swap_ranges(O.begin, O.pivot, this->pivot, ex_tag{});
-    }
-    result.end = O.end;
+  //   if (std::distance(this->pivot, this->end) <
+  //       std::distance(O.begin, O.pivot)) {
+  //     size_t toBeMoved = std::distance(this->pivot, this->end);
+  //     swap_ranges(this->pivot, this->end, std::prev(O.pivot, toBeMoved),
+  //                 ex_tag{});
+  //     result.pivot = std::prev(O.pivot, toBeMoved);
+  //   } else {
+  //     result.pivot = swap_ranges(O.begin, O.pivot, this->pivot, ex_tag{});
+  //   }
+  //   result.end = O.end;
 
-    return result;
-  }
+  //   return result;
+  // }
 };
 
 }  // namespace
@@ -207,16 +213,12 @@ ItrTy partition(ItrTy B, ItrTy E, UnaryPredicate P, size_t num_threads) {
   }
 
   for (size_t j = 1; j < num_threads; j <<= 1) {
-#pragma omp parallel num_threads(num_threads)
+#pragma omp parallel num_threads(num_threads >> j)
     {
-#pragma omp single nowait
-      for (size_t i = 0; (i + j) < num_threads; i += j * 2) {
-#pragma omp task firstprivate(i, j)
-        {
-          indices[i] =
-              indices[i].mergeBlocks(indices[i + j],
-                                     std::min(2 * j, num_threads));
-        }
+      #pragma omp for schedule(dynamic)
+      for (size_t i = 0; i < (num_threads - j); i += j * 2) {
+       indices[i] = indices[i].mergeBlocks(indices[i + j],
+                                           std::min(2 * j, num_threads));
       }
     }
   }

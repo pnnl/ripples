@@ -83,8 +83,8 @@ def configure(conf):
     conf.load('catch2', tooldir='waftools')
     conf.load('cli', tooldir='waftools')
 
-    conf.check_cxx(cxxflags=['-fopenmp'], ldflags=['-fopenmp'],
-                   libpath=['{0}/lib/'.format(conf.options.openmp_root)],
+    conf.check_cxx(cxxflags=['-fopenmp'], ldflags=['-liomp5'],
+                   libpath=['{0}'.format(conf.options.openmp_root)],
                    uselib_store='OpenMP')
 
     if conf.options.enable_mpi:
