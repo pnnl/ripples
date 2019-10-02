@@ -48,6 +48,7 @@
 #include <vector>
 
 #include "thrust/extrema.h"
+#include "thrust/device_ptr.h"
 
 
 namespace ripples {

@@ -112,7 +112,7 @@ cuda_build_topology_graph() {
       if (i == j) continue;
 
       int atomics = 0;
-      cudaDeviceGetP2PAttribute(&atomics, cudaDevP2PAttrNativeAtomicSupported, i, j);
+      cudaDeviceGetP2PAttribute(&atomics, cudaDevP2PAttrNativeAtomicSupported, j, i);
 
       if (atomics) {
         index[i + 1] += 1;

@@ -75,7 +75,7 @@ def configure(conf):
     conf.load('waf_unit_test')
     conf.load('sphinx', tooldir='waftools')
 
-    conf.env.CXXFLAGS += ['-std=c++14', '-O3', '-march=native', '-pipe']
+    conf.env.CXXFLAGS += ['-std=c++14', '-O3', '-mtune=native', '-pipe']
 
     conf.load('spdlog', tooldir='waftools')
     conf.load('libjson', tooldir='waftools')
@@ -83,7 +83,7 @@ def configure(conf):
     conf.load('catch2', tooldir='waftools')
     conf.load('cli', tooldir='waftools')
 
-    conf.check_cxx(cxxflags=['-fopenmp'], ldflags=['-liomp5'],
+    conf.check_cxx(cxxflags=['-fopenmp'], ldflags=['-fopenmp'],
                    libpath=['{0}'.format(conf.options.openmp_root)],
                    uselib_store='OpenMP')
 
