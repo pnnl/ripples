@@ -70,7 +70,7 @@ def configure(conf):
     conf.load('waf_unit_test')
     conf.load('sphinx', tooldir='waftools')
 
-    conf.env.CXXFLAGS += ['-std=c++17', '-O3', '-march=native', '-pipe']
+    conf.env.CXXFLAGS += ['-std=c++17', '-O3', '-mtune=native', '-pipe']
 
     conf.load('spdlog', tooldir='waftools')
     conf.load('libjson', tooldir='waftools')
