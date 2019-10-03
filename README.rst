@@ -26,6 +26,55 @@ problem.
            ninth ACM SIGKDD international conference on Knowledge discovery and
            data mining (pp. 137-146). ACM.
 
+
+How to cite
+===========
+
+.. [Cluster19] Marco Minutoli, Mahantesh Halappanavar, Ananth Kalyanaraman, Arun
+               Sathanur, Ryan Mcclure, Jason McDermott. 2019. Fast and Scalable
+               Implementations of Influence Maximization Algorithms. In
+               Proceedings of the IEEE Cluster 2019.
+
+
+Quickstart with Conan
+=====================
+
+First of all we need to set up the Python environment needed.
+
+.. code-block:: shell
+
+   $ pip install --user pipenv
+   $ pipenv --three
+   $ pipenv install
+   $ pipenv shell
+
+Then we need to install dependencies:
+
+.. code-block:: shell
+
+   $ conan create conan/waf-generator user/stable
+   $ conan create conan/trng user/stable
+   $ conan install .
+
+Now we are ready to configure and build ripples:
+
+.. code-block:: shell
+
+   $ ./waf configure --enable-mpi build
+   # or without MPI support
+   $ ./waf configure build
+
+In the case you are a Mac OS user, you will need to install the LLVM toolchain
+through brew that comes with OpenMP support.  Compiling Ripples than is as
+simple as:
+
+.. code-block:: shell
+
+   $ ./waf configure --openmp-root=/usr/local/opt/llvm --enable-mpi build
+   # or without MPI support
+   $ ./waf configure --openmp-root=/usr/local/opt/llvm build
+
+
 Quickstart with Docker
 ======================
 
