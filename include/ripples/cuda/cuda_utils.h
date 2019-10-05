@@ -60,7 +60,7 @@ void cuda_set_device(size_t);
 void cuda_stream_create(cudaStream_t *);
 void cuda_stream_destroy(cudaStream_t);
 
-std::vector<std::pair<size_t, size_t>> cuda_get_reduction_tree();
+std::vector<std::pair<size_t, ssize_t>> cuda_get_reduction_tree();
 
 void cuda_malloc(void **dst, size_t size);
 void cuda_free(void *ptr);

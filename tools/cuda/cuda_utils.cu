@@ -124,7 +124,8 @@ cuda_build_topology_graph() {
   return std::make_pair(index, edges);
 }
 
-std::vector<std::pair<size_t, size_t>> cuda_get_reduction_tree() {
+  // std::vector<std::pair<size_t, size_t>>
+std::vector<std::pair<size_t, ssize_t>> cuda_get_reduction_tree() {
   auto topo = cuda_build_topology_graph();
   auto & index = topo.first;
   auto & edges = topo.second;
@@ -132,14 +133,13 @@ std::vector<std::pair<size_t, size_t>> cuda_get_reduction_tree() {
   size_t num_devices = cuda_num_devices();
   std::vector<bool> visited(num_devices);
   // Predecessor and Level.
-  std::vector<std::pair<size_t, size_t>> result(num_devices);
+  std::vector<std::pair<size_t, ssize_t>> result(num_devices, std::make_pair(size_t(0), ssize_t(-1)));
 
   std::vector<size_t> queue;
-  queue.reserve(num_devices);
+  queue.reserve(edges.size());
 
   queue.push_back(0);
-  result[0] = std::make_pair(size_t(0), size_t(0));
-  size_t level = 0;
+  result[0] = std::make_pair(size_t(0), ssize_t(0));
 
   auto itr = queue.begin();
   auto level_end = queue.end();
@@ -151,15 +151,16 @@ std::vector<std::pair<size_t, size_t>> cuda_get_reduction_tree() {
     for (size_t i = index[v]; i < index[v + 1]; ++i) {
       size_t n = edges[i];
 
+      if (result[n].second == -1 || result[n].second > (result[v].second + 1)) {
+	result[n] = std::make_pair(v, result[v].second + 1);
+      }
       if (!visited[n]) {
         queue.push_back(n);
-        result[n] = std::make_pair(v, level + 1);
       }
     }
 
     if (++itr == level_end) {
       level_end = queue.end();
-      ++level;
     }
   }
 

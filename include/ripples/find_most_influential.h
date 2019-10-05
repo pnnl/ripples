@@ -173,7 +173,9 @@ auto FindMostInfluentialSet(const GraphTy &G, size_t k,
                             omp_parallel_tag &&ex_tag) {
   size_t num_gpu = 0;
 #ifdef RIPPLES_ENABLE_CUDA
-  num_gpu = cuda_num_devices();
+  if (enableGPU) {
+    num_gpu = cuda_num_devices();
+  }
 #endif
   StreamingFindMostInfluential<GraphTy> SE(G, RRRsets, num_gpu);
   return SE.find_most_influential_set(k);

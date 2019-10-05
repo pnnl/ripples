@@ -96,7 +96,7 @@ std::pair<uint32_t, size_t> CudaMaxElement(uint32_t * b, size_t N) {
 
   thrust::device_ptr<uint32_t> min_ptr = thrust::max_element(dev_ptr, dev_ptr + N);
   uint32_t v = &min_ptr[0] - &dev_ptr[0];
-  return std::make_pair(v, size_t(min_ptr[0]));
+  return std::make_pair(v, size_t(min_ptr[v]));
 }
 
 __global__ void count_uncovered_kernel(
