@@ -92,11 +92,11 @@ void CudaCountOccurrencies(
 }
 
 std::pair<uint32_t, size_t> CudaMaxElement(uint32_t * b, size_t N) {
-  thrust::device_ptr<uint32_t> dev_ptr = thrust::device_pointer_cast(b);
+  thrust::device_ptr<uint32_t> dev_ptr(b);
 
-  thrust::device_ptr<uint32_t> min_ptr = thrust::max_element(dev_ptr, dev_ptr + N);
-  uint32_t v = &min_ptr[0] - &dev_ptr[0];
-  return std::make_pair(v, size_t(min_ptr[v]));
+  thrust::device_ptr<uint32_t> min_ptr = thrust::max_element(thrust::device, dev_ptr, dev_ptr + N);
+  uint32_t v = thrust::distance(dev_ptr, min_ptr);
+  return std::make_pair(v, size_t(dev_ptr[v]));
 }
 
 __global__ void count_uncovered_kernel(
@@ -181,6 +181,7 @@ CudaUpdateCounters(size_t batch_size, uint32_t *d_rr_vertices,
   CudaUpdateCounters(compute_stream, batch_size, d_rr_vertices, d_rr_edges, d_mask,
                      d_Counters, num_nodes, last_seed);
 }
+
 
 size_t CountZeros(char * d_rr_mask, size_t N) {
   thrust::device_ptr<char> dev_ptr = thrust::device_pointer_cast(d_rr_mask);

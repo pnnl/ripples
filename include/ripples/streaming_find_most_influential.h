@@ -113,6 +113,8 @@ class GPUFindMostInfluentialWorker : public FindMostInfluentialWorker<GraphTy>
   }
 
   virtual ~GPUFindMostInfluentialWorker() {
+    cuda_set_device(device_number_);
+
     if (reduction_target_ != device_number_) {
       cuda_disable_p2p(reduction_target_);
     }
@@ -132,8 +134,6 @@ class GPUFindMostInfluentialWorker : public FindMostInfluentialWorker<GraphTy>
     cuda_set_device(device_number_);
     // Ask runtime available memory.
     size_t avail_space = cuda_available_memory();
-
-    // std::cout << "Available Memory" << avail_space << std::endl;
 
     size_t space = 0;
 
@@ -237,6 +237,8 @@ class GPUFindMostInfluentialWorker : public FindMostInfluentialWorker<GraphTy>
   void InitialCount() {
     cuda_set_device(device_number_);
 
+    cuda_memset(d_counters_, 0, num_nodes_ * sizeof(uint32_t), stream_);
+
     CudaCountOccurrencies(d_counters_, d_rr_edges_,
                           d_rr_set_size_, num_nodes_, stream_);
 
@@ -303,7 +305,6 @@ class CPUFindMostInfluentialWorker : public FindMostInfluentialWorker<GraphTy> {
   }
 
   bool has_work() {
-    if (begin_ != end_) std::cout << "There is work!!!" << std::endl;
     return begin_ != end_;
   }
 
@@ -351,7 +352,7 @@ class CPUFindMostInfluentialWorker : public FindMostInfluentialWorker<GraphTy> {
     if (step == 1 && has_work()) {
       cuda_set_device(size_t(0));
 
-      std::cout << d_cpu_counters_ << std::endl;
+      // std::cout << "#### " << d_cpu_counters_ << std::endl;
       cuda_h2d(reinterpret_cast<void*>(d_cpu_counters_),
                reinterpret_cast<void*>(global_count_.data()),
                sizeof(uint32_t) * global_count_.size());
@@ -426,6 +427,7 @@ class StreamingFindMostInfluential {
         size_t rank = omp_get_thread_num();
         cuda_set_device(rank);
         cuda_malloc(reinterpret_cast<void**>(&d_counters_[rank]), sizeof(uint32_t) * G.num_nodes());
+
         if (rank == 0) {
           cuda_malloc(reinterpret_cast<void**>(&d_cpu_counters_), sizeof(uint32_t) * G.num_nodes());
         }
@@ -450,9 +452,9 @@ class StreamingFindMostInfluential {
     for (size_t i = 0; i < num_gpu_workers_; ++i) {
       reduction_steps_ = std::max(reduction_steps_, tree[i].second);
 
-      std::cout << "step " << tree[i].second << " : " << i << " -> " << tree[i].first << std::endl;
+      // std::cout << "step " << tree[i].second << " : " << i << " -> " << tree[i].first << std::endl;
 
-      uint32_t * dest = i == 0 ? d_cpu_counters_ : d_counters_[tree[i].second];
+      uint32_t * dest = i == 0 ? d_cpu_counters_ : d_counters_[tree[i].first];
 
       workers_.push_back(
           new GPUFindMostInfluentialWorker<GraphTy>(
@@ -505,8 +507,6 @@ class StreamingFindMostInfluential {
       size_t rank = omp_get_thread_num();
       workers_[rank]->UpdateCounters(last_seed);
     }
-
-    ReduceCounters();
   }
 
   priorityQueue getHeap() {
@@ -523,7 +523,6 @@ class StreamingFindMostInfluential {
       if (workers_[0]->has_work()) global_counter = d_cpu_counters_;
 
       cuda_set_device(0);
-
       auto result = CudaMaxElement(global_counter, vertex_coverage_.size());
       return result;
     }
@@ -581,7 +580,7 @@ class StreamingFindMostInfluential {
     LoadDataToDevice();
     
     InitialCount();
-    std::cout << "Initial Count Done" << std::endl;
+    // std::cout << "Initial Count Done" << std::endl;
 
     auto queue = getHeap();
 
@@ -597,16 +596,16 @@ class StreamingFindMostInfluential {
       auto end = std::chrono::high_resolution_clock::now();
 
       seedSelection += end - start;
-      std::cout << "Selected : " << element.first << " " << element.second << std::endl;
+      // std::cout << "Selected : " << element.first << " " << element.second << std::endl;
 
       uncovered -= element.second;
       result.push_back(element.first);
 
       if (result.size() == k) break;
 
-      //      std::cout << "Update counters" << std::endl;
+      // std::cout << "Update counters" << std::endl;
       UpdateCounters(element.first);
-      //      std::cout << "Done update counters" << std::endl;
+      // std::cout << "Done update counters" << std::endl;
     }
 
     double f = double(RRRsets_.size() - uncovered) / RRRsets_.size();
