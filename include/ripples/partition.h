@@ -102,9 +102,9 @@ struct PartitionIndices {
   ItrTy pivot;
 
   PartitionIndices()
-      : begin{nullptr},
-        end{nullptr},
-        pivot{nullptr} {}
+      : begin{},
+        end{},
+        pivot{} {}
 
   PartitionIndices(PartitionIndices &&O)
       : begin{std::move(O.begin)},
