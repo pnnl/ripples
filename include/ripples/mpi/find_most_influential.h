@@ -104,13 +104,9 @@ class MPIStreamingFindMostInfluential {
 
         if (rank == 0) {
           cuda_malloc(reinterpret_cast<void**>(&d_cpu_counters_), sizeof(uint32_t) * G.num_nodes());
-          if (mpi_rank == 0) {
-            cuda_malloc(reinterpret_cast<void**>(&d_cpu_reduced_counters_), sizeof(uint32_t) * G.num_nodes());
-          }
+	  cuda_malloc(reinterpret_cast<void**>(&d_cpu_reduced_counters_), sizeof(uint32_t) * G.num_nodes());
         }
       }
-
-      MPI_Bcast(&d_cpu_reduced_counters_, 1, MPI_UINT64_T, 0, MPI_COMM_WORLD);
     }
 #endif
 
@@ -147,8 +143,10 @@ class MPIStreamingFindMostInfluential {
     for (auto b : d_counters_) {
       cuda_free(b);
     }
-    if (num_gpu_workers_ > 0)
+    if (num_gpu_workers_ > 0) {
       cuda_free(d_cpu_counters_);
+      cuda_free(d_cpu_reduced_counters_);
+    }
 #endif
     for (auto w : workers_) {
       delete w;
@@ -186,8 +184,23 @@ class MPIStreamingFindMostInfluential {
       }
     }
 
-    MPI_Reduce(src, dest, vertex_coverage_.size(),
+    // std::cout << "Before Reduction " << std::endl;
+    std::vector<uint32_t> tmp(vertex_coverage_.size(), 0);
+    if (num_gpu_workers_ != 0) {
+      cuda_d2h(reinterpret_cast<void*>(tmp.data()),
+	    reinterpret_cast<void*>(src),
+	    sizeof(uint32_t) * vertex_coverage_.size());
+      src = tmp.data();
+    }
+
+    MPI_Reduce(src, reduced_vertex_coverage_.data(), vertex_coverage_.size(),
                MPI_UINT32_T, MPI_SUM, 0, MPI_COMM_WORLD);
+    if (num_gpu_workers_ != 0) {
+      cuda_h2d(reinterpret_cast<void*>(dest),
+	       reinterpret_cast<void*>(reduced_vertex_coverage_.data()),
+	       sizeof(uint32_t) * vertex_coverage_.size());
+    }
+    // std::cout << "After Reduction " << std::endl;
   }
 
   void UpdateCounters(vertex_type last_seed) {
@@ -217,7 +230,7 @@ class MPIStreamingFindMostInfluential {
       }
 
       MPI_Bcast(&coveredAndSelected, 2, MPI_UINT32_T, 0, MPI_COMM_WORLD);
-      std::cout << "$$$$ " << mpi_rank << " "<< coveredAndSelected[0] << std::endl;
+      // std::cout << "$$$$ " << mpi_rank << " "<< coveredAndSelected[0] << std::endl;
       return std::pair<vertex_type, size_t>(coveredAndSelected[1],
 					    coveredAndSelected[0]);
     }

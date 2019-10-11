@@ -135,7 +135,7 @@ class GPUFindMostInfluentialWorker : public FindMostInfluentialWorker<GraphTy>
   LoadData(rrr_set_iterator B, rrr_set_iterator E) {
     cuda_set_device(device_number_);
     // Ask runtime available memory.
-    size_t avail_space = cuda_available_memory() - (1 << 26);
+    size_t avail_space = cuda_available_memory() - (1 << 29);
 
     size_t space = 0;
 
