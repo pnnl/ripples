@@ -40,6 +40,9 @@
 //
 //===----------------------------------------------------------------------===//
 
+#ifndef RIPPLES_STREAMING_FIND_MOST_INFLUENTIAL_H
+#define RIPPLES_STREAMING_FIND_MOST_INFLUENTIAL_H
+
 #include <cstddef>
 #include <queue>
 #include <utility>
@@ -54,7 +57,6 @@
 #include "ripples/cuda/cuda_utils.h"
 #include "ripples/cuda/find_most_influential.h"
 #endif
-
 
 namespace ripples {
 
@@ -133,7 +135,7 @@ class GPUFindMostInfluentialWorker : public FindMostInfluentialWorker<GraphTy>
   LoadData(rrr_set_iterator B, rrr_set_iterator E) {
     cuda_set_device(device_number_);
     // Ask runtime available memory.
-    size_t avail_space = cuda_available_memory();
+    size_t avail_space = cuda_available_memory() - (1 << 26);
 
     size_t space = 0;
 
@@ -449,6 +451,7 @@ class StreamingFindMostInfluential {
     auto tree = cuda_get_reduction_tree();
 
     // Construct GPU workers
+    // std::cout << "NUM GPUs" << num_gpu_workers_ << std::endl;
     for (size_t i = 0; i < num_gpu_workers_; ++i) {
       reduction_steps_ = std::max(reduction_steps_, tree[i].second);
 
@@ -629,3 +632,5 @@ class StreamingFindMostInfluential {
 };
 
 }  // namespace ripples
+
+#endif

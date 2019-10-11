@@ -66,7 +66,7 @@ def build(bld):
         tools_deps = tools_deps + ['MPI']
         if bld.env.ENABLE_CUDA:
             bld(features='cxx cxxprogram', source='mpi-imm.cc', target='mpi-imm',
-                use=tools_deps + ['cuda_generate_rrr_sets','bfs','cuda_graph','cuda_utils'], cuda=True,
+                use=tools_deps + ['cuda_generate_rrr_sets','cuda_find_most_influential', 'bfs','cuda_graph','cuda_utils'], cuda=True,
                 cxxflags='-DRIPPLES_ENABLE_CUDA')
         else:
             bld(features='cxx cxxprogram', source='mpi-imm.cc', target='mpi-imm',

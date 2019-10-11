@@ -171,21 +171,22 @@ class MPIStreamingFindMostInfluential {
       dest = d_cpu_reduced_counters_;
       src = d_cpu_counters_;
 
-      if (!workers_[0]->has_work() && num_gpu_workers_ == 1) break;
+      if (workers_[0]->has_work() || num_gpu_workers_ > 1) {
 
-      for (ssize_t i = reduction_steps_; i >= 0; --i) {
-        #pragma omp parallel num_threads(num_gpu_workers_ + 1)
-        {
-          size_t rank = omp_get_thread_num();
+	for (ssize_t i = reduction_steps_; i >= 0; --i) {
+          #pragma omp parallel num_threads(num_gpu_workers_ + 1)
+	  {
+	    size_t rank = omp_get_thread_num();
 
-          if (workers_[rank]->has_work()) {
-            workers_[rank]->ReduceCounters(i);
-          }
-        }
+	    if (workers_[rank]->has_work()) {
+	      workers_[rank]->ReduceCounters(i);
+	    }
+	  }
+	}
       }
     }
 
-    MPI_Reduce(src, dst, vertex_coverage_.size(),
+    MPI_Reduce(src, dest, vertex_coverage_.size(),
                MPI_UINT32_T, MPI_SUM, 0, MPI_COMM_WORLD);
   }
 
@@ -218,8 +219,8 @@ class MPIStreamingFindMostInfluential {
 
       MPI_Bcast(&coveredAndSelected, 2, MPI_UINT32_T, 0, MPI_COMM_WORLD);
         
-      return std::make_pair<vertex_type, size_t>(coveredAndSelected[1],
-                                                 coveredAndSelected[0]);
+      return std::pair<vertex_type, size_t>(coveredAndSelected[1],
+					    coveredAndSelected[0]);
     }
 #endif
 
@@ -239,8 +240,8 @@ class MPIStreamingFindMostInfluential {
 
       MPI_Bcast(&coveredAndSelected, 2, MPI_UINT32_T, 0, MPI_COMM_WORLD);
         
-      return std::make_pair<vertex_type, size_t>(coveredAndSelected[1],
-                                                 coveredAndSelected[0]);
+      return std::pair<vertex_type, size_t>(coveredAndSelected[1],
+					    coveredAndSelected[0]);
     }
     throw std::logic_error("Reached a mighty Unreachable State");
   }
@@ -451,8 +452,7 @@ auto FindMostInfluentialSet(const GraphTy &G, size_t k,
 template <typename GraphTy, typename RRRset>
 auto FindMostInfluentialSet(const GraphTy &G, size_t k,
                             std::vector<RRRset> &RRRsets,
-                            IMMExecutionRecord & record,
-                            bool enableGPU,
+			    bool enableGPU,
                             mpi_omp_parallel_tag &&ex_tag) {
   size_t num_gpu = 0;
 #ifdef RIPPLES_ENABLE_CUDA
