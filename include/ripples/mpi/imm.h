@@ -184,6 +184,7 @@ auto Sampling(const GraphTy &G, std::size_t k, double epsilon, double l,
     record.ThetaEstimationMostInfluential.push_back(timeMostInfluential);
 
     if (f >= std::pow(2, -x)) {
+      std::cout << "Fraction " << f << std::endl;
       LB = (G.num_nodes() * f) / (1 + epsilonPrime);
       break;
     }

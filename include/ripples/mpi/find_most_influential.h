@@ -207,8 +207,7 @@ class MPIStreamingFindMostInfluential {
     ReduceCounters();
 #ifdef RIPPLES_ENABLE_CUDA
     if (num_gpu_workers_ != 0) {
-      uint32_t * global_counter = d_counters_[0];
-      if (workers_[0]->has_work()) global_counter = d_cpu_counters_;
+      uint32_t * global_counter = d_cpu_reduced_counters_;
 
       if (mpi_rank == 0) {
         cuda_set_device(0);
@@ -218,7 +217,7 @@ class MPIStreamingFindMostInfluential {
       }
 
       MPI_Bcast(&coveredAndSelected, 2, MPI_UINT32_T, 0, MPI_COMM_WORLD);
-        
+      std::cout << "$$$$ " << mpi_rank << " "<< coveredAndSelected[0] << std::endl;
       return std::pair<vertex_type, size_t>(coveredAndSelected[1],
 					    coveredAndSelected[0]);
     }
@@ -289,10 +288,9 @@ class MPIStreamingFindMostInfluential {
     auto queue = getHeap();
     std::vector<vertex_type> result;
     result.reserve(k);
-    size_t uncovered = RRRsets_.size();
 
     std::chrono::duration<double, std::milli> seedSelection(0);
-    while (uncovered != 0) {
+    while (true) {
       //      std::cout << "Get Seed" << std::endl;
       auto start = std::chrono::high_resolution_clock::now();
       auto element = getNextSeed(queue);
@@ -301,7 +299,6 @@ class MPIStreamingFindMostInfluential {
       seedSelection += end - start;
       // std::cout << "Selected : " << element.first << " " << element.second << std::endl;
 
-      uncovered -= element.second;
       result.push_back(element.first);
 
       if (result.size() == k) break;
@@ -311,7 +308,14 @@ class MPIStreamingFindMostInfluential {
       // std::cout << "Done update counters" << std::endl;
     }
 
-    double f = double(RRRsets_.size() - uncovered) / RRRsets_.size();
+    int world_size = 0;
+    MPI_Comm_size(MPI_COMM_WORLD, &world_size);
+    double f = double(coveredAndSelected[0]) / (world_size * RRRsets_.size());
+    if (mpi_rank == 0) {
+      std::cout << f << " = " << double(coveredAndSelected[0]) << "/ (" << world_size << " * " <<
+          RRRsets_.size() << ")" << std::endl;
+    }
+    // double f = double(RRRsets_.size() - uncovered) / RRRsets_.size();
 
     // std::cout << "#### " << seedSelection.count() << std::endl;
 
