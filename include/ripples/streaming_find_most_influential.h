@@ -107,6 +107,7 @@ class GPUFindMostInfluentialWorker : public FindMostInfluentialWorker<GraphTy>
       , reduction_step_(reduction_step)
       , d_counters_dest_(d_counters_dest)
   {
+    // std::cout << "Reduction Target" << d_counters_dest_ << std::endl;
     cuda_set_device(device_number);
     cuda_stream_create(&stream_);
     if (reduction_target_ != device_number) {

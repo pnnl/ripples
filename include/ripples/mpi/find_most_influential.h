@@ -169,7 +169,7 @@ class MPIStreamingFindMostInfluential {
       dest = d_cpu_reduced_counters_;
       src = d_cpu_counters_;
 
-      if (workers_[0]->has_work() || num_gpu_workers_ > 1) {
+      // if (workers_[0]->has_work() || num_gpu_workers_ > 1) {
 
 	for (ssize_t i = reduction_steps_; i >= 0; --i) {
           #pragma omp parallel num_threads(num_gpu_workers_ + 1)
@@ -180,27 +180,28 @@ class MPIStreamingFindMostInfluential {
 	      workers_[rank]->ReduceCounters(i);
 	    }
 	  }
-	}
+	// }
       }
-    }
 
-    // std::cout << "Before Reduction " << std::endl;
+    // std::cout << "Before Reduction " << src << std::endl;
     std::vector<uint32_t> tmp(vertex_coverage_.size(), 0);
-    if (num_gpu_workers_ != 0) {
-      cuda_d2h(reinterpret_cast<void*>(tmp.data()),
-	    reinterpret_cast<void*>(src),
-	    sizeof(uint32_t) * vertex_coverage_.size());
-      src = tmp.data();
-    }
+    cuda_set_device(0);
 
-    MPI_Reduce(src, reduced_vertex_coverage_.data(), vertex_coverage_.size(),
+    cuda_d2h(reinterpret_cast<void*>(tmp.data()),
+             reinterpret_cast<void*>(src),
+             sizeof(uint32_t) * vertex_coverage_.size());
+      
+    MPI_Reduce(tmp.data(), reduced_vertex_coverage_.data(), vertex_coverage_.size(),
                MPI_UINT32_T, MPI_SUM, 0, MPI_COMM_WORLD);
-    if (num_gpu_workers_ != 0) {
-      cuda_h2d(reinterpret_cast<void*>(dest),
-	       reinterpret_cast<void*>(reduced_vertex_coverage_.data()),
-	       sizeof(uint32_t) * vertex_coverage_.size());
-    }
+
+    cuda_h2d(reinterpret_cast<void*>(dest),
+             reinterpret_cast<void*>(reduced_vertex_coverage_.data()),
+             sizeof(uint32_t) * vertex_coverage_.size());
     // std::cout << "After Reduction " << std::endl;
+    } else {
+      MPI_Reduce(src, dest, vertex_coverage_.size(),
+                 MPI_UINT32_T, MPI_SUM, 0, MPI_COMM_WORLD);
+    }
   }
 
   void UpdateCounters(vertex_type last_seed) {
