@@ -165,9 +165,14 @@ class MPIStreamingFindMostInfluential {
     uint32_t * dest = reduced_vertex_coverage_.data();
     uint32_t * src = vertex_coverage_.data();
 
+    // reduced_vertex_coverage_
+
+
     if (num_gpu_workers_ != 0) {
       dest = d_cpu_reduced_counters_;
       src = d_cpu_counters_;
+
+      cuda_memset(reinterpret_cast<void*>(src), 0, sizeof(uint32_t) * vertex_coverage_.size());
 
       // if (workers_[0]->has_work() || num_gpu_workers_ > 1) {
 
@@ -176,9 +181,9 @@ class MPIStreamingFindMostInfluential {
 	  {
 	    size_t rank = omp_get_thread_num();
 
-	    if (workers_[rank]->has_work()) {
-	      workers_[rank]->ReduceCounters(i);
-	    }
+	    // if (workers_[rank]->has_work()) {
+	    workers_[rank]->ReduceCounters(i);
+	    // }
 	  }
 	// }
       }
@@ -187,12 +192,31 @@ class MPIStreamingFindMostInfluential {
     std::vector<uint32_t> tmp(vertex_coverage_.size(), 0);
     cuda_set_device(0);
 
+    cuda_memset(reinterpret_cast<void*>(dest), 0, sizeof(uint32_t) * vertex_coverage_.size());
+
     cuda_d2h(reinterpret_cast<void*>(tmp.data()),
              reinterpret_cast<void*>(src),
              sizeof(uint32_t) * vertex_coverage_.size());
+
+    // MPI_Reduce(src, dest, vertex_coverage_.size(),
+    // 	    MPI_UINT32_T, MPI_SUM, 0, MPI_COMM_WORLD);
       
     MPI_Reduce(tmp.data(), reduced_vertex_coverage_.data(), vertex_coverage_.size(),
                MPI_UINT32_T, MPI_SUM, 0, MPI_COMM_WORLD);
+
+    
+
+    // if (mpi_rank == 0) {
+    //   for (size_t i = 0; i < 10; ++i) {
+    //     std::cout << "Reduce[" << i << "] = "<< reduced_vertex_coverage_[i] << std::endl;
+    //   }
+    // }
+
+
+    // for (size_t i = 0; i < 10; ++i) {
+    // 	  std::cout << "P[" << mpi_rank << "](" << i << ") = " << tmp[i] << std::endl;
+    // }
+    
 
     cuda_h2d(reinterpret_cast<void*>(dest),
              reinterpret_cast<void*>(reduced_vertex_coverage_.data()),
@@ -226,6 +250,7 @@ class MPIStreamingFindMostInfluential {
       if (mpi_rank == 0) {
         cuda_set_device(0);
         auto result = CudaMaxElement(global_counter, vertex_coverage_.size());
+	// std::cout << "Max Element " << result.first << " " << result.second << std::endl;
         coveredAndSelected[0] += result.second;
         coveredAndSelected[1] = result.first;
       }
@@ -311,7 +336,6 @@ class MPIStreamingFindMostInfluential {
       auto end = std::chrono::high_resolution_clock::now();
 
       seedSelection += end - start;
-      // std::cout << "Selected : " << element.first << " " << element.second << std::endl;
 
       result.push_back(element.first);
 
@@ -325,10 +349,10 @@ class MPIStreamingFindMostInfluential {
     int world_size = 0;
     MPI_Comm_size(MPI_COMM_WORLD, &world_size);
     double f = double(coveredAndSelected[0]) / (world_size * RRRsets_.size());
-    if (mpi_rank == 0) {
-      std::cout << f << " = " << double(coveredAndSelected[0]) << "/ (" << world_size << " * " <<
-          RRRsets_.size() << ")" << std::endl;
-    }
+    // if (mpi_rank == 0) {
+    //   std::cout << f << " = " << double(coveredAndSelected[0]) << "/ (" << world_size << " * " <<
+    //       RRRsets_.size() << ")" << std::endl;
+    // }
     // double f = double(RRRsets_.size() - uncovered) / RRRsets_.size();
 
     // std::cout << "#### " << seedSelection.count() << std::endl;
