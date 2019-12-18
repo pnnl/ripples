@@ -22,6 +22,8 @@ class Waf(Generator):
                     dep_name, info.include_paths))
                 sections.append("   ctx.env.LIBPATH_{} = {}".format(
                     dep_name, info.lib_paths))
+                sections.append("   ctx.env.RPATH_{} = {}".format(
+                    dep_name, info.lib_paths))
                 sections.append("   ctx.env.LIB_{} = {}".format(
                     dep_name, self._remove_lib_extension(info.libs)))
                 conan_libs.append(dep_name)
