@@ -48,6 +48,7 @@
 #include <vector>
 
 #include "thrust/extrema.h"
+#include "thrust/device_ptr.h"
 
 
 namespace ripples {
@@ -76,7 +77,7 @@ void CudaCountOccurrencies(
     size_t rrr_sets_size, size_t num_nodes, cudaStream_t S) {
   cuda_count_kernel(
       (rrr_sets_size + 255) / 256,
-      256, rrr_sets_size, num_nodes, d_Counters, d_rrr_sets, compute_stream);
+      256, rrr_sets_size, num_nodes, d_Counters, d_rrr_sets, S);
 }
 
 void CudaCountOccurrencies(
@@ -91,11 +92,11 @@ void CudaCountOccurrencies(
 }
 
 std::pair<uint32_t, size_t> CudaMaxElement(uint32_t * b, size_t N) {
-  thrust::device_ptr<uint32_t> dev_ptr = thrust::device_pointer_cast(b);
+  thrust::device_ptr<uint32_t> dev_ptr(b);
 
-  thrust::device_ptr<uint32_t> min_ptr = thrust::max_element(dev_ptr, dev_ptr + N);
-  uint32_t v = &min_ptr[0] - &dev_ptr[0];
-  return std::make_pair(v, size_t(min_ptr[0]));
+  thrust::device_ptr<uint32_t> min_ptr = thrust::max_element(thrust::device, dev_ptr, dev_ptr + N);
+  uint32_t v = thrust::distance(dev_ptr, min_ptr);
+  return std::make_pair(v, size_t(dev_ptr[v]));
 }
 
 __global__ void count_uncovered_kernel(
@@ -144,14 +145,12 @@ void cuda_update_mask_kernel(size_t n_blocks, size_t block_size,
 }
 
 
-void
-CudaUpdateCounters(size_t batch_size, uint32_t *d_rr_vertices,
-                   uint32_t * d_rr_edges, char * d_mask,
-                   uint32_t * d_Counters, size_t num_nodes,
-                   uint32_t last_seed) {
-  cudaStream_t compute_stream;
+void CudaUpdateCounters(cudaStream_t compute_stream,
+                        size_t batch_size, uint32_t *d_rr_vertices,
+                        uint32_t * d_rr_edges, char * d_mask,
+                        uint32_t * d_Counters, size_t num_nodes,
+                        uint32_t last_seed) {
   cudaStream_t data_stream;
-  cuda_stream_create(&compute_stream);
   cuda_stream_create(&data_stream);
 
   cuda_update_mask_kernel((batch_size + 255) / 256, 256, batch_size,
@@ -169,6 +168,20 @@ CudaUpdateCounters(size_t batch_size, uint32_t *d_rr_vertices,
 
   cuda_sync(compute_stream);
 }
+
+
+void
+CudaUpdateCounters(size_t batch_size, uint32_t *d_rr_vertices,
+                   uint32_t * d_rr_edges, char * d_mask,
+                   uint32_t * d_Counters, size_t num_nodes,
+                   uint32_t last_seed) {
+  cudaStream_t compute_stream;
+  cuda_stream_create(&compute_stream);
+
+  CudaUpdateCounters(compute_stream, batch_size, d_rr_vertices, d_rr_edges, d_mask,
+                     d_Counters, num_nodes, last_seed);
+}
+
 
 size_t CountZeros(char * d_rr_mask, size_t N) {
   thrust::device_ptr<char> dev_ptr = thrust::device_pointer_cast(d_rr_mask);
@@ -195,7 +208,7 @@ void cuda_sum_vectors(size_t n_blocks, size_t block_size,
 
 void CudaReduceCounters(cudaStream_t S, uint32_t * src, uint32_t * dest, size_t N) {
   cuda_sum_vectors((N + 255) / 256, 256, N, src, dest, S);
-  coda_sync(S);
+  cuda_sync(S);
 }
 
 } // namespace ripples

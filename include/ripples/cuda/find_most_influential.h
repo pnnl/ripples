@@ -46,10 +46,19 @@
 #include "ripples/cuda/cuda_utils.h"
 
 #include <utility>
+#include <cstddef>
+#include <cstdint>
 
 namespace ripples {
 
 std::pair<uint32_t, size_t> CudaMaxElement(uint32_t * b, size_t N);
+
+void
+CudaUpdateCounters(cudaStream_t compute_stream,
+                   size_t batch_size, uint32_t *d_rr_vertices,
+                   uint32_t * d_rr_edges, char * d_mask,
+                   uint32_t * d_Counters, size_t num_nodes,
+                   uint32_t last_seed);
 
 void
 CudaUpdateCounters(size_t batch_size, uint32_t *d_rr_vertices,
@@ -64,9 +73,10 @@ void CudaCountOccurrencies(
 
 void CudaCountOccurrencies(
     uint32_t * d_Counters, uint32_t * d_rrr_sets,
-    size_t rrr_sets_size, size_t num_nodes, cudaStream_t S)
+    size_t rrr_sets_size, size_t num_nodes, cudaStream_t S);
 
 void CudaReduceCounters(uint32_t * src, uint32_t * dest, size_t N);
+void CudaReduceCounters(cudaStream_t S, uint32_t * src, uint32_t * dest, size_t N);
 
 size_t CountZeros(char * d_rr_mask, size_t N);
 

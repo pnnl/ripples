@@ -24,7 +24,7 @@
 #include "spdlog/spdlog.h"
 
 #define CUDA_CHECK 0
-#define CUDA_PROFILE 1
+#define CUDA_PROFILE 0
 
 namespace ripples {
 

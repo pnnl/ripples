@@ -782,6 +782,8 @@ class StreamingRRRGenerator {
 #endif
   }
 
+  bool isGpuEnabled() const { return num_gpu_workers_ != 0; }
+
  private:
   size_t num_cpu_workers_, num_gpu_workers_;
   size_t max_batch_size_;

@@ -62,6 +62,8 @@
 
 #include "ripples/streaming_rrr_generator.h"
 
+#define CUDA_PROFILE 0
+
 namespace ripples {
 
 //! The IMM algorithm configuration descriptor.
@@ -188,7 +190,8 @@ auto Sampling(const GraphTy &G, std::size_t k, double epsilon, double l,
 
     auto timeMostInfluential = measure<>::exec_time([&]() {
       const auto &S =
-      FindMostInfluentialSet(G, k, RR, record, std::forward<execution_tag>(ex_tag));
+      FindMostInfluentialSet(G, k, RR, record, generator.isGpuEnabled(),
+                             std::forward<execution_tag>(ex_tag));
 
       f = S.first;
     });
@@ -224,6 +227,79 @@ auto Sampling(const GraphTy &G, std::size_t k, double epsilon, double l,
   return RR;
 }
 
+template <typename GraphTy, typename RRRGeneratorTy, typename diff_model_tag>
+auto Sampling(const GraphTy &G, std::size_t k, double epsilon, double l,
+              RRRGeneratorTy &generator, IMMExecutionRecord &record,
+              diff_model_tag &&model_tag, sequential_tag &&ex_tag) {
+  using vertex_type = typename GraphTy::vertex_type;
+
+  // sqrt(2) * epsilon
+  double epsilonPrime = 1.4142135623730951 * epsilon;
+
+  double LB = 0;
+  std::vector<RRRset<GraphTy>> RR;
+
+  auto start = std::chrono::high_resolution_clock::now();
+  size_t thetaPrime = 0;
+  for (ssize_t x = 1; x < std::log2(G.num_nodes()); ++x) {
+    // Equation 9
+    ssize_t thetaPrime = ThetaPrime(x, epsilonPrime, l, k, G.num_nodes(),
+                                    std::forward<sequential_tag>(ex_tag));
+
+    size_t delta = thetaPrime - RR.size();
+    record.ThetaPrimeDeltas.push_back(delta);
+
+    auto timeRRRSets = measure<>::exec_time([&]() {
+      RR.insert(RR.end(), delta, RRRset<GraphTy>{});
+
+      auto begin = RR.end() - delta;
+
+      GenerateRRRSets(G, generator, begin, RR.end(), record,
+                      std::forward<diff_model_tag>(model_tag),
+                      std::forward<sequential_tag>(ex_tag));
+    });
+    record.ThetaEstimationGenerateRRR.push_back(timeRRRSets);
+
+    double f;
+
+    auto timeMostInfluential = measure<>::exec_time([&]() {
+      const auto &S =
+      FindMostInfluentialSet(G, k, RR, record, false,
+                             std::forward<sequential_tag>(ex_tag));
+
+      f = S.first;
+    });
+
+    record.ThetaEstimationMostInfluential.push_back(timeMostInfluential);
+
+    if (f >= std::pow(2, -x)) {
+      LB = (G.num_nodes() * f) / (1 + epsilonPrime);
+      break;
+    }
+  }
+
+  size_t theta = Theta(epsilon, l, k, LB, G.num_nodes());
+  auto end = std::chrono::high_resolution_clock::now();
+
+  record.ThetaEstimationTotal = end - start;
+
+  record.Theta = theta;
+
+  record.GenerateRRRSets = measure<>::exec_time([&]() {
+    if (theta > RR.size()) {
+      size_t final_delta = theta - RR.size();
+      RR.insert(RR.end(), final_delta, RRRset<GraphTy>{});
+
+      auto begin = RR.end() - final_delta;
+
+      GenerateRRRSets(G, generator, begin, RR.end(), record,
+                      std::forward<diff_model_tag>(model_tag),
+                      std::forward<sequential_tag>(ex_tag));
+    }
+  });
+
+  return RR;
+}
 //! The IMM algroithm for Influence Maximization
 //!
 //! \tparam GraphTy The type of the input graph.
@@ -261,7 +337,8 @@ auto IMM(const GraphTy &G, std::size_t k, double epsilon, double l, PRNG &gen,
 
   auto start = std::chrono::high_resolution_clock::now();
   const auto &S =
-      FindMostInfluentialSet(G, k, R, record, std::forward<sequential_tag>(ex_tag));
+      FindMostInfluentialSet(G, k, R, record, false,
+                             std::forward<sequential_tag>(ex_tag));
   auto end = std::chrono::high_resolution_clock::now();
 
   record.FindMostInfluentialSet = end - start;
@@ -297,6 +374,7 @@ auto IMM(const GraphTy &G, std::size_t k, double epsilon, double l,
                     std::forward<diff_model_tag>(model_tag),
                     std::forward<omp_parallel_tag>(ex_tag));
 
+
 #if CUDA_PROFILE
   auto logst = spdlog::stdout_color_st("IMM-profile");
   std::vector<size_t> rrr_sizes;
@@ -311,7 +389,7 @@ auto IMM(const GraphTy &G, std::size_t k, double epsilon, double l,
 
   auto start = std::chrono::high_resolution_clock::now();
   const auto &S =
-      FindMostInfluentialSet(G, k, R, record,
+      FindMostInfluentialSet(G, k, R, record, gen.isGpuEnabled(),
                              std::forward<omp_parallel_tag>(ex_tag));
   auto end = std::chrono::high_resolution_clock::now();
 

@@ -86,6 +86,7 @@ template <typename GraphTy, typename RRRset>
 auto FindMostInfluentialSet(const GraphTy &G, size_t k,
                             std::vector<RRRset> &RRRsets,
                             IMMExecutionRecord & record,
+                            bool enableGPU,
                             sequential_tag &&ex_tag) {
   using vertex_type = typename GraphTy::vertex_type;
 
@@ -168,8 +169,15 @@ template <typename GraphTy, typename RRRset>
 auto FindMostInfluentialSet(const GraphTy &G, size_t k,
                             std::vector<RRRset> &RRRsets,
                             IMMExecutionRecord & record,
+                            bool enableGPU,
                             omp_parallel_tag &&ex_tag) {
-  StreamingFindMostInfluential<GraphTy> SE(G, RRRsets);
+  size_t num_gpu = 0;
+#ifdef RIPPLES_ENABLE_CUDA
+  if (enableGPU) {
+    num_gpu = cuda_num_devices();
+  }
+#endif
+  StreamingFindMostInfluential<GraphTy> SE(G, RRRsets, num_gpu);
   return SE.find_most_influential_set(k);
 }
 
@@ -249,6 +257,7 @@ auto FindMostInfluentialSet(const GraphTy &G, size_t k,
     result.push_back(v.first);
     uncovered -= v.second;
 
+    std::cout << "Reference Selected : " << v.first << " " << v.second << std::endl;
     if (result.size() == k) break;
 
     // Update Counters

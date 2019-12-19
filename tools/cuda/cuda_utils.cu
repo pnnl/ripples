@@ -41,6 +41,7 @@
 //===----------------------------------------------------------------------===//
 
 #include <cstdio>
+#include <iostream>
 
 #include "ripples/cuda/cuda_utils.h"
 
@@ -107,11 +108,11 @@ cuda_build_topology_graph() {
 
   for (size_t i = 0; i < num_devices; ++i) {
     index[i + 1] = index[i];
-    for (size_t j = 0; j < num_devices; ++i) {
+    for (size_t j = 0; j < num_devices; ++j) {
       if (i == j) continue;
 
       int atomics = 0;
-      cudaDeviceGetP2PAttribute(&atomics, cudaDevP2PAttrNativeAtomicSupported, i, j);
+      cudaDeviceGetP2PAttribute(&atomics, cudaDevP2PAttrNativeAtomicSupported, j, i);
 
       if (atomics) {
         index[i + 1] += 1;
@@ -123,39 +124,43 @@ cuda_build_topology_graph() {
   return std::make_pair(index, edges);
 }
 
-std::vector<std::pair<size_t, size_t>> cuda_get_reduction_tree() {
-  auto [index, edges] = cuda_build_topology_graph();
+  // std::vector<std::pair<size_t, size_t>>
+std::vector<std::pair<size_t, ssize_t>> cuda_get_reduction_tree() {
+  auto topo = cuda_build_topology_graph();
+  auto & index = topo.first;
+  auto & edges = topo.second;
+  
   size_t num_devices = cuda_num_devices();
   std::vector<bool> visited(num_devices);
   // Predecessor and Level.
-  std::vector<std::pair<size_t, size_t>> result(num_devices);
+  std::vector<std::pair<size_t, ssize_t>> result(num_devices, std::make_pair(size_t(0), ssize_t(-1)));
 
   std::vector<size_t> queue;
-  queue.reserve(num_devices);
+  queue.reserve(edges.size());
 
   queue.push_back(0);
-  result[0] = std::make_pair(size_t(0), size_t(0));
-  size_t level = 0;
+  result[0] = std::make_pair(size_t(0), ssize_t(0));
 
   auto itr = queue.begin();
   auto level_end = queue.end();
 
   while (itr != queue.end()) {
     size_t v = *itr;
+    visited[v] = true;
 
     for (size_t i = index[v]; i < index[v + 1]; ++i) {
       size_t n = edges[i];
 
+      if (result[n].second == -1 || result[n].second > (result[v].second + 1)) {
+	result[n] = std::make_pair(v, result[v].second + 1);
+      }
       if (!visited[n]) {
-        visited[n] = true;
         queue.push_back(n);
-        results[n] = std::make_pair(v, level + 1);
       }
     }
 
     if (++itr == level_end) {
       level_end = queue.end();
-      ++level;
     }
   }
 
@@ -197,11 +202,18 @@ void cuda_memset(void *dst, int val, size_t size) {
 void cuda_sync(cudaStream_t stream) { cudaStreamSynchronize(stream); }
 
 void cuda_enable_p2p(size_t dev_number) {
-  cudaDeviceEnablePeerAccess(dev_number);
+  cudaDeviceEnablePeerAccess(dev_number, 0);
 }
 
 void cuda_disable_p2p(size_t dev_number) {
   cudaDeviceDisablePeerAccess(dev_number);
+}
+
+size_t cuda_available_memory() {
+  size_t total , free;
+  cudaMemGetInfo(&free, &total);
+  cuda_check(__FILE__, __LINE__);
+  return free;
 }
 
 }  // namespace ripples
