@@ -140,7 +140,14 @@ struct Destination {
   //! The destination vertex of the edge.
   VertexTy vertex;
 
-  bool operator==(const Destination &O) const { return this->vertex == O.vertex; }
+  bool operator==(const Destination &O) const {
+    return this->vertex == O.vertex;
+  }
+  template <typename Direction, typename Itr, typename IDMap>
+  static Destination Create(Itr itr, IDMap &IM) {
+    Destination dst{Direction::Destination(itr, IM)};
+    return dst;
+  }
 };
 
 //! \brief The edges stored in the CSR.
@@ -149,8 +156,17 @@ struct WeightedDestination : public Destination<VertexTy> {
   using edge_weight = WeightTy;
   WeightTy weight;  //!< The edge weight.
 
+  WeightedDestination(VertexTy v, WeightTy w)
+      : Destination<VertexTy>{v}, weight(w) {}
+  WeightedDestination() : WeightedDestination(VertexTy(), WeightTy()) {}
+
   bool operator==(const WeightedDestination &O) const {
     return Destination<VertexTy>::operator==(O) && this->weight == O.weight;
+  }
+  template <typename Direction, typename Itr, typename IDMap>
+  static WeightedDestination Create(Itr itr, IDMap &IM) {
+    WeightedDestination dst{Direction::Destination(itr, IM), itr->weight};
+    return dst;
   }
 };
 
@@ -162,7 +178,9 @@ struct WeightedDestination : public Destination<VertexTy> {
 //! stores a map that allows to project back the IDs into the original space.
 //!
 //! \tparam VertexTy The integer type representing a vertex of the graph.
-//! \tparam WeightTy The type representing the weight on the edge.
+//! \tparam DestinationTy The type representing the element of the edge array.
+//! \tparam DirectionPolicy The policy encoding the graph direction with repect
+//!    of the original data.
 template <typename VertexTy,
           typename DestinationTy = WeightedDestination<VertexTy, float>,
           typename DirectionPolicy = ForwardDirection<VertexTy>>
@@ -324,8 +342,8 @@ class Graph {
 
     std::vector<DestinationTy *> ptrEdge(index, index + num_nodes);
     for (auto itr = begin; itr != end; ++itr) {
-      *ptrEdge[DirectionPolicy::Source(itr, idMap)] = {
-          DirectionPolicy::Destination(itr, idMap), itr->weight};
+      *ptrEdge[DirectionPolicy::Source(itr, idMap)] =
+          edge_type::template Create<DirectionPolicy>(itr, idMap);
       ++ptrEdge[DirectionPolicy::Source(itr, idMap)];
     }
   }
@@ -436,8 +454,7 @@ class Graph {
   using transposed_direction =
       typename std::conditional<isForward, BackwardDirection<VertexTy>,
                                 ForwardDirection<VertexTy>>::type;
-  using transposed_type =
-      Graph<vertex_type, edge_type, transposed_direction>;
+  using transposed_type = Graph<vertex_type, edge_type, transposed_direction>;
 
   friend transposed_type;
 
@@ -445,7 +462,7 @@ class Graph {
   //! Get the transposed graph.
   //! \return the transposed graph.
   transposed_type get_transpose() const {
-    using out_dest_type = typename transposed_type::DestinationTy;
+    using out_dest_type = typename transposed_type::edge_type;
     transposed_type G;
     G.numEdges = numEdges;
     G.numNodes = numNodes;
@@ -457,7 +474,7 @@ class Graph {
     std::fill(G.index, G.index + numNodes + 1, nullptr);
 
     std::for_each(edges, edges + numEdges,
-                  [&](const DestinationTy &d) { ++G.index[d.vertex + 1]; });
+                  [&](const edge_type &d) { ++G.index[d.vertex + 1]; });
 
     G.index[0] = G.edges;
     std::partial_sum(G.index, G.index + numNodes + 1, G.index,

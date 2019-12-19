@@ -7,7 +7,7 @@
 //===----------------------------------------------------------------------===//
 //
 // Copyright (c) 2019, Battelle Memorial Institute
-// 
+//
 // Battelle Memorial Institute (hereinafter Battelle) hereby grants permission
 // to any person or entity lawfully obtaining a copy of this software and
 // associated documentation files (hereinafter “the Software”) to redistribute
@@ -15,18 +15,18 @@
 // modification.  Such person or entity may use, copy, modify, merge, publish,
 // distribute, sublicense, and/or sell copies of the Software, and may permit
 // others to do so, subject to the following conditions:
-// 
+//
 // 1. Redistributions of source code must retain the above copyright notice,
 //    this list of conditions and the following disclaimers.
-// 
+//
 // 2. Redistributions in binary form must reproduce the above copyright notice,
 //    this list of conditions and the following disclaimer in the documentation
 //    and/or other materials provided with the distribution.
-// 
+//
 // 3. Other than as used herein, neither the name Battelle Memorial Institute or
 //    Battelle may be used in any form whatsoever without the express written
 //    consent of Battelle.
-// 
+//
 // THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
 // AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
 // IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
@@ -75,7 +75,7 @@ auto run_simulation(const GraphTy &G, Iterator begin, Iterator end,
                     PRNG &generator, const independent_cascade_tag &) {
   using vertex_type = typename GraphTy::vertex_type;
   using edge_type = typename GraphTy::edge_type;
-  using edge_weight_type = typename edge_type::weight_type;
+  using edge_weight_type = typename edge_type::edge_weight;
 
   trng::uniform01_dist<edge_weight_type> value;
 
@@ -129,7 +129,8 @@ template <typename GraphTy, typename Iterator, typename PRNG>
 auto run_simulation(const GraphTy &G, Iterator begin, Iterator end,
                     PRNG &generator, const linear_threshold_tag &) {
   using vertex_type = typename GraphTy::vertex_type;
-  using edge_weight_type = typename GraphTy::edge_weight_type;
+  using edge_type = typename GraphTy::edge_type;
+  using edge_weight_type = typename edge_type::edge_weight;
 
   auto transposedG = G.get_transpose();
 

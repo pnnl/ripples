@@ -7,7 +7,7 @@
 //===----------------------------------------------------------------------===//
 //
 // Copyright (c) 2019, Battelle Memorial Institute
-// 
+//
 // Battelle Memorial Institute (hereinafter Battelle) hereby grants permission
 // to any person or entity lawfully obtaining a copy of this software and
 // associated documentation files (hereinafter “the Software”) to redistribute
@@ -15,18 +15,18 @@
 // modification.  Such person or entity may use, copy, modify, merge, publish,
 // distribute, sublicense, and/or sell copies of the Software, and may permit
 // others to do so, subject to the following conditions:
-// 
+//
 // 1. Redistributions of source code must retain the above copyright notice,
 //    this list of conditions and the following disclaimers.
-// 
+//
 // 2. Redistributions in binary form must reproduce the above copyright notice,
 //    this list of conditions and the following disclaimer in the documentation
 //    and/or other materials provided with the distribution.
-// 
+//
 // 3. Other than as used herein, neither the name Battelle Memorial Institute or
 //    Battelle may be used in any form whatsoever without the express written
 //    consent of Battelle.
-// 
+//
 // THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
 // AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
 // IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
@@ -80,7 +80,7 @@ struct SimulatorConfiguration {
 
 template <typename Sims>
 auto GetExperimentRecord(const SimulatorConfiguration &CFG,
-                         const nlohmann::json & experimentRecord,
+                         const nlohmann::json &experimentRecord,
                          const Sims &experiments) {
   nlohmann::json experiment{{"Input", experimentRecord["Input"]},
                             {"Algorithm", experimentRecord["Algorithm"]},
@@ -116,8 +116,9 @@ int main(int argc, char **argv) {
   experimentRecordIS >> experimentRecord;
   CFG.diffusionModel = experimentRecord[0]["DiffusionModel"];
 
+  using edge_type = ripples::WeightedDestination<uint32_t, float>;
   using Graph =
-      ripples::Graph<uint32_t, float, ripples::ForwardDirection<uint32_t>>;
+      ripples::Graph<uint32_t, edge_type, ripples::ForwardDirection<uint32_t>>;
   auto console = spdlog::stdout_color_st("console");
   console->info("Loading ...");
   Graph G = ripples::loadGraph<Graph>(CFG, weightGen);
@@ -161,8 +162,8 @@ int main(int argc, char **argv) {
         throw std::string("Not Yet Implemented");
       }
     }
-    simRecordLog.push_back(ripples::GetExperimentRecord(
-        CFG, record, experiments));
+    simRecordLog.push_back(
+        ripples::GetExperimentRecord(CFG, record, experiments));
   }
   simRecord->info("{}", simRecordLog.dump(2));
 
