@@ -40,14 +40,15 @@ namespace ripples {
 
 // forward declarations to enable separate compilation
 using cuda_GraphTy =
-    ripples::Graph<uint32_t, float, ripples::BackwardDirection<uint32_t>>;
+  ripples::Graph<uint32_t, WeightedDestination<uint32_t, float>, ripples::BackwardDirection<uint32_t>>;
 using cuda_res_t = std::vector<std::vector<typename cuda_GraphTy::vertex_type>>;
 using cuda_PRNGeneratorTy = trng::lcg64;
 using cuda_PRNGeneratorsTy = std::vector<cuda_PRNGeneratorTy>;
 
 struct cuda_device_graph {
   using vertex_t = int; // TODO vertex type hard-coded in nvgraph
-  using weight_t = typename cuda_GraphTy::edge_weight_type;
+  using edge_t = typename cuda_GraphTy::edge_type;
+  using weight_t = typename edge_t::edge_weight;
   vertex_t *d_index_ = nullptr, *d_edges_ = nullptr;
   weight_t *d_weights_ = nullptr;
 };

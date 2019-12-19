@@ -16,8 +16,8 @@ __global__ void build_graph_kernel(
     typename cuda_device_graph::vertex_t *d_edges,
     typename cuda_device_graph::weight_t *d_weights,
     typename cuda_device_graph::vertex_t *d_index,
-    typename cuda_GraphTy::DestinationTy *d_src_weighted_edges,
-    typename cuda_GraphTy::DestinationTy **d_src_index, size_t num_nodes) {
+    typename cuda_GraphTy::edge_type *d_src_weighted_edges,
+    typename cuda_GraphTy::edge_type **d_src_index, size_t num_nodes) {
   using vertex_t = typename cuda_device_graph::vertex_t;
 
   int tid = blockIdx.x * blockDim.x + threadIdx.x;
@@ -51,7 +51,7 @@ cuda_device_graph *make_cuda_graph(const cuda_GraphTy &hg) {
   cuda_check(__FILE__, __LINE__);
 
   // copy graph to device
-  using destination_type = typename cuda_GraphTy::DestinationTy;
+  using destination_type = typename cuda_GraphTy::edge_type;
   destination_type *d_weighted_edges;
   cudaMalloc(&d_weighted_edges, hg.num_edges() * sizeof(destination_type));
   cudaMemcpy(d_weighted_edges, hg.csr_edges(),
