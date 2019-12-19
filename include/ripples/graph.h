@@ -7,7 +7,7 @@
 //===----------------------------------------------------------------------===//
 //
 // Copyright (c) 2019, Battelle Memorial Institute
-// 
+//
 // Battelle Memorial Institute (hereinafter Battelle) hereby grants permission
 // to any person or entity lawfully obtaining a copy of this software and
 // associated documentation files (hereinafter “the Software”) to redistribute
@@ -15,18 +15,18 @@
 // modification.  Such person or entity may use, copy, modify, merge, publish,
 // distribute, sublicense, and/or sell copies of the Software, and may permit
 // others to do so, subject to the following conditions:
-// 
+//
 // 1. Redistributions of source code must retain the above copyright notice,
 //    this list of conditions and the following disclaimers.
-// 
+//
 // 2. Redistributions in binary form must reproduce the above copyright notice,
 //    this list of conditions and the following disclaimer in the documentation
 //    and/or other materials provided with the distribution.
-// 
+//
 // 3. Other than as used herein, neither the name Battelle Memorial Institute or
 //    Battelle may be used in any form whatsoever without the express written
 //    consent of Battelle.
-// 
+//
 // THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
 // AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
 // IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
@@ -76,7 +76,7 @@ struct ForwardDirection {
   //! \param itr Iterator to the current edge.
   //! \return The destination of the egde to be loaded in the graph.
   template <typename ItrTy, typename MapTy>
-  static VertexTy Destination(ItrTy itr, const MapTy & m) {
+  static VertexTy Destination(ItrTy itr, const MapTy &m) {
     return m.find(itr->destination)->second;
   }
 };
@@ -93,7 +93,7 @@ struct BackwardDirection {
   //! \param itr Iterator to the current edge.
   //! \return The source of the egde to be loaded in the graph.
   template <typename ItrTy, typename MapTy>
-  static VertexTy Source(ItrTy itr, const MapTy & m) {
+  static VertexTy Source(ItrTy itr, const MapTy &m) {
     return m.find(itr->destination)->second;
   }
 
@@ -104,7 +104,7 @@ struct BackwardDirection {
   //! \param itr Iterator to the current edge.
   //! \return The destination of the egde to be loaded in the graph.
   template <typename ItrTy, typename MapTy>
-  static VertexTy Destination(ItrTy itr, const MapTy & m) {
+  static VertexTy Destination(ItrTy itr, const MapTy &m) {
     return m.find(itr->source)->second;
   }
 };
@@ -126,10 +126,31 @@ struct Edge {
   //! The weight on the edge.
   WeightTy weight;
 
-  bool operator==(const Edge & O) const {
-    return O.source == this->source
-        && O.destination == this->destination
-        && O.weight == this->weight;
+  bool operator==(const Edge &O) const {
+    return O.source == this->source && O.destination == this->destination &&
+           O.weight == this->weight;
+  }
+};
+
+//! \brief CSR Edge for an unweighted graph.
+//! \tparam VertexTy The type of the vertex.
+template <typename VertexTy>
+struct Destination {
+  using vertex_type = VertexTy;
+  //! The destination vertex of the edge.
+  VertexTy vertex;
+
+  bool operator==(const Destination &O) const { return this->vertex == O.vertex; }
+};
+
+//! \brief The edges stored in the CSR.
+template <typename VertexTy, typename WeightTy>
+struct WeightedDestination : public Destination<VertexTy> {
+  using edge_weight = WeightTy;
+  WeightTy weight;  //!< The edge weight.
+
+  bool operator==(const WeightedDestination &O) const {
+    return Destination<VertexTy>::operator==(O) && this->weight == O.weight;
   }
 };
 
@@ -142,28 +163,17 @@ struct Edge {
 //!
 //! \tparam VertexTy The integer type representing a vertex of the graph.
 //! \tparam WeightTy The type representing the weight on the edge.
-template <typename VertexTy, typename WeightTy,
+template <typename VertexTy,
+          typename DestinationTy = WeightedDestination<VertexTy, float>,
           typename DirectionPolicy = ForwardDirection<VertexTy>>
 class Graph {
  public:
   //! The size type.
   using size_type = size_t;
   //! The type of an edge in the graph.
-  using edge_type = Edge<VertexTy, WeightTy>;
+  using edge_type = DestinationTy;
   //! The integer type representing vertices in the graph.
   using vertex_type = VertexTy;
-  //! The type representing the weights on the edges of the graph.
-  using edge_weight_type = WeightTy;
-
-  //! \brief The edges stored in the CSR.
-  struct DestinationTy {
-    VertexTy vertex;  //!< The destination of an edges.
-    WeightTy weight;  //!< The edge weight.
-
-    bool operator==(const DestinationTy& O) const {
-      return this->vertex == O.vertex && this->weight == O.weight;
-    }
-  };
 
   //! \brief The neighborhood of a vertex.
   class Neighborhood {
@@ -172,18 +182,18 @@ class Graph {
     //!
     //! \param B The begin of the neighbor list.
     //! \param E The end of the neighbor list.
-    Neighborhood(DestinationTy *B, DestinationTy *E) : begin_(B), end_(E) {}
+    Neighborhood(edge_type *B, edge_type *E) : begin_(B), end_(E) {}
 
     //! Begin of the neighborhood.
     //! \return an iterator to the begin of the neighborhood.
-    DestinationTy *begin() const { return begin_; }
+    edge_type *begin() const { return begin_; }
     //! End of the neighborhood.
     //! \return an iterator to the begin of the neighborhood.
-    DestinationTy *end() const { return end_; }
+    edge_type *end() const { return end_; }
 
    private:
-    DestinationTy *begin_;
-    DestinationTy *end_;
+    edge_type *begin_;
+    edge_type *end_;
   };
 
   //! Empty Graph Constructor.
@@ -196,30 +206,30 @@ class Graph {
         reverseMap() {}
 
   Graph(const Graph &O)
-      : numNodes(O.numNodes)
-      , numEdges(O.numEdges)
-      , idMap(O.idMap)
-      , reverseMap(O.reverseMap) {
+      : numNodes(O.numNodes),
+        numEdges(O.numEdges),
+        idMap(O.idMap),
+        reverseMap(O.reverseMap) {
     edges = new DestinationTy[numEdges];
-    index = new DestinationTy * [numNodes + 1];
+    index = new DestinationTy *[numNodes + 1];
     std::copy(O.edges, O.edges + numEdges, edges);
     std::transform(O.index, O.index + numNodes + 1, index,
-                   [=](const DestinationTy * p) -> DestinationTy * {
+                   [=](const DestinationTy *p) -> DestinationTy * {
                      return edges + p - O.index;
                    });
   }
 
-  Graph & operator=(const Graph &O) {
+  Graph &operator=(const Graph &O) {
     numNodes = O.numNodes;
     numEdges = O.numEdges;
     idMap = O.idMap;
     reverseMap = O.reverseMap;
 
     edges = new DestinationTy[numEdges];
-    index = new DestinationTy * [numNodes + 1];
+    index = new DestinationTy *[numNodes + 1];
     std::copy(O.edges, O.edges + numEdges, edges);
     std::transform(O.index, O.index + numNodes + 1, index,
-                   [=](const DestinationTy * p) -> DestinationTy * {
+                   [=](const DestinationTy *p) -> DestinationTy * {
                      return edges + p - O.index;
                    });
   }
@@ -315,7 +325,7 @@ class Graph {
     std::vector<DestinationTy *> ptrEdge(index, index + num_nodes);
     for (auto itr = begin; itr != end; ++itr) {
       *ptrEdge[DirectionPolicy::Source(itr, idMap)] = {
-        DirectionPolicy::Destination(itr, idMap), itr->weight};
+          DirectionPolicy::Destination(itr, idMap), itr->weight};
       ++ptrEdge[DirectionPolicy::Source(itr, idMap)];
     }
   }
@@ -359,7 +369,7 @@ class Graph {
   void convertID(Itr b, Itr e, OutputItr o) const {
     using value_type = typename Itr::value_type;
     std::transform(b, e, o, [&](const value_type &v) -> value_type {
-        return reverseMap.at(v);
+      return reverseMap.at(v);
     });
   }
 
@@ -368,9 +378,7 @@ class Graph {
   //!
   //! \param v The input vertex ID.
   //! \return The original vertex ID in the input representation.
-  vertex_type convertID(const vertex_type v) const {
-    return reverseMap.at(v);
-  }
+  vertex_type convertID(const vertex_type v) const { return reverseMap.at(v); }
 
   //! Convert a list of vertices from the original input edge list
   //! representation to the internal vertex representation.
@@ -385,16 +393,16 @@ class Graph {
   void transformID(Itr b, Itr e, OutputItr o) const {
     using value_type = typename Itr::value_type;
     std::transform(b, e, o, [this](const value_type &v) -> value_type {
-        return transformID(v);
+      return transformID(v);
     });
   }
 
   vertex_type transformID(const vertex_type v) const {
-      auto itr = idMap.find(v);
-      if (itr != idMap.end())
-        return itr->second;
-      else
-        throw "Bad node";
+    auto itr = idMap.find(v);
+    if (itr != idMap.end())
+      return itr->second;
+    else
+      throw "Bad node";
   }
 
   //! Dump the internal representation to a binary stream.
@@ -429,11 +437,11 @@ class Graph {
       typename std::conditional<isForward, BackwardDirection<VertexTy>,
                                 ForwardDirection<VertexTy>>::type;
   using transposed_type =
-      Graph<vertex_type, edge_weight_type, transposed_direction>;
+      Graph<vertex_type, edge_type, transposed_direction>;
 
   friend transposed_type;
- public:
 
+ public:
   //! Get the transposed graph.
   //! \return the transposed graph.
   transposed_type get_transpose() const {
@@ -471,13 +479,9 @@ class Graph {
     return G;
   }
 
-DestinationTy **csr_index() const {
-   return index;
- }
+  DestinationTy **csr_index() const { return index; }
 
-DestinationTy *csr_edges() const {
-   return edges;
- }
+  DestinationTy *csr_edges() const { return edges; }
 
  private:
   template <typename FStream>
@@ -526,12 +530,13 @@ DestinationTy *csr_edges() const {
   size_t numEdges;
 };
 
-
 template <typename BwdGraphTy, typename FwdGraphTy>
-auto getCommunitiesSubgraphs(const FwdGraphTy & Gf,
-                             const std::vector<typename FwdGraphTy::vertex_type> & communityVector) {
+auto getCommunitiesSubgraphs(
+    const FwdGraphTy &Gf,
+    const std::vector<typename FwdGraphTy::vertex_type> &communityVector) {
   using vertex_type = typename FwdGraphTy::vertex_type;
-  size_t num_communities = *std::max_element(communityVector.begin(), communityVector.end()) + 1;
+  size_t num_communities =
+      *std::max_element(communityVector.begin(), communityVector.end()) + 1;
   std::vector<BwdGraphTy> communities(num_communities);
 
   using EdgeTy = typename FwdGraphTy::edge_type;
@@ -545,7 +550,8 @@ auto getCommunitiesSubgraphs(const FwdGraphTy & Gf,
 
       vertex_type community_dst = communityVector[original_dst - 1];
       if (community_dst == community_src) {
-        edge_lists[community_src].push_back({original_src, original_dst, e.weight});
+        edge_lists[community_src].push_back(
+            {original_src, original_dst, e.weight});
       }
     }
   }
