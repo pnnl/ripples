@@ -7,7 +7,7 @@
 //===----------------------------------------------------------------------===//
 //
 // Copyright (c) 2019, Battelle Memorial Institute
-// 
+//
 // Battelle Memorial Institute (hereinafter Battelle) hereby grants permission
 // to any person or entity lawfully obtaining a copy of this software and
 // associated documentation files (hereinafter “the Software”) to redistribute
@@ -15,18 +15,18 @@
 // modification.  Such person or entity may use, copy, modify, merge, publish,
 // distribute, sublicense, and/or sell copies of the Software, and may permit
 // others to do so, subject to the following conditions:
-// 
+//
 // 1. Redistributions of source code must retain the above copyright notice,
 //    this list of conditions and the following disclaimers.
-// 
+//
 // 2. Redistributions in binary form must reproduce the above copyright notice,
 //    this list of conditions and the following disclaimer in the documentation
 //    and/or other materials provided with the distribution.
-// 
+//
 // 3. Other than as used herein, neither the name Battelle Memorial Institute or
 //    Battelle may be used in any form whatsoever without the express written
 //    consent of Battelle.
-// 
+//
 // THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
 // AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
 // IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
@@ -70,27 +70,15 @@
 namespace ripples {
 
 //! \brief The configuration data structure for the TIM+ algorithm.
-struct TIMConfiguration {
-  size_t k{10};                      //!< The size of the seedset
-  double epsilon{0.50};              //!< The epsilon of the IM algorithm
-  bool parallel{false};              //!< The sequential vs parallel algorithm
-  std::string diffusionModel{"IC"};  //!< The diffusion model to use.
+struct TIMConfiguration : public AlgorithmConfiguration {
+  double epsilon{0.50};  //!< The epsilon of the IM algorithm
 
   //! \brief Add command line options to configure TIM+.
   //!
   //! \param app The command-line parser object.
   void addCmdOptions(CLI::App &app) {
-    app.add_option("-k,--seed-set-size", k, "The size of the seed set.")
-        ->required()
-        ->group("Algorithm Options");
+    AlgorithmConfiguration::addCmdOptions(app);
     app.add_option("-e,--epsilon", epsilon, "The size of the seed set.")
-        ->required()
-        ->group("Algorithm Options");
-    app.add_flag("-p,--parallel", parallel,
-                 "Trigger the parallel implementation")
-        ->group("Algorithm Options");
-    app.add_option("-d,--diffusion-model", diffusionModel,
-                   "The diffusion model to use (LT|IC)")
         ->required()
         ->group("Algorithm Options");
   }
@@ -310,7 +298,7 @@ size_t ThetaEstimation(GraphTy &G, size_t k, double epsilon,
   size_t thetaPrime = (2 + epsPrime) * G.num_nodes() * log(G.num_nodes()) /
                       (epsPrime * epsPrime * kpt);
 
-  std::vector<RRRset<GraphTy>> RR (thetaPrime);
+  std::vector<RRRset<GraphTy>> RR(thetaPrime);
   GenerateRRRSets(G, generator, RR.begin(), RR.end(),
                   std::forward<diff_model_tag>(model_tag),
                   std::forward<execution_tag>(ex_tag));

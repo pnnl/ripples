@@ -7,7 +7,7 @@
 //===----------------------------------------------------------------------===//
 //
 // Copyright (c) 2019, Battelle Memorial Institute
-// 
+//
 // Battelle Memorial Institute (hereinafter Battelle) hereby grants permission
 // to any person or entity lawfully obtaining a copy of this software and
 // associated documentation files (hereinafter “the Software”) to redistribute
@@ -15,18 +15,18 @@
 // modification.  Such person or entity may use, copy, modify, merge, publish,
 // distribute, sublicense, and/or sell copies of the Software, and may permit
 // others to do so, subject to the following conditions:
-// 
+//
 // 1. Redistributions of source code must retain the above copyright notice,
 //    this list of conditions and the following disclaimers.
-// 
+//
 // 2. Redistributions in binary form must reproduce the above copyright notice,
 //    this list of conditions and the following disclaimer in the documentation
 //    and/or other materials provided with the distribution.
-// 
+//
 // 3. Other than as used herein, neither the name Battelle Memorial Institute or
 //    Battelle may be used in any form whatsoever without the express written
 //    consent of Battelle.
-// 
+//
 // THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
 // AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
 // IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
@@ -64,7 +64,6 @@ ItrTy2 swap_ranges(ItrTy1 B, ItrTy1 E, ItrTy2 O, sequential_tag) {
   return std::swap_ranges(B, E, O);
 }
 
-
 template <typename ItrTy1, typename ItrTy2>
 ItrTy2 swap_ranges(ItrTy1 B, ItrTy1 E, ItrTy2 O, size_t num_threads) {
   size_t toBeSwaped = std::distance(B, E);
@@ -101,10 +100,7 @@ struct PartitionIndices {
   ItrTy end;
   ItrTy pivot;
 
-  PartitionIndices()
-      : begin{nullptr},
-        end{nullptr},
-        pivot{nullptr} {}
+  PartitionIndices() : begin(), end(), pivot() {}
 
   PartitionIndices(PartitionIndices &&O)
       : begin{std::move(O.begin)},
@@ -137,8 +133,7 @@ struct PartitionIndices {
            this->pivot == O.pivot;
   }
 
-  PartitionIndices mergeBlocks(const PartitionIndices &O,
-                               size_t num_threads) {
+  PartitionIndices mergeBlocks(const PartitionIndices &O, size_t num_threads) {
     PartitionIndices result(*this);
 
     if (this->pivot == this->begin && O.pivot == O.begin) {
@@ -193,7 +188,6 @@ struct PartitionIndices {
 
 }  // namespace
 
-
 template <typename ItrTy, typename UnaryPredicate>
 ItrTy partition(ItrTy B, ItrTy E, UnaryPredicate P, size_t num_threads) {
   std::vector<PartitionIndices<ItrTy>> indices(num_threads,
@@ -215,17 +209,16 @@ ItrTy partition(ItrTy B, ItrTy E, UnaryPredicate P, size_t num_threads) {
   for (size_t j = 1; j < num_threads; j <<= 1) {
 #pragma omp parallel num_threads(num_threads >> j)
     {
-      #pragma omp for schedule(dynamic)
+#pragma omp for schedule(dynamic)
       for (size_t i = 0; i < (num_threads - j); i += j * 2) {
-       indices[i] = indices[i].mergeBlocks(indices[i + j],
-                                           std::min(2 * j, num_threads));
+        indices[i] = indices[i].mergeBlocks(indices[i + j],
+                                            std::min(2 * j, num_threads));
       }
     }
   }
 
   return indices[0].pivot;
 }
-
 
 //! Reorder a sequence in such a way that all the element for which a predicate
 //! is true preceed the one for which the predicate is false.

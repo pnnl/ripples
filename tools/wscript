@@ -62,6 +62,8 @@ def build(bld):
     bld(features='cxx cxxprogram', source='dump-graph.cc', target='dump-graph',
         use=tools_deps)
 
+    bld(features='cxx cxxprogram', source='hill_climbing.cc', target='hill-climbing', use=tools_deps)
+
     if bld.env.HAVE_MPI:
         tools_deps = tools_deps + ['MPI']
         if bld.env.ENABLE_CUDA:

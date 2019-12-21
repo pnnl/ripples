@@ -113,7 +113,7 @@ struct BackwardDirection {
 //!
 //! \tparam VertexTy The integer type representing a vertex of the graph.
 //! \tparam WeightTy The type representing the weight on the edge.
-template <typename VertexTy, typename WeightTy>
+template <typename VertexTy, typename WeightTy = void>
 struct Edge {
   //! The integer type representing vertices in the graph.
   using vertex_type = VertexTy;
@@ -129,6 +129,18 @@ struct Edge {
   bool operator==(const Edge &O) const {
     return O.source == this->source && O.destination == this->destination &&
            O.weight == this->weight;
+  }
+};
+
+template <typename VertexTy>
+struct Edge<VertexTy, void> {
+  using vertex_type = VertexTy;
+
+  VertexTy source;
+  VertexTy destination;
+
+  bool operator==(const Edge &O) const {
+    return O.source == this->source && O.destination == this->destination;
   }
 };
 
@@ -228,12 +240,13 @@ class Graph {
         numEdges(O.numEdges),
         idMap(O.idMap),
         reverseMap(O.reverseMap) {
-    edges = new DestinationTy[numEdges];
-    index = new DestinationTy *[numNodes + 1];
+    edges = new edge_type[numEdges];
+    index = new edge_type *[numNodes + 1];
     std::copy(O.edges, O.edges + numEdges, edges);
     std::transform(O.index, O.index + numNodes + 1, index,
-                   [=](const DestinationTy *p) -> DestinationTy * {
-                     return edges + p - O.index;
+                   [=](const edge_type *p) -> edge_type * {
+                     return edges + (reinterpret_cast<uint64_t>(p) -
+                                     reinterpret_cast<uint64_t>(O.index));
                    });
   }
 
@@ -243,12 +256,13 @@ class Graph {
     idMap = O.idMap;
     reverseMap = O.reverseMap;
 
-    edges = new DestinationTy[numEdges];
-    index = new DestinationTy *[numNodes + 1];
+    edges = new edge_type[numEdges];
+    index = new edge_type *[numNodes + 1];
     std::copy(O.edges, O.edges + numEdges, edges);
     std::transform(O.index, O.index + numNodes + 1, index,
-                   [=](const DestinationTy *p) -> DestinationTy * {
-                     return edges + p - O.index;
+                   [=](const edge_type *p) -> edge_type * {
+                     return edges + (reinterpret_cast<uint64_t>(p) -
+                                     reinterpret_cast<uint64_t>(O.index));
                    });
   }
 
@@ -307,8 +321,8 @@ class Graph {
     size_t num_nodes = idMap.size();
     size_t num_edges = std::distance(begin, end);
 
-    index = new DestinationTy *[num_nodes + 1];
-    edges = new DestinationTy[num_edges];
+    index = new edge_type *[num_nodes + 1];
+    edges = new edge_type[num_edges];
 
 #pragma omp parallel for simd
     for (size_t i = 0; i < num_nodes + 1; ++i) {
@@ -340,7 +354,7 @@ class Graph {
       index[i] += index[i - 1] - edges;
     }
 
-    std::vector<DestinationTy *> ptrEdge(index, index + num_nodes);
+    std::vector<edge_type *> ptrEdge(index, index + num_nodes);
     for (auto itr = begin; itr != end; ++itr) {
       *ptrEdge[DirectionPolicy::Source(itr, idMap)] =
           edge_type::template Create<DirectionPolicy>(itr, idMap);
@@ -438,14 +452,14 @@ class Graph {
     sequence_of<VertexTy>::dump(FS, reverseMap.begin(), reverseMap.end());
 
     using relative_index =
-        typename std::iterator_traits<DestinationTy *>::difference_type;
+        typename std::iterator_traits<edge_type *>::difference_type;
     std::vector<relative_index> relIndex(numNodes + 1, 0);
     std::transform(index, index + numNodes + 1, relIndex.begin(),
-                   [=](DestinationTy *v) -> relative_index {
+                   [=](edge_type *v) -> relative_index {
                      return std::distance(edges, v);
                    });
     sequence_of<relative_index>::dump(FS, relIndex.begin(), relIndex.end());
-    sequence_of<DestinationTy>::dump(FS, edges, edges + numEdges);
+    sequence_of<edge_type>::dump(FS, edges, edges + numEdges);
   }
 
  private:
@@ -496,9 +510,9 @@ class Graph {
     return G;
   }
 
-  DestinationTy **csr_index() const { return index; }
+  edge_type **csr_index() const { return index; }
 
-  DestinationTy *csr_edges() const { return edges; }
+  edge_type *csr_edges() const { return edges; }
 
  private:
   template <typename FStream>
@@ -520,25 +534,25 @@ class Graph {
 
     for (VertexTy i = 0; i < numNodes; ++i) idMap[reverseMap[i]] = i;
 
-    index = new DestinationTy *[numNodes + 1];
-    edges = new DestinationTy[numEdges];
+    index = new edge_type *[numNodes + 1];
+    edges = new edge_type[numEdges];
 
     FS.read(reinterpret_cast<char *>(index),
             (numNodes + 1) * sizeof(ptrdiff_t));
 
-    sequence_of<DestinationTy *>::load(index, index + numNodes + 1, index);
+    sequence_of<edge_type *>::load(index, index + numNodes + 1, index);
 
     std::transform(index, index + numNodes + 1, index,
-                   [=](DestinationTy *v) -> DestinationTy * {
+                   [=](edge_type *v) -> edge_type * {
                      return reinterpret_cast<ptrdiff_t>(v) + edges;
                    });
 
-    FS.read(reinterpret_cast<char *>(edges), numEdges * sizeof(DestinationTy));
-    sequence_of<DestinationTy>::load(edges, edges + numEdges, edges);
+    FS.read(reinterpret_cast<char *>(edges), numEdges * sizeof(edge_type));
+    sequence_of<edge_type>::load(edges, edges + numEdges, edges);
   }
 
-  DestinationTy **index;
-  DestinationTy *edges;
+  edge_type **index;
+  edge_type *edges;
 
   std::map<VertexTy, VertexTy> idMap;
   std::vector<VertexTy> reverseMap;
