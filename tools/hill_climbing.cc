@@ -60,6 +60,22 @@ ToolConfiguration<HillClimbingConfiguration>& configuration() {
   return CFG;
 }
 
+template <typename SeedSet>
+auto GetExperimentRecord(
+    const ToolConfiguration<HillClimbingConfiguration>& CFG,
+    const HillClimbingExecutionRecord& R, const SeedSet& seeds) {
+  nlohmann::json experiment{{"Algorithm", "HillClimbing"},
+                            {"Input", CFG.IFileName},
+                            {"Output", CFG.OutputFile},
+                            {"DiffusionModel", CFG.diffusionModel},
+                            {"K", CFG.k},
+                            {"Seeds", seeds},
+                            {"NumThreads", 1},
+                            {"Total", R.Total}};
+
+  return experiment;
+}
+
 void parse_command_line(int argc, char** argv) {
   configuration().ParseCmdOptions(argc, argv);
 }
@@ -76,7 +92,7 @@ int main(int argc, char** argv) {
   weightGen.split(2, 0);
 
   using GraphFwd =
-    ripples::Graph<uint32_t, ripples::WeightedDestination<uint32_t, float>>;
+      ripples::Graph<uint32_t, ripples::WeightedDestination<uint32_t, float>>;
   console->info("Loading...");
   GraphFwd G =
       ripples::loadGraph<GraphFwd>(ripples::configuration(), weightGen);
@@ -92,12 +108,36 @@ int main(int argc, char** argv) {
   generator.seed(0UL);
   generator.split(2, 1);
 
+  ripples::HillClimbingExecutionRecord R;
+
   if (ripples::configuration().diffusionModel == "IC") {
     auto start = std::chrono::high_resolution_clock::now();
     seeds = HillClimbing(G, ripples::configuration().k,
                          ripples::configuration().samples, generator,
                          ripples::independent_cascade_tag{});
     auto end = std::chrono::high_resolution_clock::now();
+    R.Total = end - start;
+  } else if (ripples::configuration().diffusionModel == "LT") {
+    auto start = std::chrono::high_resolution_clock::now();
+    seeds = HillClimbing(G, ripples::configuration().k,
+                         ripples::configuration().samples, generator,
+                         ripples::linear_threshold_tag{});
+    auto end = std::chrono::high_resolution_clock::now();
+    R.Total = end - start;
   }
-  return 0;
+
+  console->info("HillClimbing : {}ms", R.Total.count());
+
+  size_t num_threads;
+#pragma omp single
+  num_threads = omp_get_max_threads();
+  R.NumThreads = num_threads;
+  std::vector<typename GraphFwd::vertex_type> out_seeds(seeds.size());
+  G.convertID(seeds.begin(), seeds.end(), out_seeds.begin());
+
+  auto experiment = GetExperimentRecord(ripples::configuration(), R, out_seeds);
+  executionLog.push_back(experiment);
+  std::ofstream perf(ripples::configuration().OutputFile);
+  perf << executionLog.dump(2);
+  return EXIT_SUCCESS;
 }

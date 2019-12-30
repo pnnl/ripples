@@ -75,7 +75,7 @@ def configure(conf):
     conf.load('waf_unit_test')
     conf.load('sphinx', tooldir='waftools')
 
-    conf.env.CXXFLAGS += ['-std=c++14', '-O3', '-mtune=native', '-pipe']
+    conf.env.CXXFLAGS += ['-std=c++14', '-pipe']
 
     conf.load('spdlog', tooldir='waftools')
     conf.load('libjson', tooldir='waftools')
@@ -94,8 +94,17 @@ def configure(conf):
         conf.load('cuda', tooldir='waftools')
         conf.env.ENABLE_CUDA = True
 
+    env = conf.env
+    conf.setenv('release', env)
+    conf.env.append_value('CXXFLAGS', ['-O3', '-mtune=native'])
+
+    conf.setenv('debug', env)
+    conf.env.append_value('CXXFLAGS', ['-g'])
+
 
 def build(bld):
+    if not bld.variant:
+        bld.fatal('call "./waf build_release" or "./waf build_debug", and try "./waf --help"')
     directories = ['3rd-party', 'include', 'tools', 'test']
 
     bld.recurse(directories)
@@ -115,3 +124,12 @@ from waflib import Build
 class docs(Build.BuildContext):
     fun = 'build_docs'
     cmd = 'docs'
+
+
+from waflib.Build import BuildContext, CleanContext, InstallContext, UninstallContext
+for x in 'debug release'.split():
+    for y in (BuildContext, CleanContext, InstallContext, UninstallContext):
+        name = y.__name__.replace('Context', '').lower()
+        class tmp(y):
+            cmd = name + '_' + x
+            variant = x

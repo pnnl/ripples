@@ -60,9 +60,9 @@ Now we are ready to configure and build ripples:
 
 .. code-block:: shell
 
-   $ ./waf configure --enable-mpi build
+   $ ./waf configure --enable-mpi build_release
    # or without MPI support
-   $ ./waf configure build
+   $ ./waf configure build_release
 
 In the case you are a Mac OS user, you will need to install the LLVM toolchain
 through brew that comes with OpenMP support.  Compiling Ripples than is as
@@ -70,9 +70,9 @@ simple as:
 
 .. code-block:: shell
 
-   $ ./waf configure --openmp-root=/usr/local/opt/llvm --enable-mpi build
+   $ ./waf configure --openmp-root=/usr/local/opt/llvm --enable-mpi build_release
    # or without MPI support
-   $ ./waf configure --openmp-root=/usr/local/opt/llvm build
+   $ ./waf configure --openmp-root=/usr/local/opt/llvm build_release
 
 
 Quickstart with Docker
@@ -86,13 +86,13 @@ Quickstart with Docker
    $ docker-compose -f docker/docker-compose.yml up -d --scale worker=2
    $ docker exec -u mpi -it docker_head_1 /bin/bash
    $ cd $HOME/ripples
-   $ ./waf configure --enable-mpi build
+   $ ./waf configure --enable-mpi build_release
 
 To run the parallel IMM tool:
 
 .. code-block:: shell
 
-   $ build/tools/imm  \
+   $ build/release/tools/imm  \
         -i test-data/karate.tsv \
         -p \
         -e 0.05 \
@@ -104,7 +104,7 @@ To run the MPI+OpenMP IMM tool on the docker cluster:
 
 .. code-block:: shell
 
-   $  mpiexec --hosts=docker_worker_1,docker_worker_2 -np 2 build/tools/mpi-imm \
+   $  mpiexec --hosts=docker_worker_1,docker_worker_2 -np 2 build/release/tools/mpi-imm \
         -i test-data/karate.tsv \
         -e 0.05 \
         -k 3 \
@@ -151,17 +151,17 @@ running:
 
 .. code-block:: shell
 
-   $ ./waf build
+   $ ./waf build_release
 
 For more detailed instruction, please read :ref:`build:Step By Step Build
 Instructions`.
 
-The tools compiled can be found under ``build/tools/``.  A complete set of
+The tools compiled can be found under ``build/release/tools/``.  A complete set of
 command line options can be obtained through:
 
 .. code-block:: shell
 
-   $ ./build/tools/<tool_name> --help
+   $ ./build/release/tools/<tool_name> --help
 
 
 Ripples Team

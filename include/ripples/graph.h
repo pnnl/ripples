@@ -268,25 +268,40 @@ class Graph {
 
   //! Move constructor.
   //! \param O The graph to be moved.
-  Graph(Graph &&O) {
-    std::swap(numNodes, O.numNodes);
-    std::swap(numEdges, O.numEdges);
-    std::swap(index, O.index);
-    std::swap(edges, O.edges);
-    idMap = std::move(O.idMap);
-    reverseMap = std::move(O.reverseMap);
+  Graph(Graph &&O)
+      : numNodes(O.numNodes),
+        numEdges(O.numEdges),
+        index(O.index),
+        edges(O.edges),
+        idMap(std::move(O.idMap)),
+        reverseMap(std::move(O.reverseMap)) {
+    O.numNodes = 0;
+    O.numEdges = 0;
+    O.index = nullptr;
+    O.edges = nullptr;
   }
 
   //! Move assignment operator.
   //! \param O The graph to be moved.
   //! \return a reference to the destination graph.
   Graph &operator=(Graph &&O) {
-    std::swap(numNodes, O.numNodes);
-    std::swap(numEdges, O.numEdges);
-    std::swap(index, O.index);
-    std::swap(edges, O.edges);
+    if (this == &O) return *this;
+
+    delete[] index;
+    delete[] edges;
+
+    numNodes = O.numNodes;
+    numEdges = O.numEdges;
+    index = O.index;
+    edges = O.edges;
     idMap = std::move(O.idMap);
     reverseMap = std::move(O.reverseMap);
+
+    O.numNodes = 0;
+    O.numEdges = 0;
+    O.index = nullptr;
+    O.edges = nullptr;
+
     return *this;
   }
 
@@ -364,8 +379,8 @@ class Graph {
 
   //! \brief Destuctor.
   ~Graph() {
-    delete[] index;
-    delete[] edges;
+    if (index) delete[] index;
+    if (edges) delete[] edges;
   }
 
   //! Returns the out-degree of a vertex.

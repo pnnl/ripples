@@ -43,6 +43,7 @@
 #ifndef RIPPLES_HILL_CLIMBING_H
 #define RIPPLES_HILL_CLIMBING_H
 
+#include <algorithm>
 #include <queue>
 #include <type_traits>
 #include <vector>
@@ -75,6 +76,15 @@ struct HillClimbingConfiguration : public AlgorithmConfiguration {
   }
 };
 
+//! The Hill Climbing Execution Record.
+struct HillClimbingExecutionRecord {
+  using ex_time_ms = std::chrono::duration<double, std::milli>;
+  using ex_time_ns = std::chrono::nanoseconds;
+
+  size_t NumThreads;
+  ex_time_ms Total;
+};
+
 template <typename GraphTy, typename GeneratorTy, typename diff_model_tag>
 auto SampleFrom(GraphTy &G, std::size_t num_samples, GeneratorTy &gen,
                 diff_model_tag &&diff_model) {
@@ -85,11 +95,12 @@ auto SampleFrom(GraphTy &G, std::size_t num_samples, GeneratorTy &gen,
 
   std::vector<new_graph_type> samples(num_samples);
 
-  std::vector<edge_list_elem> EL;
-  // #pragma omp parallel for
+#pragma omp parallel for
   for (size_t i = 0; i < num_samples; ++i) {
     trng::uniform01_dist<float> UD;
     int rank = omp_get_thread_num();
+    std::vector<edge_list_elem> EL;
+    // int rank = 0;
     // 1 - Sample a list of Edges from G.
     if (std::is_same<diff_model_tag, independent_cascade_tag>::value) {
       for (vertex_type v = 0; v < G.num_nodes(); ++v) {
@@ -111,28 +122,52 @@ auto SampleFrom(GraphTy &G, std::size_t num_samples, GeneratorTy &gen,
       }
     } else {
       // Unsupported.
+      throw "Should not be here";
     }
     // 2 - Create an unweighted graph from it.
     // 3 - Add it to the list.
-    // samples.emplace_back(EL.begin(), EL.end());
     new_graph_type G(EL.begin(), EL.end());
-    samples.push_back(std::move(G));
-    EL.resize(0);
+    samples[i] = std::move(G);
+    EL.clear();
   }
 
   return samples;
 }
 
+namespace {
 template <typename GraphTy, typename Itr>
-size_t BFS(GraphTy &G, Itr b, Itr e, typename GraphTy::vertex_type v) {
+size_t BFS(GraphTy &G, Itr b, Itr e, std::vector<bool> &visited) {
   using vertex_type = typename GraphTy::vertex_type;
 
   std::queue<vertex_type> queue;
-  std::vector<bool> visited(G.num_nodes(), false);
   size_t count = 0;
   for (; b != e; ++b) {
     queue.push(*b);
   }
+
+  while (!queue.empty()) {
+    vertex_type u = queue.front();
+    queue.pop();
+
+    for (auto v : G.neighbors(u)) {
+      if (!visited[v.vertex]) {
+        ++count;
+        queue.push(v.vertex);
+      }
+    }
+
+    visited[u] = true;
+  }
+  return count;
+}
+
+template <typename GraphTy>
+size_t BFS(GraphTy &G, typename GraphTy::vertex_type v,
+           std::vector<bool> visited) {
+  using vertex_type = typename GraphTy::vertex_type;
+
+  std::queue<vertex_type> queue;
+  size_t count = 0;
 
   queue.push(v);
 
@@ -151,6 +186,7 @@ size_t BFS(GraphTy &G, Itr b, Itr e, typename GraphTy::vertex_type v) {
   }
   return count;
 }
+}  // namespace
 
 template <typename GraphTy, typename GraphItrTy>
 auto SeedSelection(GraphTy &G, GraphItrTy B, GraphItrTy E, std::size_t k) {
@@ -161,20 +197,32 @@ auto SeedSelection(GraphTy &G, GraphItrTy B, GraphItrTy E, std::size_t k) {
   std::vector<size_t> count(G.num_nodes());
 
   for (size_t i = 0; i < k; ++i) {
-    // #pragma omp parallel for with vector reduction
+#pragma omp parallel for
+    for (size_t i = 0; i < count.size(); ++i) count[i] = 0;
+
+#pragma omp parallel for
     for (auto itr = B; itr < E; ++itr) {
       std::set<vertex_type> local_S;
+      size_t residual = 0;
       for (auto sitr = S.begin(); sitr != S.end(); ++sitr) {
         try {
           local_S.insert(itr->transformID(*sitr));
         } catch (...) {
+          ++residual;
         }
       }
+
+      std::vector<bool> visited(itr->num_nodes(), false);
+      size_t local_count =
+          residual + BFS(*itr, local_S.begin(), local_S.end(), visited);
+
       for (vertex_type v = 0; v < itr->num_nodes(); ++v) {
         if (local_S.find(v) != local_S.end()) continue;
         vertex_type original_v = itr->convertID(v);
 
-        count[original_v] += BFS(*itr, local_S.begin(), local_S.end(), v);
+        size_t delta = BFS(*itr, v, visited);
+#pragma omp atomic
+        count[original_v] += local_count + delta;
       }
     }
 
@@ -190,9 +238,14 @@ auto SeedSelection(GraphTy &G, GraphItrTy B, GraphItrTy E, std::size_t k) {
 template <typename GraphTy, typename GeneratorTy, typename diff_model_tag>
 auto HillClimbing(GraphTy &G, std::size_t k, std::size_t num_samples,
                   GeneratorTy &gen, diff_model_tag &&model_tag) {
-  std::vector<trng::lcg64> generator(1, gen);
+  size_t num_threads = 1;
+#pragma omp single
+  { num_threads = omp_get_max_threads(); }
 
-  auto sampled_graphs = SampleFrom(G, num_samples, generator, model_tag);
+  std::vector<trng::lcg64> generator(num_threads, gen);
+  for (size_t i = 0; i < num_threads; ++i) generator[i].split(num_threads, i);
+  auto sampled_graphs = SampleFrom(G, num_samples, generator,
+                                   std::forward<diff_model_tag>(model_tag));
 
   auto S = SeedSelection(G, sampled_graphs.begin(), sampled_graphs.end(), k);
 
