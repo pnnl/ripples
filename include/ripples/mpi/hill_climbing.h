@@ -61,22 +61,23 @@ auto SeedSelection(GraphTy &G, GraphItrTy B, GraphItrTy E, std::size_t k) {
 
   std::set<vertex_type> S;
   size_t vertex_block_size = (G.num_nodes() / world_size) + 1;
-  std::vector<int> global_count(vertex_block_size, 0);
-  std::vector<int> local_count(vertex_block_size, 0);
+  std::vector<uint64_t> global_count(vertex_block_size, 0);
+  std::vector<uint64_t> local_count(vertex_block_size, 0);
 
-  // MPI_Datatype MPI_2UINT64_T;
-  // MPI_Type_contiguous(2, MPI_UINT64_T, &MPI_2UINT64_T);
-  // MPI_Type_commit(&MPI_2UINT64_T);
+  MPI_Datatype MPI_2UINT64_T;
+  //MPI_TYPE_CONTIGUOUS(2, MPI_UINT64_T, MPI_2UINT64_T);
+  MPI_Type_contiguous(2, MPI_UINT64_T, &MPI_2UINT64_T);
+  MPI_Type_commit(&MPI_2UINT64_T);
 
   MPI_Win win;
   for (size_t i = 0; i < k; ++i) {
-    MPI_Win_create(global_count.data(), vertex_block_size * sizeof(size_t),
-                   sizeof(size_t), MPI_INFO_NULL, MPI_COMM_WORLD, &win);
+    MPI_Win_create(global_count.data(), vertex_block_size * sizeof(uint64_t),
+                   sizeof(uint64_t), MPI_INFO_NULL, MPI_COMM_WORLD, &win);
 
     MPI_Win_fence(0, win);
 
     for (int p = 0; p < world_size; ++p) {
-      int current_block = (p + rank) % world_size;
+      int current_block = p;  // (p + rank) % world_size;
 
       vertex_type start = current_block * vertex_block_size;
       vertex_type end = std::min(start + vertex_block_size, G.num_nodes());
@@ -92,17 +93,16 @@ auto SeedSelection(GraphTy &G, GraphItrTy B, GraphItrTy E, std::size_t k) {
         }
 
         std::vector<bool> visited(itr->num_nodes(), false);
-        size_t count =
-            residual + BFS(*itr, local_S.begin(), local_S.end(), visited);
+        BFS(*itr, local_S.begin(), local_S.end(), visited);
 #pragma omp parallel for
         for (vertex_type v = start; v < end; ++v) {
           if (S.find(v) != S.end()) continue;
           try {
             vertex_type local_v = itr->transformID(v);
 
-            uint64_t delta = BFS(*itr, local_v, visited);
+            uint64_t count = BFS(*itr, local_v, visited);
 #pragma omp atomic
-            local_count[v - start] += count + delta;
+            local_count[v - start] += count + residual;
           } catch (...) {
           }
         }
@@ -120,23 +120,24 @@ auto SeedSelection(GraphTy &G, GraphItrTy B, GraphItrTy E, std::size_t k) {
         global_count.begin(),
         std::max_element(global_count.begin(), global_count.end()));
 
-    std::cout << rank * vertex_block_size + v << " <-> " << global_count[v] << std::endl;
+    std::cout << rank << " " << rank * vertex_block_size + v << " <-> "
+              << global_count[v] << std::endl;
 #pragma omp parallel for
     for (size_t i = 0; i < global_count.size(); ++i) {
       local_count[i] = 0;
       global_count[i] = 0;
     }
 
-    int local[2];
+    uint64_t local[2];
     local[0] = global_count[v];
     local[1] = rank * vertex_block_size + v;
-    int global[2] = {0, 0};
+    uint64_t global[2] = {0, 0};
 
-    MPI_Allreduce(local, global, 1, MPI_2INTEGER, MPI_MAXLOC, MPI_COMM_WORLD);
+    MPI_Allreduce(local, global, 1, MPI_2UINT64_T, MPI_MAXLOC, MPI_COMM_WORLD);
 
+    std::cout << rank << " " << global[0] << " *-* " << global[1] << std::endl;
     S.insert(global[1]);
-    if (rank == 0)
-      std::cout << global[0] << " "<< global[1] << std::endl;
+    if (rank == 0) std::cout << global[0] << " " << global[1] << std::endl;
   }
   return S;
 }

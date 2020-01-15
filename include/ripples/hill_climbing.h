@@ -140,7 +140,6 @@ size_t BFS(GraphTy &G, Itr b, Itr e, std::vector<bool> &visited) {
   using vertex_type = typename GraphTy::vertex_type;
 
   std::queue<vertex_type> queue;
-  size_t count = 0;
   for (; b != e; ++b) {
     queue.push(*b);
   }
@@ -155,10 +154,9 @@ size_t BFS(GraphTy &G, Itr b, Itr e, std::vector<bool> &visited) {
       }
     }
 
-    ++count;
     visited[u] = true;
   }
-  return count;
+  return std::count(visited.begin(), visited.end(), true);
 }
 
 template <typename GraphTy>
@@ -167,7 +165,6 @@ size_t BFS(GraphTy &G, typename GraphTy::vertex_type v,
   using vertex_type = typename GraphTy::vertex_type;
 
   std::queue<vertex_type> queue;
-  size_t count = 0;
 
   queue.push(v);
 
@@ -181,10 +178,9 @@ size_t BFS(GraphTy &G, typename GraphTy::vertex_type v,
       }
     }
 
-    ++count;
     visited[u] = true;
   }
-  return count;
+  return std::count(visited.begin(), visited.end(), true);
 }
 }  // namespace
 
