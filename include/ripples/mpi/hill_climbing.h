@@ -61,19 +61,14 @@ auto SeedSelection(GraphTy &G, GraphItrTy B, GraphItrTy E, std::size_t k) {
 
   std::set<vertex_type> S;
   size_t vertex_block_size = (G.num_nodes() / world_size) + 1;
-  std::vector<uint64_t> global_count(vertex_block_size, 0);
-  std::vector<uint64_t> local_count(vertex_block_size, 0);
-
-  MPI_Datatype MPI_2UINT64_T;
-  //MPI_TYPE_CONTIGUOUS(2, MPI_UINT64_T, MPI_2UINT64_T);
-  MPI_Type_contiguous(2, MPI_UINT64_T, &MPI_2UINT64_T);
-  MPI_Type_commit(&MPI_2UINT64_T);
+  std::vector<long> global_count(vertex_block_size, 0);
+  std::vector<long> local_count(vertex_block_size, 0);
 
   MPI_Win win;
-  for (size_t i = 0; i < k; ++i) {
-    MPI_Win_create(global_count.data(), vertex_block_size * sizeof(uint64_t),
-                   sizeof(uint64_t), MPI_INFO_NULL, MPI_COMM_WORLD, &win);
+  MPI_Win_create(global_count.data(), vertex_block_size * sizeof(long),
+                 sizeof(long), MPI_INFO_NULL, MPI_COMM_WORLD, &win);
 
+  for (size_t i = 0; i < k; ++i) {
     MPI_Win_fence(0, win);
 
     for (int p = 0; p < world_size; ++p) {
@@ -83,7 +78,7 @@ auto SeedSelection(GraphTy &G, GraphItrTy B, GraphItrTy E, std::size_t k) {
       vertex_type end = std::min(start + vertex_block_size, G.num_nodes());
       for (auto itr = B; itr < E; ++itr) {
         std::set<vertex_type> local_S;
-        uint64_t residual = 0;
+        long residual = 0;
         for (auto sitr = S.begin(); sitr != S.end(); ++sitr) {
           try {
             local_S.insert(itr->transformID(*sitr));
@@ -100,7 +95,7 @@ auto SeedSelection(GraphTy &G, GraphItrTy B, GraphItrTy E, std::size_t k) {
           try {
             vertex_type local_v = itr->transformID(v);
 
-            uint64_t count = BFS(*itr, local_v, visited);
+            long count = BFS(*itr, local_v, visited);
 #pragma omp atomic
             local_count[v - start] += count + residual;
           } catch (...) {
@@ -108,37 +103,40 @@ auto SeedSelection(GraphTy &G, GraphItrTy B, GraphItrTy E, std::size_t k) {
         }
       }
 
-      MPI_Accumulate(local_count.data(), vertex_block_size, MPI_UINT64_T,
-                     current_block, 0, vertex_block_size, MPI_UINT64_T, MPI_SUM,
+      MPI_Accumulate(local_count.data(), vertex_block_size, MPI_LONG,
+                     current_block, 0, vertex_block_size, MPI_LONG, MPI_SUM,
                      win);
+
+#pragma omp parallel for
+      for (size_t i = 0; i < global_count.size(); ++i) {
+        local_count[i] = 0;
+      }
     }
 
     MPI_Win_fence(0, win);
-    MPI_Win_free(&win);
 
     vertex_type v = std::distance(
         global_count.begin(),
         std::max_element(global_count.begin(), global_count.end()));
 
-    std::cout << rank << " " << rank * vertex_block_size + v << " <-> "
-              << global_count[v] << std::endl;
+    struct {
+      long count;
+      int index;
+    } local, global;
+    local.count = global_count[v];
+    local.index = rank * vertex_block_size + v;
+
 #pragma omp parallel for
     for (size_t i = 0; i < global_count.size(); ++i) {
       local_count[i] = 0;
       global_count[i] = 0;
     }
 
-    uint64_t local[2];
-    local[0] = global_count[v];
-    local[1] = rank * vertex_block_size + v;
-    uint64_t global[2] = {0, 0};
+    MPI_Allreduce(&local, &global, 1, MPI_LONG_INT, MPI_MAXLOC, MPI_COMM_WORLD);
 
-    MPI_Allreduce(local, global, 1, MPI_2UINT64_T, MPI_MAXLOC, MPI_COMM_WORLD);
-
-    std::cout << rank << " " << global[0] << " *-* " << global[1] << std::endl;
-    S.insert(global[1]);
-    if (rank == 0) std::cout << global[0] << " " << global[1] << std::endl;
+    S.insert(global.index);
   }
+  MPI_Win_free(&win);
   return S;
 }
 

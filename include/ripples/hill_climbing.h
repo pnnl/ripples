@@ -167,7 +167,7 @@ size_t BFS(GraphTy &G, typename GraphTy::vertex_type v,
   std::queue<vertex_type> queue;
 
   queue.push(v);
-
+  size_t count = 0;
   while (!queue.empty()) {
     vertex_type u = queue.front();
     queue.pop();
@@ -175,6 +175,7 @@ size_t BFS(GraphTy &G, typename GraphTy::vertex_type v,
     for (auto v : G.neighbors(u)) {
       if (!visited[v.vertex]) {
         queue.push(v.vertex);
+        ++count;
       }
     }
 
