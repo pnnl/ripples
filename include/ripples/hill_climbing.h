@@ -151,11 +151,11 @@ size_t BFS(GraphTy &G, Itr b, Itr e, std::vector<bool> &visited) {
 
     for (auto v : G.neighbors(u)) {
       if (!visited[v.vertex]) {
-        ++count;
         queue.push(v.vertex);
       }
     }
 
+    ++count;
     visited[u] = true;
   }
   return count;
@@ -177,11 +177,11 @@ size_t BFS(GraphTy &G, typename GraphTy::vertex_type v,
 
     for (auto v : G.neighbors(u)) {
       if (!visited[v.vertex]) {
-        ++count;
         queue.push(v.vertex);
       }
     }
 
+    ++count;
     visited[u] = true;
   }
   return count;

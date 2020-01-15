@@ -40,10 +40,10 @@
 //
 //===----------------------------------------------------------------------===//
 
-#include "ripples/hill_climbing.h"
 #include "ripples/configuration.h"
 #include "ripples/graph.h"
 #include "ripples/loaders.h"
+#include "ripples/mpi/hill_climbing.h"
 #include "ripples/utility.h"
 
 #include "spdlog/fmt/ostr.h"
@@ -53,6 +53,8 @@
 #include "trng/lcg64.hpp"
 
 #include "nlohmann/json.hpp"
+
+#include "mpi.h"
 
 namespace ripples {
 ToolConfiguration<HillClimbingConfiguration>& configuration() {
@@ -64,13 +66,20 @@ template <typename SeedSet>
 auto GetExperimentRecord(
     const ToolConfiguration<HillClimbingConfiguration>& CFG,
     const HillClimbingExecutionRecord& R, const SeedSet& seeds) {
-  nlohmann::json experiment{{"Algorithm", "HillClimbing"},
+  // Find out rank, size
+  int world_rank;
+  MPI_Comm_rank(MPI_COMM_WORLD, &world_rank);
+  int world_size;
+  MPI_Comm_size(MPI_COMM_WORLD, &world_size);
+  nlohmann::json experiment{{"Algorithm", "MPI-HillClimbing"},
                             {"Input", CFG.IFileName},
                             {"Output", CFG.OutputFile},
                             {"DiffusionModel", CFG.diffusionModel},
                             {"K", CFG.k},
                             {"Seeds", seeds},
                             {"NumThreads", R.NumThreads},
+                            {"Rank", world_rank},
+                            {"WorldSize", world_size},
                             {"Total", R.Total}};
 
   return experiment;
@@ -82,6 +91,8 @@ void parse_command_line(int argc, char** argv) {
 }  // namespace ripples
 
 int main(int argc, char** argv) {
+  MPI_Init(NULL, NULL);
+
   auto console = spdlog::stdout_color_st("console");
   spdlog::set_level(spdlog::level::info);
 
@@ -112,21 +123,21 @@ int main(int argc, char** argv) {
 
   if (ripples::configuration().diffusionModel == "IC") {
     auto start = std::chrono::high_resolution_clock::now();
-    seeds = HillClimbing(G, ripples::configuration().k,
-                         ripples::configuration().samples, generator,
-                         ripples::independent_cascade_tag{});
+    seeds = ripples::mpi::HillClimbing(
+        G, ripples::configuration().k, ripples::configuration().samples,
+        generator, ripples::independent_cascade_tag{});
     auto end = std::chrono::high_resolution_clock::now();
     R.Total = end - start;
   } else if (ripples::configuration().diffusionModel == "LT") {
     auto start = std::chrono::high_resolution_clock::now();
-    seeds = HillClimbing(G, ripples::configuration().k,
-                         ripples::configuration().samples, generator,
-                         ripples::linear_threshold_tag{});
+    seeds = ripples::mpi::HillClimbing(
+        G, ripples::configuration().k, ripples::configuration().samples,
+        generator, ripples::linear_threshold_tag{});
     auto end = std::chrono::high_resolution_clock::now();
     R.Total = end - start;
   }
 
-  console->info("HillClimbing : {}ms", R.Total.count());
+  console->info("MPI+HillClimbing : {}ms", R.Total.count());
 
   size_t num_threads;
 #pragma omp single
@@ -137,7 +148,20 @@ int main(int argc, char** argv) {
 
   auto experiment = GetExperimentRecord(ripples::configuration(), R, out_seeds);
   executionLog.push_back(experiment);
-  std::ofstream perf(ripples::configuration().OutputFile);
-  perf << executionLog.dump(2);
+
+  int world_size;
+  MPI_Comm_size(MPI_COMM_WORLD, &world_size);
+  console->info("HillClimbing World Size : {}", world_size);
+
+  int world_rank;
+  MPI_Comm_rank(MPI_COMM_WORLD, &world_rank);
+  console->info("HillClimbing Rank : {}", world_rank);
+
+  if (world_rank == 0) {
+    std::ofstream perf(ripples::configuration().OutputFile);
+    perf << executionLog.dump(2);
+  }
+
+  MPI_Finalize();
   return EXIT_SUCCESS;
 }
