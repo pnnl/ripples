@@ -89,25 +89,22 @@ template <typename GraphTy, typename GeneratorTy, typename diff_model_tag>
 auto SampleFrom(GraphTy &G, std::size_t num_samples, GeneratorTy &gen,
                 diff_model_tag &&diff_model) {
   using vertex_type = typename GraphTy::vertex_type;
-  using edge_type = Destination<vertex_type>;
-  using edge_list_elem = Edge<vertex_type>;
-  using new_graph_type = Graph<vertex_type, edge_type>;
-
-  std::vector<new_graph_type> samples(num_samples);
+  using edge_mask = std::vector<bool>;
+  std::vector<edge_mask> samples(num_samples,
+                                 std::vector<bool>(G.num_edges(), false));
 
 #pragma omp parallel for
   for (size_t i = 0; i < num_samples; ++i) {
     trng::uniform01_dist<float> UD;
     int rank = omp_get_thread_num();
-    std::vector<edge_list_elem> EL;
-    // int rank = 0;
     // 1 - Sample a list of Edges from G.
+    size_t edge_number = 0;
     if (std::is_same<diff_model_tag, independent_cascade_tag>::value) {
       for (vertex_type v = 0; v < G.num_nodes(); ++v) {
         for (auto &e : G.neighbors(v)) {
-          if (UD(gen[rank]) < e.weight) continue;
+          if (UD(gen[rank]) >= e.weight) samples[i][edge_number] = true;
 
-          EL.emplace_back(edge_list_elem{v, e.vertex});
+          ++edge_number;
         }
       }
     } else if (std::is_same<diff_model_tag, linear_threshold_tag>::value) {
@@ -116,8 +113,10 @@ auto SampleFrom(GraphTy &G, std::size_t num_samples, GeneratorTy &gen,
         for (auto &e : G.neighbors(v)) {
           threshold -= e.weight;
           if (threshold <= 0) {
-            EL.emplace_back(edge_list_elem{v, e.vertex});
+            samples[i][edge_number] = true;
+            // EL.emplace_back(edge_list_elem{v, e.vertex});
           }
+          ++edge_number;
         }
       }
     } else {
@@ -126,17 +125,16 @@ auto SampleFrom(GraphTy &G, std::size_t num_samples, GeneratorTy &gen,
     }
     // 2 - Create an unweighted graph from it.
     // 3 - Add it to the list.
-    new_graph_type G(EL.begin(), EL.end());
-    samples[i] = std::move(G);
-    EL.clear();
+    // EL.clear();
   }
 
   return samples;
 }
 
 namespace {
-template <typename GraphTy, typename Itr>
-size_t BFS(GraphTy &G, Itr b, Itr e, std::vector<bool> &visited) {
+template <typename GraphTy, typename GraphMaskTy, typename Itr>
+size_t BFS(GraphTy &G, GraphMaskTy &M, Itr b, Itr e,
+           std::vector<bool> &visited) {
   using vertex_type = typename GraphTy::vertex_type;
 
   std::queue<vertex_type> queue;
@@ -148,10 +146,15 @@ size_t BFS(GraphTy &G, Itr b, Itr e, std::vector<bool> &visited) {
     vertex_type u = queue.front();
     queue.pop();
 
+    size_t edge_number =
+        std::distance(G.neighbors(0).begin(), G.neighbors(u).begin());
+
     for (auto v : G.neighbors(u)) {
-      if (!visited[v.vertex]) {
+      if (M[edge_number] && !visited[v.vertex]) {
         queue.push(v.vertex);
       }
+
+      ++edge_number;
     }
 
     visited[u] = true;
@@ -159,24 +162,25 @@ size_t BFS(GraphTy &G, Itr b, Itr e, std::vector<bool> &visited) {
   return std::count(visited.begin(), visited.end(), true);
 }
 
-template <typename GraphTy>
-size_t BFS(GraphTy &G, typename GraphTy::vertex_type v,
+template <typename GraphTy, typename GraphMaskTy>
+size_t BFS(GraphTy &G, GraphMaskTy &M, typename GraphTy::vertex_type v,
            std::vector<bool> visited) {
   using vertex_type = typename GraphTy::vertex_type;
 
   std::queue<vertex_type> queue;
 
   queue.push(v);
-  size_t count = 0;
   while (!queue.empty()) {
     vertex_type u = queue.front();
     queue.pop();
 
+    size_t edge_number =
+        std::distance(G.neighbors(0).begin(), G.neighbors(u).begin());
     for (auto v : G.neighbors(u)) {
-      if (!visited[v.vertex]) {
+      if (M[edge_number] && !visited[v.vertex]) {
         queue.push(v.vertex);
-        ++count;
       }
+      ++edge_number;
     }
 
     visited[u] = true;
@@ -185,10 +189,10 @@ size_t BFS(GraphTy &G, typename GraphTy::vertex_type v,
 }
 }  // namespace
 
-template <typename GraphTy, typename GraphItrTy>
-auto SeedSelection(GraphTy &G, GraphItrTy B, GraphItrTy E, std::size_t k) {
-  using graph_type = typename std::iterator_traits<GraphItrTy>::value_type;
-  using vertex_type = typename graph_type::vertex_type;
+template <typename GraphTy, typename GraphMaskItrTy>
+auto SeedSelection(GraphTy &G, GraphMaskItrTy B, GraphMaskItrTy E,
+                   std::size_t k) {
+  using vertex_type = typename GraphTy::vertex_type;
 
   std::set<vertex_type> S;
   std::vector<size_t> count(G.num_nodes());
@@ -199,26 +203,15 @@ auto SeedSelection(GraphTy &G, GraphItrTy B, GraphItrTy E, std::size_t k) {
 
 #pragma omp parallel for
     for (auto itr = B; itr < E; ++itr) {
-      std::set<vertex_type> local_S;
-      size_t residual = 0;
-      for (auto sitr = S.begin(); sitr != S.end(); ++sitr) {
-        try {
-          local_S.insert(itr->transformID(*sitr));
-        } catch (...) {
-          ++residual;
-        }
-      }
+      std::vector<bool> visited(G.num_nodes(), false);
+      size_t base_count = BFS(G, *itr, S.begin(), S.end(), visited);
 
-      std::vector<bool> visited(itr->num_nodes(), false);
-      size_t base_count = BFS(*itr, local_S.begin(), local_S.end(), visited);
-
-      for (vertex_type v = 0; v < itr->num_nodes(); ++v) {
-        if (local_S.find(v) != local_S.end()) continue;
-        vertex_type original_v = itr->convertID(v);
+      for (vertex_type v = 0; v < G.num_nodes(); ++v) {
+        if (S.find(v) != S.end()) continue;
         size_t update_count = base_count + 1;
-        if (!visited[v]) update_count = BFS(*itr, v, visited);
+        if (!visited[v]) update_count = BFS(G, *itr, v, visited);
 #pragma omp atomic
-        count[original_v] += update_count + residual;
+        count[v] += update_count;
       }
     }
 

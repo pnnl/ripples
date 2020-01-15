@@ -50,10 +50,10 @@
 
 namespace ripples {
 namespace mpi {
-template <typename GraphTy, typename GraphItrTy>
-auto SeedSelection(GraphTy &G, GraphItrTy B, GraphItrTy E, std::size_t k) {
-  using graph_type = typename std::iterator_traits<GraphItrTy>::value_type;
-  using vertex_type = typename graph_type::vertex_type;
+template <typename GraphTy, typename GraphMaskItrTy>
+auto SeedSelection(GraphTy &G, GraphMaskItrTy B, GraphMaskItrTy E,
+                   std::size_t k) {
+  using vertex_type = typename GraphTy::vertex_type;
 
   int world_size;
   MPI_Comm_size(MPI_COMM_WORLD, &world_size);
@@ -73,35 +73,19 @@ auto SeedSelection(GraphTy &G, GraphItrTy B, GraphItrTy E, std::size_t k) {
     MPI_Win_fence(0, win);
 
     for (int p = 0; p < world_size; ++p) {
-      int current_block = p; // (p + rank) % world_size;
+      int current_block = (p + rank) % world_size;
 
       vertex_type start = current_block * vertex_block_size;
       vertex_type end = std::min(start + vertex_block_size, G.num_nodes());
       for (auto itr = B; itr < E; ++itr) {
-        std::set<vertex_type> local_S;
-        long residual = 0;
-        for (auto sitr = S.begin(); sitr != S.end(); ++sitr) {
-          try {
-            local_S.insert(itr->transformID(*sitr));
-          } catch (...) {
-            ++residual;
-          }
-        }
-
-        std::vector<bool> visited(itr->num_nodes(), false);
-        size_t base = BFS(*itr, local_S.begin(), local_S.end(), visited);
+        std::vector<bool> visited(G.num_nodes(), false);
+        size_t base = BFS(G, *itr, S.begin(), S.end(), visited);
 #pragma omp parallel for schedule(dynamic)
         for (vertex_type v = start; v < end; ++v) {
           if (S.find(v) != S.end()) continue;
-          long count = base;
-          try {
-            vertex_type local_v = itr->transformID(v);
-
-            if (!visited[local_v]) count = BFS(*itr, local_v, visited);
-          } catch (...) {
-            ++count;
-          }
-          local_count[v - start] += count + residual;
+          long count = base + 1;
+          if (!visited[v]) count = BFS(G, *itr, v, visited);
+          local_count[v - start] += count;
         }
       }
 
@@ -128,7 +112,8 @@ auto SeedSelection(GraphTy &G, GraphItrTy B, GraphItrTy E, std::size_t k) {
     local.count = global_count[v];
     local.index = rank * vertex_block_size + v;
 
-    spdlog::get("console")->info("R[{}] ({}, {})", rank, local.count, local.index);
+    spdlog::get("console")->info("R[{}] ({}, {})", rank, local.count,
+                                 local.index);
 
 #pragma omp parallel for
     for (size_t i = 0; i < global_count.size(); ++i) {
@@ -142,7 +127,7 @@ auto SeedSelection(GraphTy &G, GraphItrTy B, GraphItrTy E, std::size_t k) {
   }
   MPI_Win_free(&win);
   return S;
-}
+}  // namespace mpi
 
 //! The HillClimbing algorithm for Influence Maximization (MPI Specialization).
 //!
@@ -177,6 +162,7 @@ auto HillClimbing(GraphTy &G, std::size_t k, std::size_t num_samples,
   auto sampled_graphs = SampleFrom(G, num_samples, generator,
                                    std::forward<diff_model_tag>(model_tag));
 
+  spdlog::get("console")->info("Done with Sampling");
   auto S =
       mpi::SeedSelection(G, sampled_graphs.begin(), sampled_graphs.end(), k);
 
