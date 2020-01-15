@@ -210,16 +210,15 @@ auto SeedSelection(GraphTy &G, GraphItrTy B, GraphItrTy E, std::size_t k) {
       }
 
       std::vector<bool> visited(itr->num_nodes(), false);
-      size_t local_count =
-          residual + BFS(*itr, local_S.begin(), local_S.end(), visited);
+      size_t base_count = BFS(*itr, local_S.begin(), local_S.end(), visited);
 
       for (vertex_type v = 0; v < itr->num_nodes(); ++v) {
         if (local_S.find(v) != local_S.end()) continue;
         vertex_type original_v = itr->convertID(v);
-
-        size_t delta = BFS(*itr, v, visited);
+        size_t update_count = base_count + 1;
+        if (!visited[v]) update_count = BFS(*itr, v, visited);
 #pragma omp atomic
-        count[original_v] += local_count + delta;
+        count[original_v] += update_count + residual;
       }
     }
 

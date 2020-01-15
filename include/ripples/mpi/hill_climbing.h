@@ -44,6 +44,7 @@
 #define RIPPLES_MPI_HILL_CLIMBING_H
 
 #include "ripples/hill_climbing.h"
+#include "spdlog/spdlog.h"
 
 #include "mpi.h"
 
@@ -72,7 +73,7 @@ auto SeedSelection(GraphTy &G, GraphItrTy B, GraphItrTy E, std::size_t k) {
     MPI_Win_fence(0, win);
 
     for (int p = 0; p < world_size; ++p) {
-      int current_block = p;  // (p + rank) % world_size;
+      int current_block = p; // (p + rank) % world_size;
 
       vertex_type start = current_block * vertex_block_size;
       vertex_type end = std::min(start + vertex_block_size, G.num_nodes());
@@ -88,18 +89,19 @@ auto SeedSelection(GraphTy &G, GraphItrTy B, GraphItrTy E, std::size_t k) {
         }
 
         std::vector<bool> visited(itr->num_nodes(), false);
-        BFS(*itr, local_S.begin(), local_S.end(), visited);
-#pragma omp parallel for
+        size_t base = BFS(*itr, local_S.begin(), local_S.end(), visited);
+#pragma omp parallel for schedule(dynamic)
         for (vertex_type v = start; v < end; ++v) {
           if (S.find(v) != S.end()) continue;
+          long count = base;
           try {
             vertex_type local_v = itr->transformID(v);
 
-            long count = BFS(*itr, local_v, visited);
-#pragma omp atomic
-            local_count[v - start] += count + residual;
+            if (!visited[local_v]) count = BFS(*itr, local_v, visited);
           } catch (...) {
+            ++count;
           }
+          local_count[v - start] += count + residual;
         }
       }
 
@@ -108,7 +110,7 @@ auto SeedSelection(GraphTy &G, GraphItrTy B, GraphItrTy E, std::size_t k) {
                      win);
 
 #pragma omp parallel for
-      for (size_t i = 0; i < global_count.size(); ++i) {
+      for (size_t i = 0; i < local_count.size(); ++i) {
         local_count[i] = 0;
       }
     }
@@ -125,6 +127,8 @@ auto SeedSelection(GraphTy &G, GraphItrTy B, GraphItrTy E, std::size_t k) {
     } local, global;
     local.count = global_count[v];
     local.index = rank * vertex_block_size + v;
+
+    spdlog::get("console")->info("R[{}] ({}, {})", rank, local.count, local.index);
 
 #pragma omp parallel for
     for (size_t i = 0; i < global_count.size(); ++i) {
