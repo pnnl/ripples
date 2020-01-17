@@ -69,22 +69,39 @@ auto SeedSelection(GraphTy &G, GraphMaskItrTy B, GraphMaskItrTy E,
   MPI_Win_create(global_count.data(), vertex_block_size * sizeof(long),
                  sizeof(long), MPI_INFO_NULL, MPI_COMM_WORLD, &win);
 
+  MPI_Win_fence(0, win);
+  std::vector<std::vector<bool>> frontier_cache(std::distance(B, E));
+
   for (size_t i = 0; i < k; ++i) {
-    MPI_Win_fence(0, win);
+
+#pragma openmp parallel for schedule(dynamic)
+    for (auto itr = B; itr < E; ++itr) {
+      frontier_cache[std::distance(B, itr)].resize(G.num_nodes(), false);
+      BFS(G, *itr, S.begin(), S.end(), frontier_cache[std::distance(B, itr)]);
+    }
 
     for (int p = 0; p < world_size; ++p) {
       int current_block = (p + rank) % world_size;
 
+      spdlog::get("console")->info("Rank {} - Block {}", rank, current_block);
       vertex_type start = current_block * vertex_block_size;
       vertex_type end = std::min(start + vertex_block_size, G.num_nodes());
       for (auto itr = B; itr < E; ++itr) {
-        std::vector<bool> visited(G.num_nodes(), false);
-        size_t base = BFS(G, *itr, S.begin(), S.end(), visited);
+        size_t sample_id = std::distance(B, itr);
+        size_t base = std::count(frontier_cache[sample_id].begin(),
+                                 frontier_cache[sample_id].end(), true);
+        // if (frontier_cache[sample_id].empty()) {
+        //   frontier_cache[sample_id].resize(G.num_nodes(), false);
+        //   base = BFS(G, *itr, S.begin(), S.end(), frontier_cache[sample_id]);
+        // } else {
+        //   base = std::count(frontier_cache[sample_id].begin(),
+        //                     frontier_cache[sample_id].end(), true);
+        // }
 #pragma omp parallel for schedule(dynamic)
         for (vertex_type v = start; v < end; ++v) {
           if (S.find(v) != S.end()) continue;
           long count = base + 1;
-          if (!visited[v]) count = BFS(G, *itr, v, visited);
+          if (!frontier_cache[sample_id][v]) count = BFS(G, *itr, v, frontier_cache[sample_id]);
           local_count[v - start] += count;
         }
       }
@@ -119,6 +136,11 @@ auto SeedSelection(GraphTy &G, GraphMaskItrTy B, GraphMaskItrTy E,
     for (size_t i = 0; i < global_count.size(); ++i) {
       local_count[i] = 0;
       global_count[i] = 0;
+    }
+
+#pragma omp parallel for
+    for (size_t i = 0; i < frontier_cache.size(); ++i) {
+      frontier_cache[i].resize(0);
     }
 
     MPI_Allreduce(&local, &global, 1, MPI_LONG_INT, MPI_MAXLOC, MPI_COMM_WORLD);
