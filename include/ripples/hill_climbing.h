@@ -81,18 +81,25 @@ struct HillClimbingExecutionRecord {
   using ex_time_ms = std::chrono::duration<double, std::milli>;
   using ex_time_ns = std::chrono::nanoseconds;
 
+  //! Number of threads used during the execution.
   size_t NumThreads;
+  //! Sampling time.
+  ex_time_ms Sampling;
+  //! Seed Selection time.
+  ex_time_ms SeedSelection;
+  //! Total execution time.
   ex_time_ms Total;
 };
 
 template <typename GraphTy, typename GeneratorTy, typename diff_model_tag>
 auto SampleFrom(GraphTy &G, std::size_t num_samples, GeneratorTy &gen,
+                HillClimbingExecutionRecord &record,
                 diff_model_tag &&diff_model) {
   using vertex_type = typename GraphTy::vertex_type;
   using edge_mask = std::vector<bool>;
   std::vector<edge_mask> samples(num_samples,
                                  std::vector<bool>(G.num_edges(), false));
-
+  auto start = std::chrono::high_resolution_clock::now();
 #pragma omp parallel for
   for (size_t i = 0; i < num_samples; ++i) {
     trng::uniform01_dist<float> UD;
@@ -128,6 +135,8 @@ auto SampleFrom(GraphTy &G, std::size_t num_samples, GeneratorTy &gen,
     // EL.clear();
   }
 
+  auto end = std::chrono::high_resolution_clock::now();
+  record.Sampling = end - start;
   return samples;
 }
 
@@ -191,12 +200,13 @@ size_t BFS(GraphTy &G, GraphMaskTy &M, typename GraphTy::vertex_type v,
 
 template <typename GraphTy, typename GraphMaskItrTy>
 auto SeedSelection(GraphTy &G, GraphMaskItrTy B, GraphMaskItrTy E,
-                   std::size_t k) {
+                   std::size_t k, HillClimbingExecutionRecord &record) {
   using vertex_type = typename GraphTy::vertex_type;
 
   std::set<vertex_type> S;
   std::vector<size_t> count(G.num_nodes());
 
+  auto start = std::chrono::high_resolution_clock::now();
   for (size_t i = 0; i < k; ++i) {
 #pragma omp parallel for
     for (size_t i = 0; i < count.size(); ++i) count[i] = 0;
@@ -220,23 +230,27 @@ auto SeedSelection(GraphTy &G, GraphMaskItrTy B, GraphMaskItrTy E,
 
     S.insert(v);
   }
+  auto end = std::chrono::high_resolution_clock::now();
+  record.SeedSelection = end - start;
 
   return S;
 }
 
 template <typename GraphTy, typename GeneratorTy, typename diff_model_tag>
 auto HillClimbing(GraphTy &G, std::size_t k, std::size_t num_samples,
-                  GeneratorTy &gen, diff_model_tag &&model_tag) {
+                  GeneratorTy &gen, HillClimbingExecutionRecord &record,
+                  diff_model_tag &&model_tag) {
   size_t num_threads = 1;
 #pragma omp single
   { num_threads = omp_get_max_threads(); }
 
   std::vector<trng::lcg64> generator(num_threads, gen);
   for (size_t i = 0; i < num_threads; ++i) generator[i].split(num_threads, i);
-  auto sampled_graphs = SampleFrom(G, num_samples, generator,
+  auto sampled_graphs = SampleFrom(G, num_samples, generator, record,
                                    std::forward<diff_model_tag>(model_tag));
 
-  auto S = SeedSelection(G, sampled_graphs.begin(), sampled_graphs.end(), k);
+  auto S =
+      SeedSelection(G, sampled_graphs.begin(), sampled_graphs.end(), k, record);
 
   return S;
 }

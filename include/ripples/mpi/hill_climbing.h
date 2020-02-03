@@ -46,13 +46,14 @@
 #include "ripples/hill_climbing.h"
 #include "spdlog/spdlog.h"
 
+#include <chrono>
 #include "mpi.h"
 
 namespace ripples {
 namespace mpi {
 template <typename GraphTy, typename GraphMaskItrTy>
 auto SeedSelection(GraphTy &G, GraphMaskItrTy B, GraphMaskItrTy E,
-                   std::size_t k) {
+                   std::size_t k, HillClimbingExecutionRecord &record) {
   using vertex_type = typename GraphTy::vertex_type;
 
   int world_size;
@@ -72,8 +73,9 @@ auto SeedSelection(GraphTy &G, GraphMaskItrTy B, GraphMaskItrTy E,
   MPI_Win_fence(0, win);
   std::vector<std::vector<bool>> frontier_cache(std::distance(B, E));
 
-  for (size_t i = 0; i < k; ++i) {
+  auto start = std::chrono::high_resolution_clock::now();
 
+  for (size_t i = 0; i < k; ++i) {
 #pragma openmp parallel for schedule(dynamic)
     for (auto itr = B; itr < E; ++itr) {
       frontier_cache[std::distance(B, itr)].resize(G.num_nodes(), false);
@@ -101,7 +103,8 @@ auto SeedSelection(GraphTy &G, GraphMaskItrTy B, GraphMaskItrTy E,
         for (vertex_type v = start; v < end; ++v) {
           if (S.find(v) != S.end()) continue;
           long count = base + 1;
-          if (!frontier_cache[sample_id][v]) count = BFS(G, *itr, v, frontier_cache[sample_id]);
+          if (!frontier_cache[sample_id][v])
+            count = BFS(G, *itr, v, frontier_cache[sample_id]);
           local_count[v - start] += count;
         }
       }
@@ -147,6 +150,9 @@ auto SeedSelection(GraphTy &G, GraphMaskItrTy B, GraphMaskItrTy E,
 
     S.insert(global.index);
   }
+
+  auto end = std::chrono::high_resolution_clock::now();
+  record.SeedSelection = end - start;
   MPI_Win_free(&win);
   return S;
 }  // namespace mpi
@@ -166,7 +172,8 @@ auto SeedSelection(GraphTy &G, GraphMaskItrTy B, GraphMaskItrTy E,
 //! \returns a set of k vertices of G.
 template <typename GraphTy, typename GeneratorTy, typename diff_model_tag>
 auto HillClimbing(GraphTy &G, std::size_t k, std::size_t num_samples,
-                  GeneratorTy &gen, diff_model_tag &&model_tag) {
+                  GeneratorTy &gen, HillClimbingExecutionRecord &record,
+                  diff_model_tag &&model_tag) {
   size_t num_threads = 1;
   int world_size;
   MPI_Comm_size(MPI_COMM_WORLD, &world_size);
@@ -181,12 +188,12 @@ auto HillClimbing(GraphTy &G, std::size_t k, std::size_t num_samples,
     generator[i].split(world_size * num_threads, rank * num_threads + i);
 
   num_samples /= world_size;
-  auto sampled_graphs = SampleFrom(G, num_samples, generator,
+  auto sampled_graphs = SampleFrom(G, num_samples, generator, record,
                                    std::forward<diff_model_tag>(model_tag));
 
   spdlog::get("console")->info("Done with Sampling");
   auto S =
-      mpi::SeedSelection(G, sampled_graphs.begin(), sampled_graphs.end(), k);
+    mpi::SeedSelection(G, sampled_graphs.begin(), sampled_graphs.end(), k, record);
 
   return S;
 }

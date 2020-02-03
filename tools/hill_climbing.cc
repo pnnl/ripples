@@ -71,7 +71,9 @@ auto GetExperimentRecord(
                             {"K", CFG.k},
                             {"Seeds", seeds},
                             {"NumThreads", R.NumThreads},
-                            {"Total", R.Total}};
+                            {"Total", R.Total},
+                            {"Sampling", R.Sampling},
+                            {"SeedSelection", R.SeedSelection}};
 
   return experiment;
 }
@@ -113,14 +115,14 @@ int main(int argc, char** argv) {
   if (ripples::configuration().diffusionModel == "IC") {
     auto start = std::chrono::high_resolution_clock::now();
     seeds = HillClimbing(G, ripples::configuration().k,
-                         ripples::configuration().samples, generator,
+                         ripples::configuration().samples, generator, R,
                          ripples::independent_cascade_tag{});
     auto end = std::chrono::high_resolution_clock::now();
     R.Total = end - start;
   } else if (ripples::configuration().diffusionModel == "LT") {
     auto start = std::chrono::high_resolution_clock::now();
     seeds = HillClimbing(G, ripples::configuration().k,
-                         ripples::configuration().samples, generator,
+                         ripples::configuration().samples, generator, R,
                          ripples::linear_threshold_tag{});
     auto end = std::chrono::high_resolution_clock::now();
     R.Total = end - start;
