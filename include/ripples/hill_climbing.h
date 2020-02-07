@@ -44,6 +44,7 @@
 #define RIPPLES_HILL_CLIMBING_H
 
 #include <algorithm>
+#include <chrono>
 #include <queue>
 #include <type_traits>
 #include <vector>
@@ -56,6 +57,7 @@
 #include "ripples/configuration.h"
 #include "ripples/diffusion_simulation.h"
 #include "ripples/graph.h"
+#include "ripples/hill_climbing_engine.h"
 
 #include "omp.h"
 
@@ -100,41 +102,14 @@ auto SampleFrom(GraphTy &G, std::size_t num_samples, GeneratorTy &gen,
   std::vector<edge_mask> samples(num_samples,
                                  std::vector<bool>(G.num_edges(), false));
   auto start = std::chrono::high_resolution_clock::now();
-#pragma omp parallel for
-  for (size_t i = 0; i < num_samples; ++i) {
-    trng::uniform01_dist<float> UD;
-    int rank = omp_get_thread_num();
-    // 1 - Sample a list of Edges from G.
-    size_t edge_number = 0;
-    if (std::is_same<diff_model_tag, independent_cascade_tag>::value) {
-      for (vertex_type v = 0; v < G.num_nodes(); ++v) {
-        for (auto &e : G.neighbors(v)) {
-          if (UD(gen[rank]) >= e.weight) samples[i][edge_number] = true;
+  size_t num_threads = 1;
+#pragma omp single
+  { num_threads = omp_get_max_threads(); }
 
-          ++edge_number;
-        }
-      }
-    } else if (std::is_same<diff_model_tag, linear_threshold_tag>::value) {
-      for (vertex_type v = 0; v < G.num_nodes(); ++v) {
-        double threshold = UD(gen[rank]);
-        for (auto &e : G.neighbors(v)) {
-          threshold -= e.weight;
-          if (threshold <= 0) {
-            samples[i][edge_number] = true;
-            // EL.emplace_back(edge_list_elem{v, e.vertex});
-          }
-          ++edge_number;
-        }
-      }
-    } else {
-      // Unsupported.
-      throw "Should not be here";
-    }
-    // 2 - Create an unweighted graph from it.
-    // 3 - Add it to the list.
-    // EL.clear();
-  }
-
+  using iterator_type = typename std::vector<edge_mask>::iterator;
+  SamplingEngine<GraphTy, iterator_type, GeneratorTy, diff_model_tag> SE(
+      G, gen, num_threads, 0);
+  SE.exec(samples.begin(), samples.end());
   auto end = std::chrono::high_resolution_clock::now();
   record.Sampling = end - start;
   return samples;
@@ -240,13 +215,7 @@ template <typename GraphTy, typename GeneratorTy, typename diff_model_tag>
 auto HillClimbing(GraphTy &G, std::size_t k, std::size_t num_samples,
                   GeneratorTy &gen, HillClimbingExecutionRecord &record,
                   diff_model_tag &&model_tag) {
-  size_t num_threads = 1;
-#pragma omp single
-  { num_threads = omp_get_max_threads(); }
-
-  std::vector<trng::lcg64> generator(num_threads, gen);
-  for (size_t i = 0; i < num_threads; ++i) generator[i].split(num_threads, i);
-  auto sampled_graphs = SampleFrom(G, num_samples, generator, record,
+  auto sampled_graphs = SampleFrom(G, num_samples, gen, record,
                                    std::forward<diff_model_tag>(model_tag));
 
   auto S =

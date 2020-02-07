@@ -180,20 +180,15 @@ auto HillClimbing(GraphTy &G, std::size_t k, std::size_t num_samples,
   int rank;
   MPI_Comm_rank(MPI_COMM_WORLD, &rank);
 
-#pragma omp single
-  { num_threads = omp_get_max_threads(); }
-
-  std::vector<trng::lcg64> generator(num_threads, gen);
-  for (size_t i = 0; i < num_threads; ++i)
-    generator[i].split(world_size * num_threads, rank * num_threads + i);
+  gen.split(world_size, rank);
 
   num_samples /= world_size;
-  auto sampled_graphs = SampleFrom(G, num_samples, generator, record,
+  auto sampled_graphs = SampleFrom(G, num_samples, gen, record,
                                    std::forward<diff_model_tag>(model_tag));
 
   spdlog::get("console")->info("Done with Sampling");
-  auto S =
-    mpi::SeedSelection(G, sampled_graphs.begin(), sampled_graphs.end(), k, record);
+  auto S = mpi::SeedSelection(G, sampled_graphs.begin(), sampled_graphs.end(),
+                              k, record);
 
   return S;
 }
