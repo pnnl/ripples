@@ -45,10 +45,12 @@
 
 #include <atomic>
 #include <cstdint>
+#include <memory>
 #include <vector>
 
 #include "omp.h"
 
+#include "spdlog/sinks/stdout_color_sinks.h"
 #include "spdlog/spdlog.h"
 #include "trng/uniform01_dist.hpp"
 
@@ -133,9 +135,10 @@ class HCCPUSamplingWorker : public HCSamplingWorker<GraphTy, ItrTy> {
   trng::uniform01_dist<float> UD_;
 };
 
-#ifdef RIPPLES_ENABLE_CUDA
-template <typename GraphTy, typename ItrTy, typename PRNGTy, diff_model_tag>
+template <typename GraphTy, typename ItrTy, typename PRNGTy,
+          typename diff_model_tag>
 class HCGPUSamplingWorker : public HCSamplingWorker<GraphTy, ItrTy> {
+#ifdef RIPPLES_ENABLE_CUDA
   using HCSamplingWorker<GraphTy, ItrTy>::G_;
 
  public:
@@ -158,32 +161,51 @@ class HCGPUSamplingWorker : public HCSamplingWorker<GraphTy, ItrTy> {
  private:
   void batch(ItrTy B, ItrTy E) {}
 
-  cuda_ctx * ctx_;
+  cuda_ctx *ctx_;
   cudaStream_t cuda_stream_;
   trng::uniform01_dist<float> UD_;
-};
 #endif
+};
 
 template <typename GraphTy, typename ItrTy, typename PRNGTy,
           typename diff_model_tag>
 class SamplingEngine {
   using vertex_type = typename GraphTy::vertex_type;
+  using worker_type = HCSamplingWorker<GraphTy, ItrTy>;
   using cpu_worker_type =
       HCCPUSamplingWorker<GraphTy, ItrTy, PRNGTy, diff_model_tag>;
+  using gpu_worker_type =
+      HCGPUSamplingWorker<GraphTy, ItrTy, PRNGTy, diff_model_tag>;
 
  public:
   SamplingEngine(const GraphTy &G, PRNGTy &master_rng, size_t cpu_workers,
                  size_t gpu_workers)
-      : G_(G), cpu_workers_(cpu_workers), gpu_workers_(gpu_workers) {
-    size_t num_threads = cpu_workers_ + gpu_workers_;
+      : G_(G),
+        logger_(spdlog::stdout_color_st("Sampling Engine")) {
+    logger_->set_level(spdlog::level::debug);
+    size_t num_threads = cpu_workers + gpu_workers;
     // Construct workers.
+    logger_->debug("Number of Threads = {}", num_threads);
     workers_.reserve(num_threads);
 
-    for (size_t i = 0; i < cpu_workers_; ++i) {
+    for (size_t i = 0; i < cpu_workers; ++i) {
+      logger_->debug("> mapping: omp {}\t->CPU", i);
       auto rng = master_rng;
-      rng.split(i, num_threads);
-      workers_.push_back(new cpu_worker_type(G_, rng));
+      rng.split(num_threads, i);
+      auto w = new cpu_worker_type(G_, rng);
+      workers_.push_back(w);
+      cpu_workers_.push_back(w);
     }
+    #if RIPPLES_ENABLE_CUDA
+    for (size_t i = 0; i < gpu_workers; ++i) {
+      logger_->debug("> mapping: omp {}\t->GPU", i);
+      auto rng = master_rng;
+      rng.split(num_threads, cpu_workers + i);
+      auto w = new gpu_woker_type(G_, rng);
+      workers_.push_back(w);
+      gpu_workers_.push_back(w);
+    }
+    #endif
   }
 
   ~SamplingEngine() {
@@ -203,10 +225,17 @@ class SamplingEngine {
 
  private:
   const GraphTy &G_;
-  size_t gpu_workers_;
-  size_t cpu_workers_;
+  // size_t gpu_workers_;
+  // size_t cpu_workers_;
 
-  std::vector<HCSamplingWorker<GraphTy, ItrTy> *> workers_;
+  std::shared_ptr<spdlog::logger> logger_;
+
+  std::vector<cpu_worker_type *> cpu_workers_;
+#if RIPPLES_ENABLE_CUDA
+  std::vector<gpu_worker_type *> gpu_wokrers_;
+#endif
+
+  std::vector<worker_type *> workers_;
   std::atomic<size_t> mpmc_head_{0};
 };
 
