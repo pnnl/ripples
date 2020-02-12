@@ -575,7 +575,7 @@ class StreamingFindMostInfluential {
   }
 
   auto find_most_influential_set(size_t k) {
-    omp_set_nested(true);
+    omp_set_max_active_levels(2);
 
     LoadDataToDevice();
     
@@ -612,7 +612,7 @@ class StreamingFindMostInfluential {
 
     // std::cout << "#### " << seedSelection.count() << std::endl;
 
-    omp_set_nested(false);
+    omp_set_max_active_levels(1);
 
     return std::make_pair(f, result);
   }

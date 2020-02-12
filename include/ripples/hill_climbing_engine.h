@@ -52,6 +52,10 @@
 #include "spdlog/spdlog.h"
 #include "trng/uniform01_dist.hpp"
 
+#ifdef RIPPLES_ENABLE_CUDA
+#include "ripples/cuda/cuda_utils.h"
+#endif
+
 namespace ripples {
 
 //! Engine scheduling dynamically sampling tasks for the Hill Climbing.
@@ -128,6 +132,37 @@ class HCCPUSamplingWorker : public HCSamplingWorker<GraphTy, ItrTy> {
   PRNG rng_;
   trng::uniform01_dist<float> UD_;
 };
+
+#ifdef RIPPLES_ENABLE_CUDA
+template <typename GraphTy, typename ItrTy, typename PRNGTy, diff_model_tag>
+class HCGPUSamplingWorker : public HCSamplingWorker<GraphTy, ItrTy> {
+  using HCSamplingWorker<GraphTy, ItrTy>::G_;
+
+ public:
+  HCGPUSampilngWorker(const GraphTy &G, PRNGTy &rng)
+      : HCSamplingWorker<GraphTy, ItrTy>(G) {}
+
+  void svc_loop(std::atomic<size_t> &mpmc_head, ItrTy B, ItrTy E) {
+    size_t offset = 0;
+    while ((offset = mpmc_head.fetch_add(batch_size_)) < std::distance(B, E)) {
+      auto first = B;
+      std::advance(first, offset);
+      auto last = first;
+      std::advance(last, batch_size_);
+
+      if (last > E) last = E;
+      batch(first, last);
+    }
+  }
+
+ private:
+  void batch(ItrTy B, ItrTy E) {}
+
+  cuda_ctx * ctx_;
+  cudaStream_t cuda_stream_;
+  trng::uniform01_dist<float> UD_;
+};
+#endif
 
 template <typename GraphTy, typename ItrTy, typename PRNGTy,
           typename diff_model_tag>
