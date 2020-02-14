@@ -256,7 +256,7 @@ class GPUWalkWorker<GraphTy, PRNGeneratorTy, ItrTy, linear_threshold_tag>
   };
 
   GPUWalkWorker(const config_t &conf, const GraphTy &G,
-                const PRNGeneratorTy &rng, cuda_ctx *ctx)
+                const PRNGeneratorTy &rng, cuda_ctx<GraphTy> *ctx)
       : WalkWorker<GraphTy, ItrTy>(G),
         conf_(conf),
         rng_(rng),
@@ -310,7 +310,7 @@ class GPUWalkWorker<GraphTy, PRNGeneratorTy, ItrTy, linear_threshold_tag>
   PRNGeneratorTy rng_;
   trng::uniform_int_dist u_;
   cudaStream_t cuda_stream_;
-  cuda_ctx *cuda_ctx_;
+  cuda_ctx<GraphTy> *cuda_ctx_;
 
   // memory buffers
   mask_word_t *lt_res_mask_, *d_lt_res_mask_;
@@ -455,7 +455,7 @@ class GPUWalkWorker<GraphTy, PRNGeneratorTy, ItrTy, independent_cascade_tag>
   };
 
   GPUWalkWorker(const config_t &conf, const GraphTy &G,
-                const PRNGeneratorTy &rng, cuda_ctx *ctx)
+                const PRNGeneratorTy &rng, cuda_ctx<GraphTy> *ctx)
       : WalkWorker<GraphTy, ItrTy>(G),
         conf_(conf),
         rng_(rng),
@@ -466,9 +466,9 @@ class GPUWalkWorker<GraphTy, PRNGeneratorTy, ItrTy, independent_cascade_tag>
 
     // allocate host/device memory
     ic_predecessors_ = (int *)malloc(
-        G.num_nodes() * sizeof(typename cuda_device_graph::vertex_t));
+        G.num_nodes() * sizeof(typename cuda_device_graph<GraphTy>::vertex_t));
     cuda_malloc((void **)&d_ic_predecessors_,
-               G.num_nodes() * sizeof(typename cuda_device_graph::vertex_t));
+               G.num_nodes() * sizeof(typename cuda_device_graph<GraphTy>::vertex_t));
 
     // allocate device-size RNGs
     cuda_malloc((void **)&d_trng_state_,
@@ -526,13 +526,13 @@ class GPUWalkWorker<GraphTy, PRNGeneratorTy, ItrTy, independent_cascade_tag>
 
   // CUDA context
   cudaStream_t cuda_stream_;
-  cuda_ctx *cuda_ctx_;
+  cuda_ctx<GraphTy> *cuda_ctx_;
 
   // nvgraph machinery
   bfs_solver_t *solver_;
 
   // memory buffers
-  typename cuda_device_graph::vertex_t *ic_predecessors_, *d_ic_predecessors_;
+  typename cuda_device_graph<GraphTy>::vertex_t *ic_predecessors_, *d_ic_predecessors_;
   PRNGeneratorTy *d_trng_state_;
 
   void batch(ItrTy first, ItrTy last) {
@@ -556,7 +556,7 @@ class GPUWalkWorker<GraphTy, PRNGeneratorTy, ItrTy, independent_cascade_tag>
 
       cuda_d2h(
           ic_predecessors_, d_ic_predecessors_,
-          this->G_.num_nodes() * sizeof(typename cuda_device_graph::vertex_t),
+          this->G_.num_nodes() * sizeof(typename cuda_device_graph<GraphTy>::vertex_t),
           cuda_stream_);
       cuda_sync(cuda_stream_);
 #if CUDA_PROFILE
@@ -790,7 +790,7 @@ class StreamingRRRGenerator {
   std::vector<cpu_worker_t *> cpu_workers;
   std::shared_ptr<spdlog::logger> console;
 #ifdef RIPPLES_ENABLE_CUDA
-  std::unordered_map<size_t, cuda_ctx *> cuda_contexts_;
+  std::unordered_map<size_t, cuda_ctx<GraphTy> *> cuda_contexts_;
   std::vector<gpu_worker_t *> gpu_workers;
 #endif
   std::vector<worker_t *> workers;

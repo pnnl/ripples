@@ -37,24 +37,23 @@
 def build(bld):
     tools_deps = ['project-headers', 'spdlog',
                   'libtrng', 'OpenMP', 'jsonformoderncpp', 'CLI11']
-    if bld.env.ENABLE_CUDA:
-        tools_deps += [ 'CUDA', 'CUDART', '3rd-party' ]
 
-    # bld(features='cxx cxxprogram', source='tim.cc', target='tim',
-    #     use=tools_deps)
-
+    cuda_acc_tools_deps = tools_deps
+    cuda_acc_cxx_flags = []
     if bld.env.ENABLE_CUDA:
-        bld(features='cxx cxxstlib', source='cuda/cuda_utils.cu', target='cuda_utils', cuda=True, use=tools_deps)
-        bld(features='cxx cxxstlib', source='cuda/cuda_graph.cu', target='cuda_graph', cuda=True, use=tools_deps)
-        bld(features='cxx cxxstlib', source='cuda/cuda_generate_rrr_sets.cu', target='cuda_generate_rrr_sets', cuda=True, use=tools_deps)
-        bld(features='cxx cxxstlib', source='cuda/find_most_influential.cu', target='cuda_find_most_influential',cuda=True, use=tools_deps)
-        bld(features='cxx cxxstlib', source='cuda/from_nvgraph/bfs.cu', target='bfs', cuda=True, use=tools_deps)
-        bld(features='cxx cxxprogram', source='imm.cc', target='imm',
-            use=tools_deps + ['cuda_generate_rrr_sets', 'cuda_find_most_influential', 'bfs', 'cuda_graph', 'cuda_utils'], cuda=True,
-            cxxflags='-DRIPPLES_ENABLE_CUDA')
-    else:
-        bld(features='cxx cxxprogram', source='imm.cc', target='imm',
-            use=tools_deps)
+        cuda_acc_tools_deps = tools_deps + ['cuda_ripples']
+        cuda_acc_cxx_flags = ['-DRIPPLES_ENABLE_CUDA']
+
+        bld(features='cxx cxxstlib',
+            source=['cuda/cuda_utils.cu', 'cuda/cuda_generate_rrr_sets.cu',
+                    'cuda/find_most_influential.cu', 'cuda/from_nvgraph/bfs.cu',
+                    'cuda/cuda_lt_kernel.cu', 'cuda/cuda_graph.cu'],
+            target='cuda_ripples', cuda=True,
+            use=tools_deps + ['CUDA', 'CUDART', '3rd-party'])
+
+    bld(features='cxx cxxprogram', source='imm.cc', target='imm',
+        use=cuda_acc_tools_deps, cuda=bld.env.ENABLE_CUDA,
+        cxxflags=cuda_acc_cxx_flags)
 
     bld(features='cxx cxxprogram', source='simulator.cc', target='simulator',
         use=tools_deps)
@@ -62,17 +61,17 @@ def build(bld):
     bld(features='cxx cxxprogram', source='dump-graph.cc', target='dump-graph',
         use=tools_deps)
 
-    bld(features='cxx cxxprogram', source='hill_climbing.cc', target='hill-climbing', use=tools_deps)
+    bld(features='cxx cxxprogram', source='hill_climbing.cc', target='hill-climbing',
+        use=cuda_acc_tools_deps, cxxflags=cuda_acc_cxx_flags, cuda=bld.env.ENABLE_CUDA)
 
-    if bld.env.HAVE_MPI:
-        tools_deps = tools_deps + ['MPI']
-        bld(features='cxx cxxprogram', source='mpi-hill-climbing.cc', target='mpi-hill-climbing',
-            use=['project-headers', 'spdlog',
-                  'libtrng', 'OpenMP', 'jsonformoderncpp', 'CLI11', 'MPI'])
-        if bld.env.ENABLE_CUDA:
-            bld(features='cxx cxxprogram', source='mpi-imm.cc', target='mpi-imm',
-                use=tools_deps + ['cuda_generate_rrr_sets','bfs','cuda_graph','cuda_utils'], cuda=True,
-                cxxflags='-DRIPPLES_ENABLE_CUDA')
-        else:
-            bld(features='cxx cxxprogram', source='mpi-imm.cc', target='mpi-imm',
-                use=tools_deps)
+    if not bld.env.HAVE_MPI:
+        return
+
+    tools_deps += ['MPI']
+    cuda_acc_tools_deps += ['MPI']
+    bld(features='cxx cxxprogram', source='mpi-hill-climbing.cc', target='mpi-hill-climbing',
+        use=tools_deps)
+
+    bld(features='cxx cxxprogram', source='mpi-imm.cc', target='mpi-imm',
+        use=cuda_acc_tools_deps, cuda=bld.env.ENABLE_CUDA,
+        cxxflags=cuda_acc_cxx_flags)

@@ -90,9 +90,11 @@ def configure(conf):
     if conf.options.enable_mpi:
         conf.load('mpi', tooldir='waftools')
 
+    conf.env.ENABLE_CUDA=False
     if conf.options.enable_cuda:
         conf.load('cuda', tooldir='waftools')
         conf.env.ENABLE_CUDA = True
+        conf.env.CUDAFLAGS = ['--expt-relaxed-constexpr']
 
     env = conf.env
     conf.setenv('release', env)

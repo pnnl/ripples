@@ -14,9 +14,11 @@
 #include <cuda_runtime.h>
 
 #include "trng/lcg64.hpp"
+#include "trng/uniform_int_dist.hpp"
 
 #include "ripples/diffusion_simulation.h"
 #include "ripples/cuda/cuda_utils.h"
+#include "ripples/cuda/cuda_graph.cuh"
 #include "ripples/graph.h"
 
 #include "spdlog/fmt/ostr.h"
@@ -32,44 +34,18 @@ namespace ripples {
 // host-host API
 //
 
-// TODO why template+specialization doesn't work?
-// template<typename res_t, typename GraphTy, typename PRNGeneratorTy,
-//		typename diff_model_tag>
-// void CudaGenerateRRRSets(res_t &rrr_sets, const GraphTy &G, size_t theta,
-//		PRNGeneratorTy &generator, diff_model_tag &&model_tag);
-
 // forward declarations to enable separate compilation
-using cuda_GraphTy =
-  ripples::Graph<uint32_t, WeightedDestination<uint32_t, float>, ripples::BackwardDirection<uint32_t>>;
-using cuda_res_t = std::vector<std::vector<typename cuda_GraphTy::vertex_type>>;
+template <typename GraphTy>
+using cuda_res_t = std::vector<std::vector<typename GraphTy::vertex_type>>;
 using cuda_PRNGeneratorTy = trng::lcg64;
 using cuda_PRNGeneratorsTy = std::vector<cuda_PRNGeneratorTy>;
-
-struct cuda_device_graph {
-  using vertex_t = int; // TODO vertex type hard-coded in nvgraph
-  using edge_t = typename cuda_GraphTy::edge_type;
-  using weight_t = typename edge_t::edge_weight;
-  vertex_t *d_index_ = nullptr, *d_edges_ = nullptr;
-  weight_t *d_weights_ = nullptr;
-};
 
 constexpr size_t CUDA_WALK_SIZE = 8;
 
 //
 // host-device API
 //
-using mask_word_t = typename cuda_device_graph::vertex_t;
-
-struct cuda_ctx {
-  size_t gpu_id;
-  cuda_device_graph * d_graph;
-};
-
-cuda_ctx *cuda_make_ctx(const cuda_GraphTy &G, size_t gpu_id);
-void cuda_destroy_ctx(cuda_ctx *);
-typename cuda_device_graph::vertex_t *cuda_graph_index(cuda_ctx *);
-typename cuda_device_graph::vertex_t *cuda_graph_edges(cuda_ctx *);
-typename cuda_device_graph::weight_t *cuda_graph_weights(cuda_ctx *);
+using mask_word_t = int; // TODO: vertex type hard-coded in nvgraph
 
 void cuda_lt_rng_setup(cuda_PRNGeneratorTy *d_trng_state,
                        const cuda_PRNGeneratorTy &r, size_t num_seqs,
@@ -79,10 +55,11 @@ void cuda_ic_rng_setup(cuda_PRNGeneratorTy *d_trng_state,
                        const cuda_PRNGeneratorTy &r, size_t num_seqs,
                        size_t first_seq, size_t n_blocks, size_t block_size);
 
-void cuda_lt_kernel(size_t n_blocks, size_t block_size, size_t batch_size,
-                    size_t num_nodes, cuda_PRNGeneratorTy *d_trng_states,
-                    mask_word_t *d_res_masks, size_t num_mask_words,
-                    cuda_ctx *ctx, cudaStream_t);
+template <typename GraphTy, typename cuda_PRNGeneratorTy>
+extern void cuda_lt_kernel(size_t n_blocks, size_t block_size, size_t batch_size,
+                           size_t num_nodes, cuda_PRNGeneratorTy *d_trng_states,
+                           mask_word_t *d_res_masks, size_t num_mask_words,
+                           cuda_ctx<GraphTy> *ctx, cudaStream_t stream);
 
 #if CUDA_PROFILE
 template <typename logst_t, typename sample_t>

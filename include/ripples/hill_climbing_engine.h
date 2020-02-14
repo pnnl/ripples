@@ -55,6 +55,7 @@
 #include "trng/uniform01_dist.hpp"
 
 #ifdef RIPPLES_ENABLE_CUDA
+#include "ripples/cuda/cuda_graph.cuh"
 #include "ripples/cuda/cuda_utils.h"
 #endif
 
@@ -142,7 +143,7 @@ class HCGPUSamplingWorker : public HCSamplingWorker<GraphTy, ItrTy> {
   using HCSamplingWorker<GraphTy, ItrTy>::G_;
 
  public:
-  HCGPUSampilngWorker(const GraphTy &G, PRNGTy &rng)
+  HCGPUSamplingWorker(const GraphTy &G, PRNGTy &rng)
       : HCSamplingWorker<GraphTy, ItrTy>(G) {}
 
   void svc_loop(std::atomic<size_t> &mpmc_head, ItrTy B, ItrTy E) {
@@ -161,7 +162,8 @@ class HCGPUSamplingWorker : public HCSamplingWorker<GraphTy, ItrTy> {
  private:
   void batch(ItrTy B, ItrTy E) {}
 
-  cuda_ctx *ctx_;
+  static constexpr size_t batch_size_ = 32;
+  cuda_ctx<GraphTy> *ctx_;
   cudaStream_t cuda_stream_;
   trng::uniform01_dist<float> UD_;
 #endif
@@ -197,11 +199,14 @@ class SamplingEngine {
       cpu_workers_.push_back(w);
     }
     #if RIPPLES_ENABLE_CUDA
+    size_t num_devices = cuda_num_devices();
     for (size_t i = 0; i < gpu_workers; ++i) {
-      logger_->debug("> mapping: omp {}\t->GPU", i);
+      size_t device_id = i % num_devices;
+      logger_->debug("> mapping: omp {}\t->GPU {}", i, device_id);
+      cuda_contexts_[device_id] = cuda_make_ctx(G, device_id);
       auto rng = master_rng;
       rng.split(num_threads, cpu_workers + i);
-      auto w = new gpu_woker_type(G_, rng);
+      auto w = new gpu_worker_type(G_, rng);
       workers_.push_back(w);
       gpu_workers_.push_back(w);
     }
@@ -211,6 +216,9 @@ class SamplingEngine {
   ~SamplingEngine() {
     // Free workers.
     for (auto &v : workers_) delete v;
+    #if RIPPLES_ENABLE_CUDA
+    for (auto ctx : cuda_contexts_) delete ctx;
+    #endif
   }
 
   void exec(ItrTy B, ItrTy E) {
@@ -232,7 +240,8 @@ class SamplingEngine {
 
   std::vector<cpu_worker_type *> cpu_workers_;
 #if RIPPLES_ENABLE_CUDA
-  std::vector<gpu_worker_type *> gpu_wokrers_;
+  std::vector<gpu_worker_type *> gpu_workers_;
+  std::vector<cuda_ctx<GraphTy> *> cuda_contexts_;
 #endif
 
   std::vector<worker_type *> workers_;

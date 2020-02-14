@@ -55,5 +55,5 @@ def build(bld):
             source='cuda_find_most_influential.cc',
             target='cuda_seed_select',
             use=['project-headers', 'libtrng', 'OpenMP', 'jsonformoderncpp', 'CLI11', 'spdlog', 'Catch2', 'test_main']
-            + ['cuda_generate_rrr_sets', 'cuda_find_most_influential', 'bfs', 'cuda_graph', 'cuda_utils', 'CUDA', 'CUDART'],
+            + ['cuda_ripples', 'CUDA', 'CUDART'],
             cxxflags='-DRIPPLES_ENABLE_CUDA')
