@@ -66,6 +66,8 @@ namespace ripples {
 //! The Hill Climbing Algorithm configuration descriptor.
 struct HillClimbingConfiguration : public AlgorithmConfiguration {
   size_t samples{10000};
+  size_t streaming_workers{0};
+  size_t streaming_gpu_workers{0};
 
   //! \brief Add command line options to configure the Hill Climbing Algorithm.
   //!
@@ -75,6 +77,9 @@ struct HillClimbingConfiguration : public AlgorithmConfiguration {
     app.add_option(
         "--samples", samples,
         "The number of samples used in the Hill Climbing Algorithm.");
+    app.add_option("--streaming-gpu-workers", streaming_gpu_workers,
+                   "The number of GPU workers for the CPU+GPU streaming engine.")
+      ->group("Streaming-Engine Options");
   }
 };
 
@@ -93,22 +98,20 @@ struct HillClimbingExecutionRecord {
   ex_time_ms Total;
 };
 
-template <typename GraphTy, typename GeneratorTy, typename diff_model_tag>
-auto SampleFrom(GraphTy &G, std::size_t num_samples, GeneratorTy &gen,
+template <typename GraphTy, typename GeneratorTy, typename diff_model_tag,
+          typename ConfTy>
+auto SampleFrom(GraphTy &G, ConfTy &CFG, GeneratorTy &gen,
                 HillClimbingExecutionRecord &record,
                 diff_model_tag &&diff_model) {
   using vertex_type = typename GraphTy::vertex_type;
   using edge_mask = std::vector<bool>;
-  std::vector<edge_mask> samples(num_samples,
+  std::vector<edge_mask> samples(CFG.samples,
                                  std::vector<bool>(G.num_edges(), false));
   auto start = std::chrono::high_resolution_clock::now();
-  size_t num_threads = 1;
-#pragma omp single
-  { num_threads = omp_get_max_threads(); }
 
   using iterator_type = typename std::vector<edge_mask>::iterator;
   SamplingEngine<GraphTy, iterator_type, GeneratorTy, diff_model_tag> SE(
-      G, gen, num_threads, 0);
+      G, gen, CFG.streaming_workers, CFG.streaming_gpu_workers);
   SE.exec(samples.begin(), samples.end());
   auto end = std::chrono::high_resolution_clock::now();
   record.Sampling = end - start;
@@ -211,15 +214,16 @@ auto SeedSelection(GraphTy &G, GraphMaskItrTy B, GraphMaskItrTy E,
   return S;
 }
 
-template <typename GraphTy, typename GeneratorTy, typename diff_model_tag>
-auto HillClimbing(GraphTy &G, std::size_t k, std::size_t num_samples,
+template <typename GraphTy, typename GeneratorTy, typename diff_model_tag,
+          typename ConfTy>
+auto HillClimbing(GraphTy &G, ConfTy &CFG,
                   GeneratorTy &gen, HillClimbingExecutionRecord &record,
                   diff_model_tag &&model_tag) {
-  auto sampled_graphs = SampleFrom(G, num_samples, gen, record,
+  auto sampled_graphs = SampleFrom(G, CFG, gen, record,
                                    std::forward<diff_model_tag>(model_tag));
 
   auto S =
-      SeedSelection(G, sampled_graphs.begin(), sampled_graphs.end(), k, record);
+      SeedSelection(G, sampled_graphs.begin(), sampled_graphs.end(), CFG.k, record);
 
   return S;
 }

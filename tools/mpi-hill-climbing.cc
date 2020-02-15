@@ -78,6 +78,8 @@ auto GetExperimentRecord(
                             {"K", CFG.k},
                             {"Seeds", seeds},
                             {"NumThreads", R.NumThreads},
+                            {"NumWalkWorkers", CFG.streaming_workers},
+                            {"NumGPUWalkWorkers", CFG.streaming_gpu_workers},
                             {"Rank", world_rank},
                             {"WorldSize", world_size},
                             {"Total", R.Total},
@@ -89,6 +91,8 @@ auto GetExperimentRecord(
 
 void parse_command_line(int argc, char** argv) {
   configuration().ParseCmdOptions(argc, argv);
+#pragma omp single
+  configuration().streaming_workers = omp_get_max_threads();
 }
 }  // namespace ripples
 
@@ -123,17 +127,20 @@ int main(int argc, char** argv) {
 
   ripples::HillClimbingExecutionRecord R;
 
+  ripples::configuration().streaming_workers -=
+    ripples::configuration().streaming_gpu_workers;
+
   if (ripples::configuration().diffusionModel == "IC") {
     auto start = std::chrono::high_resolution_clock::now();
     seeds = ripples::mpi::HillClimbing(
-        G, ripples::configuration().k, ripples::configuration().samples,
+        G, ripples::configuration(),
         generator, R, ripples::independent_cascade_tag{});
     auto end = std::chrono::high_resolution_clock::now();
     R.Total = end - start;
   } else if (ripples::configuration().diffusionModel == "LT") {
     auto start = std::chrono::high_resolution_clock::now();
     seeds = ripples::mpi::HillClimbing(
-        G, ripples::configuration().k, ripples::configuration().samples,
+        G, ripples::configuration(),
         generator, R, ripples::linear_threshold_tag{});
     auto end = std::chrono::high_resolution_clock::now();
     R.Total = end - start;

@@ -170,8 +170,9 @@ auto SeedSelection(GraphTy &G, GraphMaskItrTy B, GraphMaskItrTy E,
 //! \param model_tag The diffusion model tag.
 //! \param ex_tag The execution model tag.
 //! \returns a set of k vertices of G.
-template <typename GraphTy, typename GeneratorTy, typename diff_model_tag>
-auto HillClimbing(GraphTy &G, std::size_t k, std::size_t num_samples,
+  template <typename GraphTy, typename GeneratorTy, typename diff_model_tag,
+            typename ConfTy>
+auto HillClimbing(GraphTy &G, ConfTy &CFG,
                   GeneratorTy &gen, HillClimbingExecutionRecord &record,
                   diff_model_tag &&model_tag) {
   size_t num_threads = 1;
@@ -182,13 +183,13 @@ auto HillClimbing(GraphTy &G, std::size_t k, std::size_t num_samples,
 
   gen.split(world_size, rank);
 
-  num_samples /= world_size;
-  auto sampled_graphs = SampleFrom(G, num_samples, gen, record,
+  CFG.samples /= world_size;
+  auto sampled_graphs = SampleFrom(G, CFG, gen, record,
                                    std::forward<diff_model_tag>(model_tag));
 
   spdlog::get("console")->info("Done with Sampling");
   auto S = mpi::SeedSelection(G, sampled_graphs.begin(), sampled_graphs.end(),
-                              k, record);
+                              CFG.k, record);
 
   return S;
 }

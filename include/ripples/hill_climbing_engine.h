@@ -184,7 +184,7 @@ class SamplingEngine {
                  size_t gpu_workers)
       : G_(G),
         logger_(spdlog::stdout_color_st("Sampling Engine")) {
-    logger_->set_level(spdlog::level::debug);
+    logger_->set_level(spdlog::level::trace);
     size_t num_threads = cpu_workers + gpu_workers;
     // Construct workers.
     logger_->debug("Number of Threads = {}", num_threads);
@@ -202,8 +202,11 @@ class SamplingEngine {
     size_t num_devices = cuda_num_devices();
     for (size_t i = 0; i < gpu_workers; ++i) {
       size_t device_id = i % num_devices;
-      logger_->debug("> mapping: omp {}\t->GPU {}", i, device_id);
-      cuda_contexts_[device_id] = cuda_make_ctx(G, device_id);
+      logger_->debug("> mapping: omp {}\t->GPU {}/{}",
+                     i + cpu_workers, device_id, num_devices);
+      logger_->trace("Building Cuda Context");
+      cuda_contexts_.push_back(cuda_make_ctx(G, device_id));
+      logger_->trace("Cuda Context Built!");
       auto rng = master_rng;
       rng.split(num_threads, cpu_workers + i);
       auto w = new gpu_worker_type(G_, rng);
@@ -217,7 +220,10 @@ class SamplingEngine {
     // Free workers.
     for (auto &v : workers_) delete v;
     #if RIPPLES_ENABLE_CUDA
-    for (auto ctx : cuda_contexts_) delete ctx;
+    for (auto ctx : cuda_contexts_) {
+      cuda_destroy_ctx(ctx);
+      delete ctx;
+    }
     #endif
   }
 
