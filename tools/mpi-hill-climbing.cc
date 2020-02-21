@@ -100,7 +100,7 @@ int main(int argc, char** argv) {
   MPI_Init(NULL, NULL);
 
   auto console = spdlog::stdout_color_st("console");
-  spdlog::set_level(spdlog::level::info);
+  spdlog::set_level(spdlog::level::trace);
 
   ripples::parse_command_line(argc, argv);
 

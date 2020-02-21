@@ -89,7 +89,7 @@ void parse_command_line(int argc, char** argv) {
 
 int main(int argc, char** argv) {
   auto console = spdlog::stdout_color_st("console");
-  spdlog::set_level(spdlog::level::info);
+  spdlog::set_level(spdlog::level::trace);
 
   ripples::parse_command_line(argc, argv);
 

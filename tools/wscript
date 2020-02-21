@@ -47,7 +47,8 @@ def build(bld):
         bld(features='cxx cxxstlib',
             source=['cuda/cuda_utils.cu', 'cuda/cuda_generate_rrr_sets.cu',
                     'cuda/find_most_influential.cu', 'cuda/from_nvgraph/bfs.cu',
-                    'cuda/cuda_lt_kernel.cu', 'cuda/cuda_graph.cu'],
+                    'cuda/cuda_lt_kernel.cu', 'cuda/cuda_graph.cu',
+                    'cuda/cuda_hc_engine.cu'],
             target='cuda_ripples', cuda=True,
             use=tools_deps + ['CUDA', 'CUDART', '3rd-party'])
 
@@ -70,7 +71,7 @@ def build(bld):
     tools_deps += ['MPI']
     cuda_acc_tools_deps += ['MPI']
     bld(features='cxx cxxprogram', source='mpi-hill-climbing.cc', target='mpi-hill-climbing',
-        use=tools_deps)
+        use=cuda_acc_tools_deps, cxxflags=cuda_acc_cxx_flags, cuda=bld.env.ENABLE_CUDA)
 
     bld(features='cxx cxxprogram', source='mpi-imm.cc', target='mpi-imm',
         use=cuda_acc_tools_deps, cuda=bld.env.ENABLE_CUDA,

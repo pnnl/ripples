@@ -57,6 +57,8 @@
 #ifdef RIPPLES_ENABLE_CUDA
 #include "ripples/cuda/cuda_graph.cuh"
 #include "ripples/cuda/cuda_utils.h"
+#include "ripples/cuda/cuda_generate_rrr_sets.h"
+#include "ripples/cuda/cuda_hc_engine.h"
 #endif
 
 namespace ripples {
@@ -143,8 +145,33 @@ class HCGPUSamplingWorker : public HCSamplingWorker<GraphTy, ItrTy> {
   using HCSamplingWorker<GraphTy, ItrTy>::G_;
 
  public:
-  HCGPUSamplingWorker(const GraphTy &G, PRNGTy &rng)
-      : HCSamplingWorker<GraphTy, ItrTy>(G) {}
+  struct config_t {
+    static constexpr size_t block_size_ = 256;
+    static constexpr size_t num_threads_ = 1 << 15;
+
+    size_t max_blocks_{0};
+
+    config_t()
+      : max_blocks_(num_threads_ / block_size_) {}
+
+    size_t num_gpu_threads() const { return num_threads_; }
+  };
+
+  HCGPUSamplingWorker(const GraphTy &G, PRNGTy &rng,
+                      cuda_ctx<GraphTy> *ctx)
+    : HCSamplingWorker<GraphTy, ItrTy>(G),
+      ctx_(ctx),
+      conf_(),
+      master_rng_(rng)
+  {
+    cuda_malloc((void **)&d_trng_state_, conf_.num_gpu_threads() * sizeof(PRNGTy));
+    cuda_malloc((void **)&d_flags_, G_.num_edges() * batch_size_);
+  }
+
+  ~HCGPUSamplingWorker() {
+    cuda_free(d_trng_state_);
+    cuda_free(d_flags_);
+  }
 
   void svc_loop(std::atomic<size_t> &mpmc_head, ItrTy B, ItrTy E) {
     size_t offset = 0;
@@ -159,15 +186,49 @@ class HCGPUSamplingWorker : public HCSamplingWorker<GraphTy, ItrTy> {
     }
   }
 
+  void rng_setup() {
+    cuda_set_device(ctx_->gpu_id);
+    cuda_lt_rng_setup(d_trng_state_, master_rng_, conf_.num_gpu_threads(), 0,
+                      conf_.max_blocks_, conf_.block_size_);
+  }
+
  private:
-  void batch(ItrTy B, ItrTy E) {}
+  void batch(ItrTy B, ItrTy E) {
+    std::vector<char> flags(G_.num_edges() * batch_size_);
+    cuda_set_device(ctx_->gpu_id);
+    if (std::is_same<diff_model_tag, independent_cascade_tag>::value) {
+      cuda_generate_samples_ic(conf_.max_blocks_, conf_.block_size_, batch_size_,
+                               G_.num_edges(),
+                               d_trng_state_, ctx_, d_flags_, cuda_stream_);
+    } else if (std::is_same<diff_model_tag, linear_threshold_tag>::value) {
+      assert(false && "Not Yet Implemented");
+    }
+
+    cuda_d2h(flags.data(), d_flags_, flags.size(), cuda_stream_);
+    cuda_sync(cuda_stream_);
+
+    auto Bf = flags.begin();
+    auto Ef = Bf;
+    std::advance(Ef, G_.num_nodes());
+    for (; Ef < flags.end() && B < E; ++B) {
+      std::transform(Bf, Ef, B->begin(),
+                     [](char v) -> bool { v == 0 ? false : true; });
+      std::advance(Bf, G_.num_nodes());
+      std::advance(Ef, G_.num_nodes());
+    }
+  }
 
   static constexpr size_t batch_size_ = 32;
   cuda_ctx<GraphTy> *ctx_;
+  config_t conf_;
+  PRNGTy master_rng_;
   cudaStream_t cuda_stream_;
   trng::uniform01_dist<float> UD_;
+  PRNGTy *d_trng_state_;
+  char *d_flags_;
 #endif
 };
+
 
 template <typename GraphTy, typename ItrTy, typename PRNGTy,
           typename diff_model_tag>
@@ -184,7 +245,6 @@ class SamplingEngine {
                  size_t gpu_workers)
       : G_(G),
         logger_(spdlog::stdout_color_st("Sampling Engine")) {
-    logger_->set_level(spdlog::level::trace);
     size_t num_threads = cpu_workers + gpu_workers;
     // Construct workers.
     logger_->debug("Number of Threads = {}", num_threads);
@@ -209,7 +269,8 @@ class SamplingEngine {
       logger_->trace("Cuda Context Built!");
       auto rng = master_rng;
       rng.split(num_threads, cpu_workers + i);
-      auto w = new gpu_worker_type(G_, rng);
+      auto w = new gpu_worker_type(G_, rng, cuda_contexts_.back());
+      w->rng_setup();
       workers_.push_back(w);
       gpu_workers_.push_back(w);
     }
@@ -230,11 +291,14 @@ class SamplingEngine {
   void exec(ItrTy B, ItrTy E) {
     mpmc_head_.store(0);
 
+    logger_->trace("Start Sampling");
 #pragma omp parallel
     {
+      assert(workers_.size() == omp_get_num_threads());
       size_t rank = omp_get_thread_num();
       workers_[rank]->svc_loop(mpmc_head_, B, E);
     }
+    logger_->trace("End Sampling");
   }
 
  private:
