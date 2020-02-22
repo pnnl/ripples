@@ -55,10 +55,10 @@
 #include "trng/uniform01_dist.hpp"
 
 #ifdef RIPPLES_ENABLE_CUDA
-#include "ripples/cuda/cuda_graph.cuh"
-#include "ripples/cuda/cuda_utils.h"
 #include "ripples/cuda/cuda_generate_rrr_sets.h"
+#include "ripples/cuda/cuda_graph.cuh"
 #include "ripples/cuda/cuda_hc_engine.h"
+#include "ripples/cuda/cuda_utils.h"
 #endif
 
 namespace ripples {
@@ -68,13 +68,13 @@ namespace ripples {
 //! \tparam GraphTy The type of the input graph.
 //! \tparam ItrTy The type of the workload iterator.
 template <typename GraphTy, typename ItrTy>
-class HCSamplingWorker {
+class HCWorker {
  public:
   //! Construct the Sampling worker.
   //! \param G The input Graph.
-  HCSamplingWorker(const GraphTy &G) : G_(G) {}
+  HCWorker(const GraphTy &G) : G_(G) {}
   //! Destructor.
-  virtual ~HCSamplingWorker() = default;
+  virtual ~HCWorker() = default;
 
   virtual void svc_loop(std::atomic<size_t> &mpmc_head, ItrTy B, ItrTy E) = 0;
 
@@ -84,14 +84,14 @@ class HCSamplingWorker {
 
 template <typename GraphTy, typename ItrTy, typename PRNG,
           typename diff_model_tag>
-class HCCPUSamplingWorker : public HCSamplingWorker<GraphTy, ItrTy> {
+class HCCPUSamplingWorker : public HCWorker<GraphTy, ItrTy> {
   using vertex_type = typename GraphTy::vertex_type;
 
-  using HCSamplingWorker<GraphTy, ItrTy>::G_;
+  using HCWorker<GraphTy, ItrTy>::G_;
 
  public:
   HCCPUSamplingWorker(const GraphTy &G, const PRNG &rng)
-      : HCSamplingWorker<GraphTy, ItrTy>(G), rng_(rng), UD_() {}
+      : HCWorker<GraphTy, ItrTy>(G), rng_(rng), UD_() {}
 
   void svc_loop(std::atomic<size_t> &mpmc_head, ItrTy B, ItrTy E) {
     size_t offset = 0;
@@ -140,9 +140,9 @@ class HCCPUSamplingWorker : public HCSamplingWorker<GraphTy, ItrTy> {
 
 template <typename GraphTy, typename ItrTy, typename PRNGTy,
           typename diff_model_tag>
-class HCGPUSamplingWorker : public HCSamplingWorker<GraphTy, ItrTy> {
+class HCGPUSamplingWorker : public HCWorker<GraphTy, ItrTy> {
 #ifdef RIPPLES_ENABLE_CUDA
-  using HCSamplingWorker<GraphTy, ItrTy>::G_;
+  using HCWorker<GraphTy, ItrTy>::G_;
 
  public:
   struct config_t {
@@ -151,20 +151,15 @@ class HCGPUSamplingWorker : public HCSamplingWorker<GraphTy, ItrTy> {
 
     size_t max_blocks_{0};
 
-    config_t()
-      : max_blocks_(num_threads_ / block_size_) {}
+    config_t() : max_blocks_(num_threads_ / block_size_) {}
 
     size_t num_gpu_threads() const { return num_threads_; }
   };
 
-  HCGPUSamplingWorker(const GraphTy &G, PRNGTy &rng,
-                      cuda_ctx<GraphTy> *ctx)
-    : HCSamplingWorker<GraphTy, ItrTy>(G),
-      ctx_(ctx),
-      conf_(),
-      master_rng_(rng)
-  {
-    cuda_malloc((void **)&d_trng_state_, conf_.num_gpu_threads() * sizeof(PRNGTy));
+  HCGPUSamplingWorker(const GraphTy &G, PRNGTy &rng, cuda_ctx<GraphTy> *ctx)
+      : HCWorker<GraphTy, ItrTy>(G), ctx_(ctx), conf_(), master_rng_(rng) {
+    cuda_malloc((void **)&d_trng_state_,
+                conf_.num_gpu_threads() * sizeof(PRNGTy));
     cuda_malloc((void **)&d_flags_, G_.num_edges() * batch_size_);
   }
 
@@ -197,9 +192,9 @@ class HCGPUSamplingWorker : public HCSamplingWorker<GraphTy, ItrTy> {
     std::vector<char> flags(G_.num_edges() * batch_size_);
     cuda_set_device(ctx_->gpu_id);
     if (std::is_same<diff_model_tag, independent_cascade_tag>::value) {
-      cuda_generate_samples_ic(conf_.max_blocks_, conf_.block_size_, batch_size_,
-                               G_.num_edges(),
-                               d_trng_state_, ctx_, d_flags_, cuda_stream_);
+      cuda_generate_samples_ic(conf_.max_blocks_, conf_.block_size_,
+                               batch_size_, G_.num_edges(), d_trng_state_, ctx_,
+                               d_flags_, cuda_stream_);
     } else if (std::is_same<diff_model_tag, linear_threshold_tag>::value) {
       assert(false && "Not Yet Implemented");
     }
@@ -229,22 +224,18 @@ class HCGPUSamplingWorker : public HCSamplingWorker<GraphTy, ItrTy> {
 #endif
 };
 
-
 template <typename GraphTy, typename ItrTy, typename PRNGTy,
-          typename diff_model_tag>
-class SamplingEngine {
+          typename diff_model_tag, typename CpuWorkerTy, typename GpuWorkerTy>
+class PhaseEngine {
   using vertex_type = typename GraphTy::vertex_type;
-  using worker_type = HCSamplingWorker<GraphTy, ItrTy>;
-  using cpu_worker_type =
-      HCCPUSamplingWorker<GraphTy, ItrTy, PRNGTy, diff_model_tag>;
-  using gpu_worker_type =
-      HCGPUSamplingWorker<GraphTy, ItrTy, PRNGTy, diff_model_tag>;
+  using worker_type = HCWorker<GraphTy, ItrTy>;
+  using cpu_worker_type = CpuWorkerTy;
+  using gpu_worker_type = GpuWorkerTy;
 
  public:
-  SamplingEngine(const GraphTy &G, PRNGTy &master_rng, size_t cpu_workers,
-                 size_t gpu_workers)
-      : G_(G),
-        logger_(spdlog::stdout_color_st("Sampling Engine")) {
+  PhaseEngine(const GraphTy &G, PRNGTy &master_rng, size_t cpu_workers,
+              size_t gpu_workers, std::string loggerName)
+      : G_(G), logger_(spdlog::stdout_color_st(loggerName)) {
     size_t num_threads = cpu_workers + gpu_workers;
     // Construct workers.
     logger_->debug("Number of Threads = {}", num_threads);
@@ -258,12 +249,12 @@ class SamplingEngine {
       workers_.push_back(w);
       cpu_workers_.push_back(w);
     }
-    #if RIPPLES_ENABLE_CUDA
+#if RIPPLES_ENABLE_CUDA
     size_t num_devices = cuda_num_devices();
     for (size_t i = 0; i < gpu_workers; ++i) {
       size_t device_id = i % num_devices;
-      logger_->debug("> mapping: omp {}\t->GPU {}/{}",
-                     i + cpu_workers, device_id, num_devices);
+      logger_->debug("> mapping: omp {}\t->GPU {}/{}", i + cpu_workers,
+                     device_id, num_devices);
       logger_->trace("Building Cuda Context");
       cuda_contexts_.push_back(cuda_make_ctx(G, device_id));
       logger_->trace("Cuda Context Built!");
@@ -274,18 +265,135 @@ class SamplingEngine {
       workers_.push_back(w);
       gpu_workers_.push_back(w);
     }
-    #endif
+#endif
   }
 
-  ~SamplingEngine() {
+  ~PhaseEngine() {
     // Free workers.
     for (auto &v : workers_) delete v;
-    #if RIPPLES_ENABLE_CUDA
+#if RIPPLES_ENABLE_CUDA
     for (auto ctx : cuda_contexts_) {
       cuda_destroy_ctx(ctx);
       delete ctx;
     }
-    #endif
+#endif
+  }
+
+ protected:
+  const GraphTy &G_;
+
+  std::shared_ptr<spdlog::logger> logger_;
+
+  std::vector<cpu_worker_type *> cpu_workers_;
+#if RIPPLES_ENABLE_CUDA
+  std::vector<gpu_worker_type *> gpu_workers_;
+  std::vector<cuda_ctx<GraphTy> *> cuda_contexts_;
+#endif
+
+  std::vector<worker_type *> workers_;
+  std::atomic<size_t> mpmc_head_{0};
+};
+
+template <typename GraphTy, typename ItrTy, typename PRNGTy,
+          typename diff_model_tag>
+class SamplingEngine
+    : public PhaseEngine<
+          GraphTy, ItrTy, PRNGTy, diff_model_tag,
+          HCCPUSamplingWorker<GraphTy, ItrTy, PRNGTy, diff_model_tag>,
+          HCGPUSamplingWorker<GraphTy, ItrTy, PRNGTy, diff_model_tag>> {
+  using phase_engine =
+      PhaseEngine<GraphTy, ItrTy, PRNGTy, diff_model_tag,
+                  HCCPUSamplingWorker<GraphTy, ItrTy, PRNGTy, diff_model_tag>,
+                  HCGPUSamplingWorker<GraphTy, ItrTy, PRNGTy, diff_model_tag>>;
+
+ public:
+  SamplingEngine(const GraphTy &G, PRNGTy &master_rng, size_t cpu_workers,
+                 size_t gpu_workers)
+      : phase_engine(G, master_rng, cpu_workers, gpu_workers,
+                     "SamplingEngine") {}
+
+  void exec(ItrTy B, ItrTy E) {
+    mpmc_head_.store(0);
+
+    logger_->trace("Start Sampling");
+#pragma omp parallel
+    {
+      assert(workers_.size() == omp_get_num_threads());
+      size_t rank = omp_get_thread_num();
+      workers_[rank]->svc_loop(mpmc_head_, B, E);
+    }
+    logger_->trace("End Sampling");
+  }
+
+ private:
+  using phase_engine::logger_;
+  using phase_engine::mpmc_head_;
+  using phase_engine::workers_;
+};
+#if 0
+template <typename GraphTy, typename ItrTy, typename PRNGTy,
+          typename diff_model_tag>
+class HCCPUCountingWorker {};
+
+template <typename GraphTy, typename ItrTy, typename PRNGTy,
+          typename diff_model_tag>
+class HCGPUCountingWorker {};
+
+template <typename GraphTy, typename ItrTy, typename PRNGTy,
+          typename diff_model_tag>
+class CountingEngine {
+  using vertex_type = typename GraphTy::vertex_type;
+  using worker_type = HCWorker<GraphTy, ItrTy>;
+  using cpu_worker_type =
+      HCCPUCountingWorker<GraphTy, ItrTy, PRNGTy, diff_model_tag>;
+  // using gpu_worker_type =
+  //     HCGPUSamplingWorker<GraphTy, ItrTy, PRNGTy, diff_model_tag>;
+
+ public:
+  CountingEngine(const GraphTy &G, PRNGTy &master_rng, size_t cpu_workers,
+                 size_t gpu_workers)
+      : G_(G), logger_(spdlog::stdout_color_st("Counting Engine")) {
+    size_t num_threads = cpu_workers + gpu_workers;
+    // Construct workers.
+    logger_->debug("Number of Threads = {}", num_threads);
+    workers_.reserve(num_threads);
+
+    for (size_t i = 0; i < cpu_workers; ++i) {
+      logger_->debug("> mapping: omp {}\t->CPU", i);
+      auto rng = master_rng;
+      rng.split(num_threads, i);
+      auto w = new cpu_worker_type(G_, rng);
+      workers_.push_back(w);
+      cpu_workers_.push_back(w);
+    }
+#if RIPPLES_ENABLE_CUDA
+    size_t num_devices = cuda_num_devices();
+    for (size_t i = 0; i < gpu_workers; ++i) {
+      size_t device_id = i % num_devices;
+      logger_->debug("> mapping: omp {}\t->GPU {}/{}", i + cpu_workers,
+                     device_id, num_devices);
+      logger_->trace("Building Cuda Context");
+      cuda_contexts_.push_back(cuda_make_ctx(G, device_id));
+      logger_->trace("Cuda Context Built!");
+      auto rng = master_rng;
+      rng.split(num_threads, cpu_workers + i);
+      auto w = new gpu_worker_type(G_, rng, cuda_contexts_.back());
+      w->rng_setup();
+      workers_.push_back(w);
+      gpu_workers_.push_back(w);
+    }
+#endif
+  }
+
+  ~CountingEngine() {
+    // Free workers.
+    for (auto &v : workers_) delete v;
+#if RIPPLES_ENABLE_CUDA
+    for (auto ctx : cuda_contexts_) {
+      cuda_destroy_ctx(ctx);
+      delete ctx;
+    }
+#endif
   }
 
   void exec(ItrTy B, ItrTy E) {
@@ -317,6 +425,6 @@ class SamplingEngine {
   std::vector<worker_type *> workers_;
   std::atomic<size_t> mpmc_head_{0};
 };
-
+#endif
 }  // namespace ripples
 #endif
