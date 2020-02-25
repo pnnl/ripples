@@ -77,9 +77,10 @@ struct HillClimbingConfiguration : public AlgorithmConfiguration {
     app.add_option(
         "--samples", samples,
         "The number of samples used in the Hill Climbing Algorithm.");
-    app.add_option("--streaming-gpu-workers", streaming_gpu_workers,
-                   "The number of GPU workers for the CPU+GPU streaming engine.")
-      ->group("Streaming-Engine Options");
+    app.add_option(
+           "--streaming-gpu-workers", streaming_gpu_workers,
+           "The number of GPU workers for the CPU+GPU streaming engine.")
+        ->group("Streaming-Engine Options");
   }
 };
 
@@ -118,96 +119,13 @@ auto SampleFrom(GraphTy &G, ConfTy &CFG, GeneratorTy &gen,
   return samples;
 }
 
-namespace {
-template <typename GraphTy, typename GraphMaskTy, typename Itr>
-size_t BFS(GraphTy &G, GraphMaskTy &M, Itr b, Itr e,
-           std::vector<bool> &visited) {
-  using vertex_type = typename GraphTy::vertex_type;
-
-  std::queue<vertex_type> queue;
-  for (; b != e; ++b) {
-    queue.push(*b);
-  }
-
-  while (!queue.empty()) {
-    vertex_type u = queue.front();
-    queue.pop();
-
-    size_t edge_number =
-        std::distance(G.neighbors(0).begin(), G.neighbors(u).begin());
-
-    for (auto v : G.neighbors(u)) {
-      if (M[edge_number] && !visited[v.vertex]) {
-        queue.push(v.vertex);
-      }
-
-      ++edge_number;
-    }
-
-    visited[u] = true;
-  }
-  return std::count(visited.begin(), visited.end(), true);
-}
-
-template <typename GraphTy, typename GraphMaskTy>
-size_t BFS(GraphTy &G, GraphMaskTy &M, typename GraphTy::vertex_type v,
-           std::vector<bool> visited) {
-  using vertex_type = typename GraphTy::vertex_type;
-
-  std::queue<vertex_type> queue;
-
-  queue.push(v);
-  while (!queue.empty()) {
-    vertex_type u = queue.front();
-    queue.pop();
-
-    size_t edge_number =
-        std::distance(G.neighbors(0).begin(), G.neighbors(u).begin());
-    for (auto v : G.neighbors(u)) {
-      if (M[edge_number] && !visited[v.vertex]) {
-        queue.push(v.vertex);
-      }
-      ++edge_number;
-    }
-
-    visited[u] = true;
-  }
-  return std::count(visited.begin(), visited.end(), true);
-}
-}  // namespace
-
-template <typename GraphTy, typename GraphMaskItrTy>
+template <typename GraphTy, typename GraphMaskItrTy, typename ConfigTy>
 auto SeedSelection(GraphTy &G, GraphMaskItrTy B, GraphMaskItrTy E,
-                   std::size_t k, HillClimbingExecutionRecord &record) {
-  using vertex_type = typename GraphTy::vertex_type;
-
-  std::set<vertex_type> S;
-  std::vector<size_t> count(G.num_nodes());
-
+                   ConfigTy &CFG, HillClimbingExecutionRecord &record) {
+  SeedSelectionEngine<GraphTy, GraphMaskItrTy> countingEngine(
+      G, CFG.streaming_workers, CFG.streaming_gpu_workers);
   auto start = std::chrono::high_resolution_clock::now();
-  for (size_t i = 0; i < k; ++i) {
-#pragma omp parallel for
-    for (size_t i = 0; i < count.size(); ++i) count[i] = 0;
-
-#pragma omp parallel for
-    for (auto itr = B; itr < E; ++itr) {
-      std::vector<bool> visited(G.num_nodes(), false);
-      size_t base_count = BFS(G, *itr, S.begin(), S.end(), visited);
-
-      for (vertex_type v = 0; v < G.num_nodes(); ++v) {
-        if (S.find(v) != S.end()) continue;
-        size_t update_count = base_count + 1;
-        if (!visited[v]) update_count = BFS(G, *itr, v, visited);
-#pragma omp atomic
-        count[v] += update_count;
-      }
-    }
-
-    vertex_type v = std::distance(count.begin(),
-                                  std::max_element(count.begin(), count.end()));
-
-    S.insert(v);
-  }
+  auto S = countingEngine.exec(B, E, CFG.k);
   auto end = std::chrono::high_resolution_clock::now();
   record.SeedSelection = end - start;
 
@@ -216,14 +134,14 @@ auto SeedSelection(GraphTy &G, GraphMaskItrTy B, GraphMaskItrTy E,
 
 template <typename GraphTy, typename GeneratorTy, typename diff_model_tag,
           typename ConfTy>
-auto HillClimbing(GraphTy &G, ConfTy &CFG,
-                  GeneratorTy &gen, HillClimbingExecutionRecord &record,
+auto HillClimbing(GraphTy &G, ConfTy &CFG, GeneratorTy &gen,
+                  HillClimbingExecutionRecord &record,
                   diff_model_tag &&model_tag) {
-  auto sampled_graphs = SampleFrom(G, CFG, gen, record,
-                                   std::forward<diff_model_tag>(model_tag));
+  auto sampled_graphs =
+      SampleFrom(G, CFG, gen, record, std::forward<diff_model_tag>(model_tag));
 
-  auto S =
-      SeedSelection(G, sampled_graphs.begin(), sampled_graphs.end(), CFG.k, record);
+  auto S = SeedSelection(G, sampled_graphs.begin(), sampled_graphs.end(), CFG,
+                         record);
 
   return S;
 }

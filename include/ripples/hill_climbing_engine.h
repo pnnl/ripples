@@ -43,6 +43,7 @@
 #ifndef RIPPLES_HILL_CLIMBING_ENGINE_H
 #define RIPPLES_HILL_CLIMBING_ENGINE_H
 
+#include <algorithm>
 #include <atomic>
 #include <cstdint>
 #include <memory>
@@ -330,29 +331,157 @@ class SamplingEngine
   using phase_engine::mpmc_head_;
   using phase_engine::workers_;
 };
-#if 0
-template <typename GraphTy, typename ItrTy, typename PRNGTy,
-          typename diff_model_tag>
-class HCCPUCountingWorker {};
 
-template <typename GraphTy, typename ItrTy, typename PRNGTy,
-          typename diff_model_tag>
-class HCGPUCountingWorker {};
-
-template <typename GraphTy, typename ItrTy, typename PRNGTy,
-          typename diff_model_tag>
-class CountingEngine {
+namespace {
+template <typename GraphTy, typename GraphMaskTy, typename Itr>
+size_t BFS(GraphTy &G, GraphMaskTy &M, Itr b, Itr e,
+           std::vector<bool> &visited) {
   using vertex_type = typename GraphTy::vertex_type;
-  using worker_type = HCWorker<GraphTy, ItrTy>;
-  using cpu_worker_type =
-      HCCPUCountingWorker<GraphTy, ItrTy, PRNGTy, diff_model_tag>;
-  // using gpu_worker_type =
-  //     HCGPUSamplingWorker<GraphTy, ItrTy, PRNGTy, diff_model_tag>;
+
+  std::queue<vertex_type> queue;
+  for (; b != e; ++b) {
+    queue.push(*b);
+  }
+
+  while (!queue.empty()) {
+    vertex_type u = queue.front();
+    queue.pop();
+
+    size_t edge_number =
+        std::distance(G.neighbors(0).begin(), G.neighbors(u).begin());
+
+    for (auto v : G.neighbors(u)) {
+      if (M[edge_number] && !visited[v.vertex]) {
+        queue.push(v.vertex);
+      }
+
+      ++edge_number;
+    }
+
+    visited[u] = true;
+  }
+  return std::count(visited.begin(), visited.end(), true);
+}
+
+template <typename GraphTy, typename GraphMaskTy>
+size_t BFS(GraphTy &G, GraphMaskTy &M, typename GraphTy::vertex_type v,
+           std::vector<bool> visited) {
+  using vertex_type = typename GraphTy::vertex_type;
+
+  std::queue<vertex_type> queue;
+
+  queue.push(v);
+  while (!queue.empty()) {
+    vertex_type u = queue.front();
+    queue.pop();
+
+    size_t edge_number =
+        std::distance(G.neighbors(0).begin(), G.neighbors(u).begin());
+    for (auto v : G.neighbors(u)) {
+      if (M[edge_number] && !visited[v.vertex]) {
+        queue.push(v.vertex);
+      }
+      ++edge_number;
+    }
+
+    visited[u] = true;
+  }
+  return std::count(visited.begin(), visited.end(), true);
+}
+}  // namespace
+
+template <typename GraphTy, typename ItrTy>
+class HCCPUCountingWorker : public HCWorker<GraphTy, ItrTy> {
+  using vertex_type = typename GraphTy::vertex_type;
+  using HCWorker<GraphTy, ItrTy>::G_;
 
  public:
-  CountingEngine(const GraphTy &G, PRNGTy &master_rng, size_t cpu_workers,
-                 size_t gpu_workers)
-      : G_(G), logger_(spdlog::stdout_color_st("Counting Engine")) {
+  HCCPUCountingWorker(const GraphTy &G, std::vector<size_t> &count,
+                      std::set<vertex_type> &S)
+      : HCWorker<GraphTy, ItrTy>(G), count_(count), S_(S) {}
+
+  void svc_loop(std::atomic<size_t> &mpmc_head, ItrTy B, ItrTy E) {
+    size_t offset = 0;
+    while ((offset = mpmc_head.fetch_add(batch_size_)) < std::distance(B, E)) {
+      auto first = B;
+      std::advance(first, offset);
+      auto last = first;
+      std::advance(last, batch_size_);
+
+      if (last > E) last = E;
+      batch(first, last);
+    }
+  }
+
+ private:
+  void batch(ItrTy B, ItrTy E) {
+    for (auto itr = B; itr < E; ++itr) {
+      std::vector<bool> visited(G_.num_nodes(), false);
+      size_t base_count = BFS(G_, *itr, S_.begin(), S_.end(), visited);
+
+      for (vertex_type v = 0; v < G_.num_nodes(); ++v) {
+        if (S_.find(v) != S_.end()) continue;
+        size_t update_count = base_count + 1;
+        if (!visited[v]) update_count = BFS(G_, *itr, v, visited);
+#pragma omp atomic
+        count_[v] += update_count;
+      }
+    }
+  }
+
+  static constexpr size_t batch_size_ = 32;
+  std::vector<size_t> &count_;
+  std::set<vertex_type> &S_;
+};
+
+template <typename GraphTy, typename ItrTy>
+class HCGPUCountingWorker : public HCWorker<GraphTy, ItrTy> {
+#ifdef RIPPLE_ENABLE_CUDA
+  using vertex_type = typename GraphTy::vertex_type;
+  using HCWorker<GraphTy, ItrTy>::G_;
+
+ public:
+  HCGPUCountingWorker(const GraphTy &G, cuda_ctx<GraphTy> *ctx,
+                      std::vector<size_t> &count, std::set<vertex_type> &S)
+    : HCWorker<GraphTy, ItrTy>(G), ctx_(ctx), count_(count), S_(S) {}
+
+  void svc_loop(std::atomic<size_t> &mpmc_head, ItrTy B, ItrTy E) {
+    size_t offset = 0;
+    while ((offset = mpmc_head.fetch_add(batch_size_)) < std::distance(B, E)) {
+      auto first = B;
+      std::advance(first, offset);
+      auto last = first;
+      std::advance(last, batch_size_);
+
+      if (last > E) last = E;
+      batch(first, last);
+    }
+  }
+
+ private:
+  void batch(ItrTy B, ItrTy E) {}
+
+  static constexpr size_t batch_size_ = 32;
+  cuda_ctx<GraphTy> *ctx_;
+  std::vector<size_t> &count_;
+  std::set<vertex_type> &S_;
+#endif
+};
+
+template <typename GraphTy, typename ItrTy>
+class SeedSelectionEngine {
+  using vertex_type = typename GraphTy::vertex_type;
+  using worker_type = HCWorker<GraphTy, ItrTy>;
+  using cpu_worker_type = HCCPUCountingWorker<GraphTy, ItrTy>;
+  // using gpu_worker_type =
+  //     HCGPUSamplingWorker<GraphTy, ItrTy, PRNGTy>;
+
+ public:
+  SeedSelectionEngine(const GraphTy &G, size_t cpu_workers, size_t gpu_workers)
+      : G_(G),
+        count_(G_.num_nodes()),
+        S_(),
+        logger_(spdlog::stdout_color_st("SeedSelectionEngine")) {
     size_t num_threads = cpu_workers + gpu_workers;
     // Construct workers.
     logger_->debug("Number of Threads = {}", num_threads);
@@ -360,9 +489,7 @@ class CountingEngine {
 
     for (size_t i = 0; i < cpu_workers; ++i) {
       logger_->debug("> mapping: omp {}\t->CPU", i);
-      auto rng = master_rng;
-      rng.split(num_threads, i);
-      auto w = new cpu_worker_type(G_, rng);
+      auto w = new cpu_worker_type(G_, count_, S_);
       workers_.push_back(w);
       cpu_workers_.push_back(w);
     }
@@ -375,17 +502,14 @@ class CountingEngine {
       logger_->trace("Building Cuda Context");
       cuda_contexts_.push_back(cuda_make_ctx(G, device_id));
       logger_->trace("Cuda Context Built!");
-      auto rng = master_rng;
-      rng.split(num_threads, cpu_workers + i);
-      auto w = new gpu_worker_type(G_, rng, cuda_contexts_.back());
-      w->rng_setup();
+      auto w = new gpu_worker_type(G_, cuda_contexts_.back(), count_, S_);
       workers_.push_back(w);
       gpu_workers_.push_back(w);
     }
 #endif
   }
 
-  ~CountingEngine() {
+  ~SeedSelectionEngine() {
     // Free workers.
     for (auto &v : workers_) delete v;
 #if RIPPLES_ENABLE_CUDA
@@ -396,21 +520,36 @@ class CountingEngine {
 #endif
   }
 
-  void exec(ItrTy B, ItrTy E) {
-    mpmc_head_.store(0);
+  std::set<vertex_type> exec(ItrTy B, ItrTy E, size_t k) {
 
-    logger_->trace("Start Sampling");
+    logger_->trace("Start Seed Selection");
+
+    for (size_t i = 0; i < k; ++i) {
+#pragma omp parallel for
+      for (size_t j = 0; j < count_.size(); ++j) count_[j] = 0;
+
+      mpmc_head_.store(0);
 #pragma omp parallel
-    {
-      assert(workers_.size() == omp_get_num_threads());
-      size_t rank = omp_get_thread_num();
-      workers_[rank]->svc_loop(mpmc_head_, B, E);
+      {
+        assert(workers_.size() == omp_get_num_threads());
+        size_t rank = omp_get_thread_num();
+        workers_[rank]->svc_loop(mpmc_head_, B, E);
+      }
+
+      vertex_type v = std::distance(
+          count_.begin(), std::max_element(count_.begin(), count_.end()));
+      S_.insert(v);
+      logger_->trace("Seed {} : {}", i, v);
     }
-    logger_->trace("End Sampling");
+
+    logger_->trace("End Seed Selection");
+    return S_;
   }
 
  private:
   const GraphTy &G_;
+  std::vector<size_t> count_;
+  std::set<vertex_type> S_;
   // size_t gpu_workers_;
   // size_t cpu_workers_;
 
@@ -425,6 +564,5 @@ class CountingEngine {
   std::vector<worker_type *> workers_;
   std::atomic<size_t> mpmc_head_{0};
 };
-#endif
 }  // namespace ripples
 #endif
