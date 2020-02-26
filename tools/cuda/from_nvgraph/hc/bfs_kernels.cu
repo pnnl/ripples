@@ -18,8 +18,8 @@
 
 #include <cub/cub.cuh>
 
-#include "ripples/cuda/from_nvgraph/imm/sm_utils.h"
-#include "ripples/cuda/from_nvgraph/imm/nvgraph_error.hxx"
+#include "ripples/cuda/from_nvgraph/sm_utils.h"
+#include "ripples/cuda/from_nvgraph/nvgraph_error.hxx"
 
 #define WARP_SIZE 32
 #define INT_SIZE 32
@@ -816,7 +816,7 @@ namespace bfs_kernels {
   // We add it to the new frontier
   //
 
-  template<typename IndexType, typename PRNGeneratorTy>
+  template<typename IndexType>
   __global__ void topdown_expand_kernel(  const IndexType *row_ptr,
                             const IndexType *col_ind,
                             const float *weights,
@@ -834,10 +834,7 @@ namespace bfs_kernels {
                             IndexType *predecessors,
                             const int *edge_mask,
                             const int *isolated_bmap,
-                            bool directed,
-                            PRNGeneratorTy *d_trng_state,
-                            size_t rng_offset,
-                            size_t num_rngs) {
+                            bool directed) {
     //BlockScan
     typedef cub::BlockScan<IndexType, TOP_DOWN_EXPAND_DIMX> BlockScan;
     __shared__ typename BlockScan::TempStorage scan_storage;
@@ -860,10 +857,7 @@ namespace bfs_kernels {
         * TOP_DOWN_EXPAND_DIMX];
     __shared__ IndexType block_n_frontier_candidates;
 
-    // cache rng state and create the uniform distribution
-    auto tid = blockDim.x * blockIdx.x + threadIdx.x;
-    auto &rng(d_trng_state[(tid + rng_offset) % num_rngs]);
-    trng::uniform01_dist<float> u;
+    // auto tid = blockDim.x * blockIdx.x + threadIdx.x;
 
     IndexType block_offset = (blockDim.x * blockIdx.x) * max_items_per_thread;
     IndexType n_items_per_thread_left = (totaldegree - block_offset + TOP_DOWN_EXPAND_DIMX - 1)
@@ -1070,8 +1064,6 @@ namespace bfs_kernels {
 
             if (is_visited)
               vec_frontier_candidate[iv] = -1;
-            else if(u(rng) > vec_weights_v[iv])
-                vec_frontier_candidate[iv] = -1;
           }
 
           if (directed) {
@@ -1243,7 +1235,7 @@ namespace bfs_kernels {
     return TOP_DOWN_EXPAND_DIMX;
   }
 
-  template<typename IndexType, typename PRNGeneratorTy>
+  template<typename IndexType>
   void frontier_expand(const IndexType *row_ptr,
                 const IndexType *col_ind,
                 const float *weights,
@@ -1263,10 +1255,7 @@ namespace bfs_kernels {
                 bool directed,
                 IndexType dyn_max_blocks,
                 cudaStream_t m_stream,
-                bool deterministic,
-                PRNGeneratorTy *d_trng_state,
-                size_t &rng_offset,
-                size_t num_rngs) {
+                bool deterministic) {
     if (!totaldegree)
       return;
 
@@ -1298,14 +1287,10 @@ namespace bfs_kernels {
                                         predecessors,
                                         edge_mask,
                                         isolated_bmap,
-                                        directed,
-                                        d_trng_state,
-                                        rng_offset,
-                                        num_rngs);
+                                        directed);
     cudaCheckError()
     ;
 
-    rng_offset = (rng_offset + grid.x * block.x) % num_rngs;
   }
 
   template<typename IndexType>

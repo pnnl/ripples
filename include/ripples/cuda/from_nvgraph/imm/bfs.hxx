@@ -28,7 +28,7 @@
 
 #define TRAVERSAL_DEFAULT_BETA 18
 
-#include "nvgraph_error.hxx"
+#include "ripples/cuda/from_nvgraph/nvgraph_error.hxx"
 
 namespace nvgraph
 

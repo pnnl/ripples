@@ -28,13 +28,10 @@
 
 #define TRAVERSAL_DEFAULT_BETA 18
 
-#include "nvgraph_error.hxx"
+#include "ripples/cuda/from_nvgraph/nvgraph_error.hxx"
 
-namespace nvgraph
-
-{
-
-template <typename IndexType, typename PRNGeneratorTy>
+namespace nvgraph {
+template <typename IndexType>
 
 class Bfs
 
@@ -113,10 +110,6 @@ class Bfs
 
   cudaStream_t stream;
 
-  PRNGeneratorTy *d_trng_state_{nullptr};
-  size_t rng_offset_{0};
-  size_t num_rngs_;
-
   // resets pointers defined by d_counters_pad (see implem)
 
   void resetDevicePointers();
@@ -145,7 +138,6 @@ class Bfs
         dyn_max_blocks(_dyn_max_blocks),
         stream(_stream)
   {
-    num_rngs_ = dyn_max_blocks * traverse_block_size();
     setup();
   }
 
@@ -159,9 +151,5 @@ class Bfs
   NVGRAPH_ERROR traverse(IndexType *source_vertices, IndexType nsources);
 
   static IndexType traverse_block_size();
-  void rng(PRNGeneratorTy *d_trng_state) {
-	d_trng_state_ = d_trng_state;
-  }
 };
-
 }  // end namespace nvgraph
