@@ -150,6 +150,7 @@ class Bfs
 
   NVGRAPH_ERROR traverse(IndexType *source_vertices, IndexType nsources);
 
+  NVGRAPH_ERROR traverse(IndexType *source_vertices, IndexType nsources, IndexType *num_visited);
   static IndexType traverse_block_size();
 };
 }  // end namespace nvgraph

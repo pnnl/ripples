@@ -60,6 +60,7 @@
 #include "ripples/cuda/cuda_graph.cuh"
 #include "ripples/cuda/cuda_hc_engine.h"
 #include "ripples/cuda/cuda_utils.h"
+#include "ripples/cuda/from_nvgraph/hc/bfs.hxx"
 #endif
 
 namespace ripples {
@@ -159,12 +160,17 @@ class HCGPUSamplingWorker : public HCWorker<GraphTy, ItrTy> {
 
   HCGPUSamplingWorker(const GraphTy &G, PRNGTy &rng, cuda_ctx<GraphTy> *ctx)
       : HCWorker<GraphTy, ItrTy>(G), ctx_(ctx), conf_(), master_rng_(rng) {
+    cuda_set_device(ctx_->gpu_id);
+    cuda_stream_create(&cuda_stream_);
+
     cuda_malloc((void **)&d_trng_state_,
                 conf_.num_gpu_threads() * sizeof(PRNGTy));
     cuda_malloc((void **)&d_flags_, G_.num_edges() * batch_size_);
   }
 
   ~HCGPUSamplingWorker() {
+    cuda_set_device(ctx_->gpu_id);
+    cuda_stream_destroy(cuda_stream_);
     cuda_free(d_trng_state_);
     cuda_free(d_flags_);
   }
@@ -438,12 +444,67 @@ template <typename GraphTy, typename ItrTy>
 class HCGPUCountingWorker : public HCWorker<GraphTy, ItrTy> {
 #ifdef RIPPLES_ENABLE_CUDA
   using vertex_type = typename GraphTy::vertex_type;
+  using d_vertex_type = typename cuda_device_graph<GraphTy>::vertex_t;
+  using bfs_solver_t = nvgraph::Bfs<int>;
   using HCWorker<GraphTy, ItrTy>::G_;
 
  public:
-  HCGPUCountingWorker(const GraphTy &G, cuda_ctx<GraphTy> *ctx,
-                      std::vector<size_t> &count, std::set<vertex_type> &S)
-    : HCWorker<GraphTy, ItrTy>(G), ctx_(ctx), count_(count), S_(S) {}
+  struct config_t {
+    config_t(size_t num_workers)
+        : block_size_(bfs_solver_t::traverse_block_size()),
+          max_blocks_(num_workers ? cuda_max_blocks() / num_workers : 0) {
+      auto console = spdlog::get("console");
+      console->trace(
+          "> [GPUWalkWorkerIC::config_t] "
+          "max_blocks_={}\tblock_size_={}",
+          max_blocks_, block_size_);
+    }
+
+    size_t num_gpu_threads() const { return max_blocks_ * block_size_; }
+
+    const size_t max_blocks_;
+    const size_t block_size_;
+  };
+
+  HCGPUCountingWorker(const config_t &conf, const GraphTy &G,
+                      cuda_ctx<GraphTy> *ctx, std::vector<size_t> &count,
+                      std::set<vertex_type> &S)
+      : HCWorker<GraphTy, ItrTy>(G),
+        conf_(conf),
+        ctx_(ctx),
+        count_(count),
+        S_(S),
+        edge_filter_(new d_vertex_type[G_.num_edges()]) {
+    cuda_set_device(ctx_->gpu_id);
+    cuda_stream_create(&cuda_stream_);
+
+    // allocate host/device memory
+    predecessors_ = (int *)malloc(G_.num_nodes() * sizeof(d_vertex_type));
+    cuda_malloc((void **)&d_predecessors_,
+                G_.num_nodes() * sizeof(d_vertex_type));
+    cuda_malloc((void **)&d_edge_filter_,
+                G_.num_edges() * sizeof(d_vertex_type));
+
+    // create the solver
+    solver_ = new bfs_solver_t(this->G_.num_nodes(), this->G_.num_edges(),
+                               cuda_graph_index(ctx_), cuda_graph_edges(ctx_),
+                               cuda_graph_weights(ctx_), true,
+                               TRAVERSAL_DEFAULT_ALPHA, TRAVERSAL_DEFAULT_BETA,
+                               conf_.max_blocks_, cuda_stream_);
+    solver_->configure(nullptr, d_predecessors_, d_edge_filter_);
+  }
+
+  ~HCGPUCountingWorker() {
+    cuda_set_device(ctx_->gpu_id);
+
+    delete solver_;
+    cuda_stream_destroy(cuda_stream_);
+
+    // free host/device memory
+    free(predecessors_);
+    cuda_free(d_predecessors_);
+    cuda_free(d_edge_filter_);
+  }
 
   void svc_loop(std::atomic<size_t> &mpmc_head, ItrTy B, ItrTy E) {
     size_t offset = 0;
@@ -459,10 +520,52 @@ class HCGPUCountingWorker : public HCWorker<GraphTy, ItrTy> {
   }
 
  private:
-  void batch(ItrTy B, ItrTy E) {}
+  void batch(ItrTy B, ItrTy E) {
+    return;
+
+    std::vector<d_vertex_type> seeds(S_.begin(), S_.end());
+    for (auto itr = B; itr < E; ++itr) {
+      std::transform(itr->begin(), itr->end(), edge_filter_.get(),
+                     [](bool v) -> d_vertex_type { return v ? 1 : 0; });
+
+      cuda_h2d(edge_filter_.get(), d_edge_filter_,
+               G_.num_edges() * sizeof(d_vertex_type), cuda_stream_);
+
+      d_vertex_type base_count;
+      solver_->traverse(seeds.data(), seeds.size(), &base_count);
+
+      // size_t base_count = BFS(G_, *itr, S_.begin(), S_.end(), visited);
+      cuda_d2h(d_predecessors_, predecessors_,
+               G_.num_nodes() * sizeof(d_vertex_type), cuda_stream_);
+      cuda_sync(cuda_stream_);
+
+      for (vertex_type v = 0; v < G_.num_nodes(); ++v) {
+        if (S_.find(v) != S_.end()) continue;
+        size_t update_count = base_count + 1;
+        if (predecessors_[v] == -1) {
+          d_vertex_type count;
+          seeds.push_back(v);
+          solver_->traverse(seeds.data(), seeds.size(), &count);
+          cuda_sync(cuda_stream_);
+          seeds.pop_back();
+
+          update_count = count;
+        }
+#pragma omp atomic
+        count_[v] += update_count;
+      }
+    }
+  }
 
   static constexpr size_t batch_size_ = 32;
+  config_t conf_;
   cuda_ctx<GraphTy> *ctx_;
+  cudaStream_t cuda_stream_;
+  bfs_solver_t *solver_;
+  std::unique_ptr<d_vertex_type[]> edge_filter_;
+  d_vertex_type *d_edge_filter_;
+  d_vertex_type *predecessors_, *d_predecessors_;
+
   std::vector<size_t> &count_;
   std::set<vertex_type> &S_;
 #endif
@@ -501,7 +604,9 @@ class SeedSelectionEngine {
       logger_->trace("Building Cuda Context");
       cuda_contexts_.push_back(cuda_make_ctx(G, device_id));
       logger_->trace("Cuda Context Built!");
-      auto w = new gpu_worker_type(G_, cuda_contexts_.back(), count_, S_);
+      typename gpu_worker_type::config_t gpu_conf(gpu_workers);
+      auto w =
+          new gpu_worker_type(gpu_conf, G_, cuda_contexts_.back(), count_, S_);
       workers_.push_back(w);
       gpu_workers_.push_back(w);
     }
@@ -520,7 +625,6 @@ class SeedSelectionEngine {
   }
 
   std::set<vertex_type> exec(ItrTy B, ItrTy E, size_t k) {
-
     logger_->trace("Start Seed Selection");
 
     for (size_t i = 0; i < k; ++i) {

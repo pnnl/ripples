@@ -19,6 +19,9 @@
 #include <iomanip>
 #include <limits>
 
+#include "thrust/device_vector.h"
+#include "thrust/execution_policy.h"
+
 #include "ripples/graph.h"
 #include "ripples/cuda/from_nvgraph/hc/bfs.hxx"
 #include "ripples/cuda/from_nvgraph/nvgraph_error.hxx"
@@ -373,6 +376,22 @@ namespace nvgraph {
     for (IndexType i = 0; i < nsources; ++i)
       traverse(source_vertices[i]);
 
+    return NVGRAPH_OK;
+  }
+
+  template<typename IndexType>
+  struct IsCovered{
+    __host__ __device__ bool operator()(const IndexType& v) { return v != -1; }
+  };
+
+  template<typename IndexType>
+  NVGRAPH_ERROR Bfs<IndexType>::traverse(IndexType *source_vertices, IndexType nsources,
+                                         IndexType *num_visited) {
+    traverse(source_vertices, nsources);
+    *num_visited =
+      thrust::count_if(thrust::cuda::par.on(stream),
+                       thrust::device_pointer_cast(predecessors), thrust::device_pointer_cast(&predecessors[n]),
+                       IsCovered<IndexType>());
     return NVGRAPH_OK;
   }
 
