@@ -21,8 +21,8 @@
 
 #include "ripples/graph.h"
 #include "ripples/cuda/cuda_generate_rrr_sets.h"
-#include "ripples/cuda/from_nvgraph/bfs.hxx"
-#include "ripples/cuda/from_nvgraph/nvgraph_error.hxx"
+#include "ripples/cuda/from_nvgraph/imm/bfs.hxx"
+#include "ripples/cuda/from_nvgraph/imm/nvgraph_error.hxx"
 
 #include "bfs_kernels.cu"
 

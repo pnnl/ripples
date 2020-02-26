@@ -45,15 +45,26 @@ def build(bld):
         cuda_acc_cxx_flags = ['-DRIPPLES_ENABLE_CUDA']
 
         bld(features='cxx cxxstlib',
+            source=['cuda/from_nvgraph/imm/bfs.cu'],
+            target='cuda_imm_bfs', cuda=True,
+            use=tools_deps + ['CUDA', 'CUDART', '3rd-party'])
+
+
+        bld(features='cxx cxxstlib',
+            source=['cuda/from_nvgraph/hc/bfs.cu'],
+            target='cuda_hc_bfs', cuda=True,
+            use=tools_deps + ['CUDA', 'CUDART', '3rd-party'])
+
+        bld(features='cxx cxxstlib',
             source=['cuda/cuda_utils.cu', 'cuda/cuda_generate_rrr_sets.cu',
-                    'cuda/find_most_influential.cu', 'cuda/from_nvgraph/bfs.cu',
+                    'cuda/find_most_influential.cu',
                     'cuda/cuda_lt_kernel.cu', 'cuda/cuda_graph.cu',
                     'cuda/cuda_hc_engine.cu'],
             target='cuda_ripples', cuda=True,
             use=tools_deps + ['CUDA', 'CUDART', '3rd-party'])
 
     bld(features='cxx cxxprogram', source='imm.cc', target='imm',
-        use=cuda_acc_tools_deps, cuda=bld.env.ENABLE_CUDA,
+        use=cuda_acc_tools_deps + ['cuda_imm_bfs'], cuda=bld.env.ENABLE_CUDA,
         cxxflags=cuda_acc_cxx_flags)
 
     bld(features='cxx cxxprogram', source='simulator.cc', target='simulator',
@@ -63,7 +74,7 @@ def build(bld):
         use=tools_deps)
 
     bld(features='cxx cxxprogram', source='hill_climbing.cc', target='hill-climbing',
-        use=cuda_acc_tools_deps, cxxflags=cuda_acc_cxx_flags, cuda=bld.env.ENABLE_CUDA)
+        use=cuda_acc_tools_deps + ['cuda_hc_bfs'], cxxflags=cuda_acc_cxx_flags, cuda=bld.env.ENABLE_CUDA)
 
     if not bld.env.HAVE_MPI:
         return
@@ -71,8 +82,8 @@ def build(bld):
     tools_deps += ['MPI']
     cuda_acc_tools_deps += ['MPI']
     bld(features='cxx cxxprogram', source='mpi-hill-climbing.cc', target='mpi-hill-climbing',
-        use=cuda_acc_tools_deps, cxxflags=cuda_acc_cxx_flags, cuda=bld.env.ENABLE_CUDA)
+        use=cuda_acc_tools_deps + ['cuda_hc_bfs'], cxxflags=cuda_acc_cxx_flags, cuda=bld.env.ENABLE_CUDA)
 
     bld(features='cxx cxxprogram', source='mpi-imm.cc', target='mpi-imm',
-        use=cuda_acc_tools_deps, cuda=bld.env.ENABLE_CUDA,
+        use=cuda_acc_tools_deps + ['cuda_imm_bfs'], cuda=bld.env.ENABLE_CUDA,
         cxxflags=cuda_acc_cxx_flags)

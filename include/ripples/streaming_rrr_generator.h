@@ -59,7 +59,7 @@
 
 #ifdef RIPPLES_ENABLE_CUDA
 #include "ripples/cuda/cuda_generate_rrr_sets.h"
-#include "ripples/cuda/from_nvgraph/bfs.hxx"
+#include "ripples/cuda/from_nvgraph/imm/bfs.hxx"
 #endif
 
 #if CUDA_PROFILE

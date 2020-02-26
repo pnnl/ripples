@@ -436,7 +436,7 @@ class HCCPUCountingWorker : public HCWorker<GraphTy, ItrTy> {
 
 template <typename GraphTy, typename ItrTy>
 class HCGPUCountingWorker : public HCWorker<GraphTy, ItrTy> {
-#ifdef RIPPLE_ENABLE_CUDA
+#ifdef RIPPLES_ENABLE_CUDA
   using vertex_type = typename GraphTy::vertex_type;
   using HCWorker<GraphTy, ItrTy>::G_;
 
@@ -473,8 +473,7 @@ class SeedSelectionEngine {
   using vertex_type = typename GraphTy::vertex_type;
   using worker_type = HCWorker<GraphTy, ItrTy>;
   using cpu_worker_type = HCCPUCountingWorker<GraphTy, ItrTy>;
-  // using gpu_worker_type =
-  //     HCGPUSamplingWorker<GraphTy, ItrTy, PRNGTy>;
+  using gpu_worker_type = HCGPUCountingWorker<GraphTy, ItrTy>;
 
  public:
   SeedSelectionEngine(const GraphTy &G, size_t cpu_workers, size_t gpu_workers)

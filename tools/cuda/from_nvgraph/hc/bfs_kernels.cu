@@ -18,8 +18,8 @@
 
 #include <cub/cub.cuh>
 
-#include "ripples/cuda/from_nvgraph/sm_utils.h"
-#include "ripples/cuda/from_nvgraph/nvgraph_error.hxx"
+#include "ripples/cuda/from_nvgraph/imm/sm_utils.h"
+#include "ripples/cuda/from_nvgraph/imm/nvgraph_error.hxx"
 
 #define WARP_SIZE 32
 #define INT_SIZE 32
