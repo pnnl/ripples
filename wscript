@@ -101,7 +101,8 @@ def configure(conf):
     conf.env.append_value('CXXFLAGS', ['-O3', '-mtune=native'])
 
     conf.setenv('debug', env)
-    conf.env.append_value('CXXFLAGS', ['-g'])
+    conf.env.append_value('CXXFLAGS', ['-g', '-DDEBUG'])
+    conf.env.append_value('CUDAFLAGS', ['-DDEBUG'])
 
 
 def build(bld):
