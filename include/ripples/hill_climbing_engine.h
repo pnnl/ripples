@@ -214,7 +214,7 @@ class HCGPUSamplingWorker : public HCWorker<GraphTy, ItrTy> {
     std::advance(Ef, G_.num_nodes());
     for (; Ef < flags.end() && B < E; ++B) {
       std::transform(Bf, Ef, B->begin(),
-                     [](char v) -> bool { v == 0 ? false : true; });
+                     [](char v) -> bool { return v == 0 ? false : true; });
       std::advance(Bf, G_.num_nodes());
       std::advance(Ef, G_.num_nodes());
     }
@@ -242,37 +242,45 @@ class PhaseEngine {
  public:
   PhaseEngine(const GraphTy &G, PRNGTy &master_rng, size_t cpu_workers,
               size_t gpu_workers, std::string loggerName)
-      : G_(G), logger_(spdlog::stdout_color_st(loggerName)) {
+      : G_(G), logger_(spdlog::stdout_color_mt(loggerName)) {
     size_t num_threads = cpu_workers + gpu_workers;
     // Construct workers.
     logger_->debug("Number of Threads = {}", num_threads);
-    workers_.reserve(num_threads);
+    workers_.resize(num_threads);
+    cpu_workers_.resize(cpu_workers);
+    #if RIPPLES_ENABLE_CUDA
+    gpu_workers_.resize(gpu_workers);
+    cuda_contexts_.resize(gpu_workers);
+    #endif
 
-    for (size_t i = 0; i < cpu_workers; ++i) {
-      logger_->debug("> mapping: omp {}\t->CPU", i);
-      auto rng = master_rng;
-      rng.split(num_threads, i);
-      auto w = new cpu_worker_type(G_, rng);
-      workers_.push_back(w);
-      cpu_workers_.push_back(w);
+    #pragma omp parallel
+    {
+      int rank = omp_get_thread_num();
+      if (rank < cpu_workers) {
+        auto rng = master_rng;
+        rng.split(num_threads, rank);
+        auto w = new cpu_worker_type(G_, rng);
+        workers_[rank] = w;
+        cpu_workers_[rank] = w;
+        logger_->debug("> mapping: omp {}\t->CPU", rank);
+      } else {
+        #if RIPPLES_ENABLE_CUDA
+        size_t num_devices = cuda_num_devices();
+        size_t device_id = rank % num_devices;
+        logger_->debug("> mapping: omp {}\t->GPU {}/{}", rank,
+                       device_id, num_devices);
+        logger_->trace("Building Cuda Context");
+        cuda_contexts_[rank - cpu_workers] = cuda_make_ctx(G, device_id);
+        auto rng = master_rng;
+        rng.split(num_threads, rank);
+        auto w = new gpu_worker_type(G_, rng, cuda_contexts_.back());
+        w->rng_setup();
+        workers_[rank] = w;
+        gpu_workers_[rank - cpu_workers] = w;
+        logger_->trace("Cuda Context Built!");
+        #endif
+      }
     }
-#if RIPPLES_ENABLE_CUDA
-    size_t num_devices = cuda_num_devices();
-    for (size_t i = 0; i < gpu_workers; ++i) {
-      size_t device_id = i % num_devices;
-      logger_->debug("> mapping: omp {}\t->GPU {}/{}", i + cpu_workers,
-                     device_id, num_devices);
-      logger_->trace("Building Cuda Context");
-      cuda_contexts_.push_back(cuda_make_ctx(G, device_id));
-      logger_->trace("Cuda Context Built!");
-      auto rng = master_rng;
-      rng.split(num_threads, cpu_workers + i);
-      auto w = new gpu_worker_type(G_, rng, cuda_contexts_.back());
-      w->rng_setup();
-      workers_.push_back(w);
-      gpu_workers_.push_back(w);
-    }
-#endif
   }
 
   ~PhaseEngine() {
@@ -280,6 +288,7 @@ class PhaseEngine {
     for (auto &v : workers_) delete v;
 #if RIPPLES_ENABLE_CUDA
     for (auto ctx : cuda_contexts_) {
+      cuda_set_device(ctx->gpu_id);
       cuda_destroy_ctx(ctx);
       delete ctx;
     }
@@ -585,34 +594,42 @@ class SeedSelectionEngine {
       : G_(G),
         count_(G_.num_nodes()),
         S_(),
-        logger_(spdlog::stdout_color_st("SeedSelectionEngine")) {
+        logger_(spdlog::stdout_color_mt("SeedSelectionEngine")) {
     size_t num_threads = cpu_workers + gpu_workers;
     // Construct workers.
     logger_->debug("Number of Threads = {}", num_threads);
-    workers_.reserve(num_threads);
+    workers_.resize(num_threads);
+    cpu_workers_.resize(cpu_workers);
+    #if RIPPLES_ENABLE_CUDA
+    gpu_workers_.resize(gpu_workers);
+    cuda_contexts_.resize(gpu_workers);
+    #endif
 
-    for (size_t i = 0; i < cpu_workers; ++i) {
-      logger_->debug("> mapping: omp {}\t->CPU", i);
-      auto w = new cpu_worker_type(G_, count_, S_);
-      workers_.push_back(w);
-      cpu_workers_.push_back(w);
+    #pragma omp parallel
+    {
+      int rank = omp_get_thread_num();
+      if (rank < cpu_workers) {
+        auto w = new cpu_worker_type(G_, count_, S_);
+        workers_[rank] = w;
+        cpu_workers_[rank] = w;
+        logger_->debug("> mapping: omp {}\t->CPU", rank);
+      } else {
+        #if RIPPLES_ENABLE_CUDA
+        size_t num_devices = cuda_num_devices();
+        size_t device_id = rank % num_devices;
+        logger_->debug("> mapping: omp {}\t->GPU {}/{}", rank,
+                       device_id, num_devices);
+        logger_->trace("Building Cuda Context");
+        cuda_contexts_[rank - cpu_workers] = cuda_make_ctx(G, device_id);
+        typename gpu_worker_type::config_t gpu_conf(gpu_workers);
+        auto w =
+            new gpu_worker_type(gpu_conf, G_, cuda_contexts_.back(), count_, S_);
+        workers_[rank] = w;
+        gpu_workers_[rank - cpu_workers] = w;
+        logger_->trace("Cuda Context Built!");
+        #endif
+      }
     }
-#if RIPPLES_ENABLE_CUDA
-    size_t num_devices = cuda_num_devices();
-    for (size_t i = 0; i < gpu_workers; ++i) {
-      size_t device_id = i % num_devices;
-      logger_->debug("> mapping: omp {}\t->GPU {}/{}", i + cpu_workers,
-                     device_id, num_devices);
-      logger_->trace("Building Cuda Context");
-      cuda_contexts_.push_back(cuda_make_ctx(G, device_id));
-      logger_->trace("Cuda Context Built!");
-      typename gpu_worker_type::config_t gpu_conf(gpu_workers);
-      auto w =
-          new gpu_worker_type(gpu_conf, G_, cuda_contexts_.back(), count_, S_);
-      workers_.push_back(w);
-      gpu_workers_.push_back(w);
-    }
-#endif
   }
 
   ~SeedSelectionEngine() {
@@ -620,6 +637,7 @@ class SeedSelectionEngine {
     for (auto &v : workers_) delete v;
 #if RIPPLES_ENABLE_CUDA
     for (auto ctx : cuda_contexts_) {
+      cuda_set_device(ctx->gpu_id);
       cuda_destroy_ctx(ctx);
       delete ctx;
     }

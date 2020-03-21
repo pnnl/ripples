@@ -228,6 +228,7 @@ class HCGPUCountingWorker : public HCWorker<GraphTy, ItrTy, VItrTy> {
 
  private:
   void batch_frontier(ItrTy B, ItrTy E, size_t offset) {
+    cuda_set_device(ctx_->gpu_id);
     std::vector<d_vertex_type> seeds(S_.begin(), S_.end());
     for (auto itr = B; itr < E; ++itr, ++offset) {
       frontier_cache_[offset].resize(G_.num_nodes(), false);
@@ -251,6 +252,7 @@ class HCGPUCountingWorker : public HCWorker<GraphTy, ItrTy, VItrTy> {
   }
   void batch_counters(VItrTy B, VItrTy E, size_t sample_id, size_t base_count,
                       ItrTy eMask) {
+    cuda_set_device(ctx_->gpu_id);
     std::vector<d_vertex_type> seeds(S_.begin(), S_.end());
     std::transform(eMask->begin(), eMask->end(), edge_filter_.get(),
                    [](bool v) -> d_vertex_type { return v ? 1 : 0; });
@@ -308,11 +310,11 @@ class SeedSelectionEngine {
         global_count_(),
         frontier_cache_(),
         S_(),
-        logger_(spdlog::stdout_color_st("SeedSelectionEngine")) {
+        logger_(spdlog::stdout_color_mt("SeedSelectionEngine")) {
     MPI_Comm_size(MPI_COMM_WORLD, &world_size);
     MPI_Comm_rank(MPI_COMM_WORLD, &rank);
 
-    vertex_block_size_ = (G.num_nodes() / world_size) + 1;
+    vertex_block_size_ = world_size > 1 ? (G.num_nodes() / world_size) + 1 : G.num_nodes();
     global_count_.resize(vertex_block_size_, 0);
     local_count_.resize(vertex_block_size_, 0);
 
@@ -322,8 +324,40 @@ class SeedSelectionEngine {
     size_t num_threads = cpu_workers + gpu_workers;
     // Construct workers.
     logger_->debug("Number of Threads = {}", num_threads);
-    workers_.reserve(num_threads);
+    workers_.resize(num_threads);
+    cpu_workers_.resize(cpu_workers);
+    #if RIPPLES_ENABLE_CUDA
+    gpu_workers_.resize(gpu_workers);
+    cuda_contexts_.resize(gpu_workers);
+    #endif
 
+    #pragma omp parallel
+    {
+      int rank = omp_get_thread_num();
+      if (rank < cpu_workers) {
+        auto w = new cpu_worker_type(G_, local_count_, frontier_cache_, S_);
+        workers_[rank] = w;
+        cpu_workers_[rank] = w;
+        logger_->debug("> mapping: omp {}\t->CPU", rank);
+      } else {
+        #if RIPPLES_ENABLE_CUDA
+        size_t num_devices = cuda_num_devices();
+        size_t device_id = rank % num_devices;
+        logger_->debug("> mapping: omp {}\t->GPU {}/{}", rank,
+                       device_id, num_devices);
+        logger_->trace("Building Cuda Context");
+        cuda_contexts_[rank - cpu_workers] = cuda_make_ctx(G, device_id);
+        typename gpu_worker_type::config_t gpu_conf(gpu_workers);
+        auto w = new gpu_worker_type(gpu_conf, G_, cuda_contexts_[rank - cpu_workers],
+                                     local_count_, frontier_cache_, S_);
+        workers_[rank] = w;
+        gpu_workers_[rank - cpu_workers] = w;
+        logger_->trace("Cuda Context Built!");
+        #endif
+      }
+    }
+
+#if 0
     for (size_t i = 0; i < cpu_workers; ++i) {
       logger_->debug("> mapping: omp {}\t->CPU", i);
       auto w = new cpu_worker_type(G_, local_count_, frontier_cache_, S_);
@@ -332,6 +366,8 @@ class SeedSelectionEngine {
     }
 #if RIPPLES_ENABLE_CUDA
     size_t num_devices = cuda_num_devices();
+    cuda_contexts_.reserve(gpu_workers);
+    gpu_workers_.reserve(gpu_workers);
     for (size_t i = 0; i < gpu_workers; ++i) {
       size_t device_id = i % num_devices;
       logger_->debug("> mapping: omp {}\t->GPU {}/{}", i + cpu_workers,
@@ -345,6 +381,7 @@ class SeedSelectionEngine {
       workers_.push_back(w);
       gpu_workers_.push_back(w);
     }
+#endif
 #endif
     MPI_Win_fence(0, win);
   }
@@ -374,7 +411,7 @@ class SeedSelectionEngine {
         size_t rank = omp_get_thread_num();
         workers_[rank]->build_frontier(mpmc_head_, B, E);
       }
-      for (int p = 0; p < world_size; ++p) {
+      for (int p = 1; p <= world_size; ++p) {
         int current_block = (p + rank) % world_size;
 
         spdlog::get("console")->info("Rank {} - Block {}", rank, current_block);
