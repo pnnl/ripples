@@ -273,7 +273,7 @@ class PhaseEngine {
         cuda_contexts_[rank - cpu_workers] = cuda_make_ctx(G, device_id);
         auto rng = master_rng;
         rng.split(num_threads, rank);
-        auto w = new gpu_worker_type(G_, rng, cuda_contexts_.back());
+        auto w = new gpu_worker_type(G_, rng, cuda_contexts_[rank - cpu_workers]);
         w->rng_setup();
         workers_[rank] = w;
         gpu_workers_[rank - cpu_workers] = w;

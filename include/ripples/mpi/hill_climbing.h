@@ -115,7 +115,6 @@ class HCCPUCountingWorker : public HCWorker<GraphTy, ItrTy, VItrTy> {
  private:
   void batch_frontier(ItrTy B, ItrTy E, size_t offset) {
     for (auto itr = B; itr < E; ++itr, ++offset) {
-      frontier_cache_[offset].resize(G_.num_nodes(), false);
       BFS(G_, *itr, S_.begin(), S_.end(), frontier_cache_[offset]);
     }
   }
@@ -231,7 +230,6 @@ class HCGPUCountingWorker : public HCWorker<GraphTy, ItrTy, VItrTy> {
     cuda_set_device(ctx_->gpu_id);
     std::vector<d_vertex_type> seeds(S_.begin(), S_.end());
     for (auto itr = B; itr < E; ++itr, ++offset) {
-      frontier_cache_[offset].resize(G_.num_nodes(), false);
       std::transform(itr->begin(), itr->end(), edge_filter_.get(),
                      [](bool v) -> d_vertex_type { return v ? 1 : 0; });
 
@@ -357,32 +355,6 @@ class SeedSelectionEngine {
       }
     }
 
-#if 0
-    for (size_t i = 0; i < cpu_workers; ++i) {
-      logger_->debug("> mapping: omp {}\t->CPU", i);
-      auto w = new cpu_worker_type(G_, local_count_, frontier_cache_, S_);
-      workers_.push_back(w);
-      cpu_workers_.push_back(w);
-    }
-#if RIPPLES_ENABLE_CUDA
-    size_t num_devices = cuda_num_devices();
-    cuda_contexts_.reserve(gpu_workers);
-    gpu_workers_.reserve(gpu_workers);
-    for (size_t i = 0; i < gpu_workers; ++i) {
-      size_t device_id = i % num_devices;
-      logger_->debug("> mapping: omp {}\t->GPU {}/{}", i + cpu_workers,
-                     device_id, num_devices);
-      logger_->trace("Building Cuda Context");
-      cuda_contexts_.push_back(cuda_make_ctx(G, device_id));
-      logger_->trace("Cuda Context Built!");
-      typename gpu_worker_type::config_t gpu_conf(gpu_workers);
-      auto w = new gpu_worker_type(gpu_conf, G_, cuda_contexts_.back(),
-                                   local_count_, frontier_cache_, S_);
-      workers_.push_back(w);
-      gpu_workers_.push_back(w);
-    }
-#endif
-#endif
     MPI_Win_fence(0, win);
   }
 
@@ -401,15 +373,18 @@ class SeedSelectionEngine {
   std::set<vertex_type> exec(ItrTy B, ItrTy E, size_t k) {
     logger_->trace("Start Seed Selection");
 
-    frontier_cache_.resize(std::distance(B, E));
+    frontier_cache_.resize(std::distance(B, E),
+                           std::vector<bool>(G_.num_nodes(), false));
 
     for (size_t i = 0; i < k; ++i) {
       mpmc_head_.store(0);
+      if (i != 0) {
 #pragma omp parallel
       {
         assert(workers_.size() == omp_get_num_threads());
         size_t rank = omp_get_thread_num();
         workers_[rank]->build_frontier(mpmc_head_, B, E);
+      }
       }
       for (int p = 1; p <= world_size; ++p) {
         int current_block = (p + rank) % world_size;
@@ -460,11 +435,6 @@ class SeedSelectionEngine {
       for (size_t i = 0; i < global_count_.size(); ++i) {
         local_count_[i] = 0;
         global_count_[i] = 0;
-      }
-
-#pragma omp parallel for
-      for (size_t i = 0; i < frontier_cache_.size(); ++i) {
-        frontier_cache_[i].resize(0);
       }
 
       MPI_Allreduce(&local, &global, 1, MPI_LONG_INT, MPI_MAXLOC,

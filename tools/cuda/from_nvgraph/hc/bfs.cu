@@ -549,14 +549,7 @@ namespace nvgraph {
 
     cudaCheckError()
     ;
-    thrust::transform(thrust::cuda::par.on(stream),
-                      thrust::device_pointer_cast(visited_bmap),
-                      thrust::device_pointer_cast(&visited_bmap[vertices_bmap_size]),
-                      thrust::device_pointer_cast(visited_bmap), PopCount());
-    *num_visited =
-      thrust::reduce(thrust::cuda::par.on(stream),
-                     thrust::device_pointer_cast(visited_bmap),
-                     thrust::device_pointer_cast(&visited_bmap[vertices_bmap_size]));
+    *num_visited = n - nu;
     return NVGRAPH_OK;
   }
 
@@ -791,14 +784,15 @@ namespace nvgraph {
                     cudaMemcpyDeviceToHost, stream);
     cudaCheckError();
 
-    thrust::transform(thrust::cuda::par.on(stream),
-                      thrust::device_pointer_cast(visited_bmap),
-                      thrust::device_pointer_cast(&visited_bmap[vertices_bmap_size]),
-                      thrust::device_pointer_cast(visited_bmap), PopCount());
-    *num_visited =
-      thrust::reduce(thrust::cuda::par.on(stream),
-                     thrust::device_pointer_cast(visited_bmap),
-                     thrust::device_pointer_cast(&visited_bmap[vertices_bmap_size]));
+    // thrust::transform(thrust::cuda::par.on(stream),
+    //                   thrust::device_pointer_cast(&visited_bmap[0]),
+    //                   thrust::device_pointer_cast(&visited_bmap[vertices_bmap_size]),
+    //                   thrust::device_pointer_cast(&visited_bmap[0]), PopCount());
+    *num_visited = n - nu;
+    //   thrust::reduce(thrust::cuda::par.on(stream),
+    //                  thrust::device_pointer_cast(&visited_bmap[0]),
+    //                  thrust::device_pointer_cast(&visited_bmap[vertices_bmap_size]));
+    // cudaStreamSynchronize(stream);
     return NVGRAPH_OK;
   }
 
