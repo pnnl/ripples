@@ -46,6 +46,7 @@
 #include "ripples/mpi/hill_climbing.h"
 #include "ripples/utility.h"
 
+#include "spdlog/async.h"
 #include "spdlog/fmt/ostr.h"
 #include "spdlog/sinks/stdout_color_sinks.h"
 #include "spdlog/spdlog.h"
@@ -99,7 +100,7 @@ void parse_command_line(int argc, char** argv) {
 int main(int argc, char** argv) {
   MPI_Init(NULL, NULL);
 
-  auto console = spdlog::stdout_color_st("console");
+  auto console = spdlog::stdout_color_st<spdlog::async_factory>("console");
   spdlog::set_level(spdlog::level::trace);
 
   ripples::parse_command_line(argc, argv);
@@ -128,20 +129,18 @@ int main(int argc, char** argv) {
   ripples::HillClimbingExecutionRecord R;
 
   ripples::configuration().streaming_workers -=
-    ripples::configuration().streaming_gpu_workers;
+      ripples::configuration().streaming_gpu_workers;
 
   if (ripples::configuration().diffusionModel == "IC") {
     auto start = std::chrono::high_resolution_clock::now();
-    seeds = ripples::mpi::HillClimbing(
-        G, ripples::configuration(),
-        generator, R, ripples::independent_cascade_tag{});
+    seeds = ripples::mpi::HillClimbing(G, ripples::configuration(), generator,
+                                       R, ripples::independent_cascade_tag{});
     auto end = std::chrono::high_resolution_clock::now();
     R.Total = end - start;
   } else if (ripples::configuration().diffusionModel == "LT") {
     auto start = std::chrono::high_resolution_clock::now();
-    seeds = ripples::mpi::HillClimbing(
-        G, ripples::configuration(),
-        generator, R, ripples::linear_threshold_tag{});
+    seeds = ripples::mpi::HillClimbing(G, ripples::configuration(), generator,
+                                       R, ripples::linear_threshold_tag{});
     auto end = std::chrono::high_resolution_clock::now();
     R.Total = end - start;
   }

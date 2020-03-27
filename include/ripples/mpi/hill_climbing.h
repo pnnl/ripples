@@ -44,6 +44,7 @@
 #define RIPPLES_MPI_HILL_CLIMBING_H
 
 #include "ripples/hill_climbing.h"
+#include "spdlog/async.h"
 #include "spdlog/spdlog.h"
 
 #include <chrono>
@@ -79,12 +80,15 @@ class HCCPUCountingWorker : public HCWorker<GraphTy, ItrTy, VItrTy> {
   using HCWorker<GraphTy, ItrTy, VItrTy>::G_;
 
  public:
-  HCCPUCountingWorker(const GraphTy &G, std::vector<long> &count,
+  HCCPUCountingWorker(std::shared_ptr<spdlog::logger> logger, const GraphTy &G,
+                      std::vector<long> &count,
                       std::vector<std::vector<bool>> &frontier_cache,
-                      std::set<vertex_type> &S)
+                      std::vector<int> &base_counters, std::set<vertex_type> &S)
       : HCWorker<GraphTy, ItrTy, VItrTy>(G),
+        logger_(logger),
         count_(count),
         frontier_cache_(frontier_cache),
+        base_counters_(base_counters),
         S_(S) {}
 
   void build_frontier(std::atomic<size_t> &mpmc_head, ItrTy B, ItrTy E) {
@@ -116,6 +120,8 @@ class HCCPUCountingWorker : public HCWorker<GraphTy, ItrTy, VItrTy> {
   void batch_frontier(ItrTy B, ItrTy E, size_t offset) {
     for (auto itr = B; itr < E; ++itr, ++offset) {
       BFS(G_, *itr, S_.begin(), S_.end(), frontier_cache_[offset]);
+      base_counters_[offset] = std::count(frontier_cache_[offset].begin(),
+                                          frontier_cache_[offset].end(), true);
     }
   }
   void batch_counters(VItrTy B, VItrTy E, size_t sample_id, size_t base,
@@ -132,7 +138,9 @@ class HCCPUCountingWorker : public HCWorker<GraphTy, ItrTy, VItrTy> {
   static constexpr size_t batch_size_ = 8;
   std::vector<long> &count_;
   std::vector<std::vector<bool>> &frontier_cache_;
+  std::vector<int> &base_counters_;
   std::set<vertex_type> &S_;
+  std::shared_ptr<spdlog::logger> logger_;
 };
 
 template <typename GraphTy, typename ItrTy, typename VItrTy>
@@ -148,8 +156,7 @@ class HCGPUCountingWorker : public HCWorker<GraphTy, ItrTy, VItrTy> {
     config_t(size_t num_workers)
         : block_size_(bfs_solver_t::traverse_block_size()),
           max_blocks_(num_workers ? cuda_max_blocks() / num_workers : 0) {
-      auto console = spdlog::get("console");
-      console->trace(
+      logger_->trace(
           "> [GPUWalkWorkerIC::config_t] "
           "max_blocks_={}\tblock_size_={}",
           max_blocks_, block_size_);
@@ -161,15 +168,18 @@ class HCGPUCountingWorker : public HCWorker<GraphTy, ItrTy, VItrTy> {
     const size_t block_size_;
   };
 
-  HCGPUCountingWorker(const config_t &conf, const GraphTy &G,
+  HCGPUCountingWorker(std::shared_ptr<spdlog::logger> logger,
+                      const config_t &conf, const GraphTy &G,
                       cuda_ctx<GraphTy> *ctx, std::vector<long> &count,
                       std::vector<std::vector<bool>> &frontier_cache,
-                      std::set<vertex_type> &S)
+                      std::vector<int> &base_counters, std::set<vertex_type> &S)
       : HCWorker<GraphTy, ItrTy, VItrTy>(G),
+        logger_(logger),
         conf_(conf),
         ctx_(ctx),
         count_(count),
         frontier_cache_(frontier_cache),
+        base_counters_(base_counters),
         S_(S),
         edge_filter_(new d_vertex_type[G_.num_edges()]) {
     cuda_set_device(ctx_->gpu_id);
@@ -279,7 +289,7 @@ class HCGPUCountingWorker : public HCWorker<GraphTy, ItrTy, VItrTy> {
     }
   }
 
-  static constexpr size_t batch_size_ = 2;
+  static constexpr size_t batch_size_ = 8;
   config_t conf_;
   cuda_ctx<GraphTy> *ctx_;
   cudaStream_t cuda_stream_;
@@ -291,6 +301,8 @@ class HCGPUCountingWorker : public HCWorker<GraphTy, ItrTy, VItrTy> {
   std::vector<long> &count_;
   std::set<vertex_type> &S_;
   std::vector<std::vector<bool>> &frontier_cache_;
+  std::vector<int> &base_counters_;
+  std::shared_ptr<spdlog::logger> logger_;
 #endif
 };
 
@@ -308,11 +320,13 @@ class SeedSelectionEngine {
         global_count_(),
         frontier_cache_(),
         S_(),
-        logger_(spdlog::stdout_color_mt("SeedSelectionEngine")) {
+        logger_(spdlog::stdout_color_mt<spdlog::async_factory>(
+            "SeedSelectionEngine")) {
     MPI_Comm_size(MPI_COMM_WORLD, &world_size);
-    MPI_Comm_rank(MPI_COMM_WORLD, &rank);
+    MPI_Comm_rank(MPI_COMM_WORLD, &mpi_rank);
 
-    vertex_block_size_ = world_size > 1 ? (G.num_nodes() / world_size) + 1 : G.num_nodes();
+    vertex_block_size_ =
+        world_size > 1 ? (G.num_nodes() / world_size) + 1 : G.num_nodes();
     global_count_.resize(vertex_block_size_, 0);
     local_count_.resize(vertex_block_size_, 0);
 
@@ -324,34 +338,40 @@ class SeedSelectionEngine {
     logger_->debug("Number of Threads = {}", num_threads);
     workers_.resize(num_threads);
     cpu_workers_.resize(cpu_workers);
-    #if RIPPLES_ENABLE_CUDA
+#if RIPPLES_ENABLE_CUDA
     gpu_workers_.resize(gpu_workers);
     cuda_contexts_.resize(gpu_workers);
-    #endif
+#endif
 
-    #pragma omp parallel
+    auto logger_cpu =
+        spdlog::stdout_color_mt<spdlog::async_factory>("CPUWorker");
+    auto logger_gpu =
+        spdlog::stdout_color_mt<spdlog::async_factory>("GPUWorker");
+#pragma omp parallel
     {
       int rank = omp_get_thread_num();
       if (rank < cpu_workers) {
-        auto w = new cpu_worker_type(G_, local_count_, frontier_cache_, S_);
+        auto w = new cpu_worker_type(logger_cpu, G_, local_count_,
+                                     frontier_cache_, base_counters_, S_);
         workers_[rank] = w;
         cpu_workers_[rank] = w;
         logger_->debug("> mapping: omp {}\t->CPU", rank);
       } else {
-        #if RIPPLES_ENABLE_CUDA
+#if RIPPLES_ENABLE_CUDA
         size_t num_devices = cuda_num_devices();
         size_t device_id = rank % num_devices;
-        logger_->debug("> mapping: omp {}\t->GPU {}/{}", rank,
-                       device_id, num_devices);
+        logger_->debug("> mapping: omp {}\t->GPU {}/{}", rank, device_id,
+                       num_devices);
         logger_->trace("Building Cuda Context");
         cuda_contexts_[rank - cpu_workers] = cuda_make_ctx(G, device_id);
         typename gpu_worker_type::config_t gpu_conf(gpu_workers);
-        auto w = new gpu_worker_type(gpu_conf, G_, cuda_contexts_[rank - cpu_workers],
-                                     local_count_, frontier_cache_, S_);
+        auto w = new gpu_worker_type(
+            logger_gpu, gpu_conf, G_, cuda_contexts_[rank - cpu_workers],
+            local_count_, frontier_cache_, base_counters_, S_);
         workers_[rank] = w;
         gpu_workers_[rank - cpu_workers] = w;
         logger_->trace("Cuda Context Built!");
-        #endif
+#endif
       }
     }
 
@@ -375,33 +395,33 @@ class SeedSelectionEngine {
 
     frontier_cache_.resize(std::distance(B, E),
                            std::vector<bool>(G_.num_nodes(), false));
+    base_counters_.resize(frontier_cache_.size());
 
     for (size_t i = 0; i < k; ++i) {
       mpmc_head_.store(0);
       if (i != 0) {
 #pragma omp parallel
-      {
-        assert(workers_.size() == omp_get_num_threads());
-        size_t rank = omp_get_thread_num();
-        workers_[rank]->build_frontier(mpmc_head_, B, E);
-      }
+        {
+          assert(workers_.size() == omp_get_num_threads());
+          size_t rank = omp_get_thread_num();
+          workers_[rank]->build_frontier(mpmc_head_, B, E);
+        }
       }
       for (int p = 1; p <= world_size; ++p) {
-        int current_block = (p + rank) % world_size;
+        int current_block = (p + mpi_rank) % world_size;
 
-        spdlog::get("console")->info("Rank {} - Block {}", rank, current_block);
+        spdlog::get("console")->info("Rank {} - Block {}", mpi_rank,
+                                     current_block);
         vertex_type start = current_block * vertex_block_size_;
         vertex_type end = std::min(start + vertex_block_size_, G_.num_nodes());
         for (auto itr = B; itr < E; ++itr) {
-          size_t sample_id = std::distance(B, itr);
-          size_t base = std::count(frontier_cache_[sample_id].begin(),
-                                   frontier_cache_[sample_id].end(), true);
           mpmc_head_.store(0);
 #pragma omp parallel
           {
+            size_t sample_id = std::distance(B, itr);
             size_t rank = omp_get_thread_num();
             workers_[rank]->build_counters(mpmc_head_, start, end, sample_id,
-                                           base, itr);
+                                           base_counters_[sample_id], itr);
           }
         }
 
@@ -426,9 +446,9 @@ class SeedSelectionEngine {
         int index;
       } local, global;
       local.count = global_count_[v];
-      local.index = rank * vertex_block_size_ + v;
+      local.index = mpi_rank * vertex_block_size_ + v;
 
-      spdlog::get("console")->info("R[{}] ({}, {})", rank, local.count,
+      spdlog::get("console")->info("R[{}] ({}, {})", mpi_rank, local.count,
                                    local.index);
 
 #pragma omp parallel for
@@ -463,11 +483,12 @@ class SeedSelectionEngine {
 #endif
 
   std::vector<std::vector<bool>> frontier_cache_;
+  std::vector<int> base_counters_;
   size_t vertex_block_size_;
   std::vector<worker_type *> workers_;
   std::atomic<size_t> mpmc_head_{0};
   int world_size;
-  int rank;
+  int mpi_rank;
   MPI_Win win;
 };
 
@@ -516,7 +537,7 @@ auto HillClimbing(GraphTy &G, ConfTy &CFG, GeneratorTy &gen,
   auto sampled_graphs =
       SampleFrom(G, CFG, gen, record, std::forward<diff_model_tag>(model_tag));
 
-  spdlog::get("console")->info("Done with Sampling");
+  spdlog::get("console")->trace("Done with Sampling");
   auto S = mpi::SeedSelection(G, sampled_graphs.begin(), sampled_graphs.end(),
                               CFG, record);
 
