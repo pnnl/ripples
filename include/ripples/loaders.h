@@ -48,14 +48,16 @@
 #include <iostream>
 #include <numeric>
 #include <sstream>
+#include <stdexcept>
 #include <string>
 #include <type_traits>
 #include <unordered_map>
 
-#include "trng/uniform01_dist.hpp"
-
 #include "ripples/diffusion_simulation.h"
 #include "ripples/graph.h"
+#include "trng/lcg64.hpp"
+#include "trng/truncated_normal_dist.hpp"
+#include "trng/uniform01_dist.hpp"
 
 namespace ripples {
 
@@ -96,12 +98,12 @@ std::vector<EdgeTy> load(const std::string &inputFile, const bool undirected,
     typename EdgeTy::weight_type weight;
     SS >> source >> destination;
 
-    weight = probability(rand);
+    weight = rand();
     EdgeTy e = {source, destination, weight};
     result.emplace_back(e);
 
     if (undirected) {
-      weight = probability(rand);
+      weight = rand();
       EdgeTy e = {destination, source, weight};
       result.emplace_back(e);
     }
@@ -116,7 +118,7 @@ std::vector<EdgeTy> load(const std::string &inputFile, const bool undirected,
 
     for (auto begin = result.begin(); begin != result.end();) {
       auto end = std::upper_bound(begin, result.end(), *begin, cmp);
-      typename EdgeTy::weight_type not_taking = probability(rand);
+      typename EdgeTy::weight_type not_taking = rand();
       typename EdgeTy::weight_type total = std::accumulate(
           begin, end, not_taking,
           [](const typename EdgeTy::weight_type &a, const EdgeTy &b) ->
@@ -175,6 +177,23 @@ std::vector<EdgeTy> load(const std::string &inputFile, const bool undirected,
 
 }  // namespace
 
+template <typename PRNG, typename Distribution>
+class WeightGenerator {
+ public:
+  WeightGenerator(PRNG &gen, Distribution dist, float scale_factor = 1.0)
+      : gen_(gen), dist_(dist), scale_factor_(scale_factor) {}
+
+  WeightGenerator(PRNG &gen, float scale_factor = 1.0)
+      : WeightGenerator(gen, Distribution(), scale_factor) {}
+
+  float operator()() { return scale_factor_ * dist_(gen_); }
+
+ private:
+  PRNG gen_;
+  Distribution dist_;
+  float scale_factor_;
+};
+
 //! Load an Edge List.
 //!
 //! \tparam EdgeTy The type of edges.
@@ -210,17 +229,9 @@ std::vector<EdgeTy> loadEdgeList(const Configuration &CFG, PRNG &weightGen) {
   return edgeList;
 }
 
-//! Load Graphs.
-//!
-//! \tparam GraphTy The type of the graph to be loaded.
-//! \tparam ConfTy  The type of the configuration object.
-//! \tparam PrngTy  The type of the parallel random number generator object.
-//!
-//! \param CFG The configuration object.
-//! \param PRNG The parallel random number generator.
-//! \return The GraphTy graph loaded from the input file.
+namespace {
 template <typename GraphTy, typename ConfTy, typename PrngTy>
-GraphTy loadGraph(ConfTy &CFG, PrngTy &PRNG) {
+GraphTy loadGraph_helper(ConfTy &CFG, PrngTy &PRNG) {
   GraphTy G;
 
   if (!CFG.reload) {
@@ -236,6 +247,35 @@ GraphTy loadGraph(ConfTy &CFG, PrngTy &PRNG) {
     G = std::move(tmpG);
   }
 
+  return G;
+}
+}  // namespace
+
+//! Load Graphs.
+//!
+//! \tparam GraphTy The type of the graph to be loaded.
+//! \tparam ConfTy  The type of the configuration object.
+//! \tparam PrngTy  The type of the parallel random number generator object.
+//!
+//! \param CFG The configuration object.
+//! \param PRNG The parallel random number generator.
+//! \return The GraphTy graph loaded from the input file.
+template <typename GraphTy, typename ConfTy, typename PrngTy>
+GraphTy loadGraph(ConfTy &CFG, PrngTy &PRNG) {
+  GraphTy G;
+  if (CFG.distribution == "uniform") {
+    WeightGenerator<trng::lcg64, trng::uniform01_dist<float>> gen(
+        PRNG, CFG.scale_factor);
+    G = loadGraph_helper<GraphTy>(CFG, gen);
+  } else if (CFG.distribution == "normal") {
+    WeightGenerator<trng::lcg64, trng::truncated_normal_dist<float>> gen(
+        PRNG,
+        trng::truncated_normal_dist<float>(CFG.mean, CFG.variance, 0.0, 1.0),
+        CFG.scale_factor);
+    G = loadGraph_helper<GraphTy>(CFG, gen);
+  } else {
+    throw std::domain_error("Unsupported distribution");
+  }
   return G;
 }
 

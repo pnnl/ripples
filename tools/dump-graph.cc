@@ -53,7 +53,6 @@
 #include "spdlog/sinks/stdout_color_sinks.h"
 #include "spdlog/spdlog.h"
 #include "trng/lcg64.hpp"
-#include "trng/uniform01_dist.hpp"
 
 struct DumpOutputConfiguration {
   std::string OName{"output"};

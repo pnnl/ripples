@@ -58,6 +58,10 @@ struct GraphInputConfiguration {
   bool weighted{false};       //!< is Graph weighted?
   bool undirected{false};     //!< is Graph undirected?
   bool reload{false};         //!< are we reloading a binary dump?
+  std::string distribution{"uniform"};
+  float mean{0.5};            //!< mean of the normal distribution
+  float variance{1.0};        //!< variance of the normal distribution
+  float scale_factor{1.0};    //!< scaling factor for the weights.
 
   //! \brief Add command line options for the input grah.
   //!
@@ -72,6 +76,18 @@ struct GraphInputConfiguration {
     app.add_flag("-u,--undirected", undirected, "The input graph is undirected")
         ->group("Input Options");
     app.add_flag("-w,--weighted", weighted, "The input graph is weighted")
+        ->group("Input Options");
+    app.add_option(
+           "--distribution", distribution,
+           "The distribution to be used (uniform|normal) to generate weights")
+        ->group("Input Options");
+    app.add_option("--mean", mean, "The mean for the normal distribution")
+        ->group("Input Options");
+    app.add_option("--variance", variance,
+                   "The variance for the normal distribution")
+        ->group("Input Options");
+    app.add_option("--scale-factor", scale_factor,
+                   "Scaling Factor for the generated weights")
         ->group("Input Options");
   }
 };
