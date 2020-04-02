@@ -168,10 +168,6 @@ class HCGPUCountingWorker : public HCWorker<GraphTy, ItrTy, VItrTy> {
     config_t(size_t num_workers)
         : block_size_(bfs_solver_t::traverse_block_size()),
           max_blocks_(num_workers ? cuda_max_blocks() / num_workers : 0) {
-      logger_->trace(
-          "> [GPUWalkWorkerIC::config_t] "
-          "max_blocks_={}\tblock_size_={}",
-          max_blocks_, block_size_);
     }
 
     size_t num_gpu_threads() const { return max_blocks_ * block_size_; }
@@ -260,10 +256,7 @@ class HCGPUCountingWorker : public HCWorker<GraphTy, ItrTy, VItrTy> {
     cuda_set_device(ctx_->gpu_id);
     std::vector<d_vertex_type> seeds(S_.begin(), S_.end());
     for (auto itr = B; itr < E; ++itr, ++offset) {
-      std::transform(itr->begin(), itr->end(), edge_filter_.get(),
-                     [](bool v) -> d_vertex_type { return v ? 1 : 0; });
-
-      cuda_h2d(d_edge_filter_, edge_filter_.get(),
+      cuda_h2d(d_edge_filter_, &*itr,
                G_.num_edges() * sizeof(d_vertex_type), cuda_stream_);
 
       d_vertex_type base_count;
@@ -283,9 +276,7 @@ class HCGPUCountingWorker : public HCWorker<GraphTy, ItrTy, VItrTy> {
     cuda_set_device(ctx_->gpu_id);
     std::vector<d_vertex_type> seeds(S_.begin(), S_.end());
 
-    std::transform(eMask->begin(), eMask->end(), edge_filter_.get(),
-                   [](bool v) -> d_vertex_type { return v ? 1 : 0; });
-    cuda_h2d(d_edge_filter_, edge_filter_.get(),
+    cuda_h2d(d_edge_filter_, &*eMask,
              G_.num_edges() * sizeof(d_vertex_type), cuda_stream_);
 
     std::memset(visited_.get(), sizeof(int) * solver_->bmap_size(), 0);

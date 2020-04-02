@@ -219,10 +219,8 @@ class HCGPUSamplingWorker : public HCWorker<GraphTy, ItrTy> {
       assert(false && "Not Yet Implemented");
     }
 
-    cuda_d2h(flags.data(), d_flags_, flags.size(), cuda_stream_);
-
     for (size_t i = 0; B < E; ++B, ++i) {
-      cuda_d2h(B->data(), d_flags_ + i * G_.num_edges(), flags.size(),
+      cuda_d2h(B->data(), d_flags_ + i * G_.num_edges(), G_.num_edges() * sizeof(int),
                cuda_stream_);
     }
     cuda_sync(cuda_stream_);

@@ -50,7 +50,7 @@ template <typename GraphTy, typename PRNGTy>
 extern void cuda_generate_samples_ic(size_t n_blocks, size_t block_size,
                                      size_t batch_size,
                                      size_t num_edges, PRNGTy *d_trng_states,
-                                     cuda_ctx<GraphTy> *ctx, char * d_flags,
+                                     cuda_ctx<GraphTy> *ctx, int * d_flags,
                                      cudaStream_t stream);
 }
 
