@@ -58,17 +58,19 @@ namespace mpi {
 template <typename GraphTy, typename ItrTy, typename VItrTy>
 class HCWorker {
  public:
+  using ex_time_ms = HillClimbingExecutionRecord::ex_time_ms;
+
   //! Construct the Sampling worker.
   //! \param G The input Graph.
   HCWorker(const GraphTy &G) : G_(G) {}
   //! Destructor.
   virtual ~HCWorker() = default;
 
-  virtual void build_frontier(std::atomic<size_t> &mpmc_head, ItrTy B,
-                              ItrTy E) = 0;
+  virtual void build_frontier(std::atomic<size_t> &mpmc_head, ItrTy B, ItrTy E,
+                              std::vector<ex_time_ms> &) = 0;
   virtual void build_counters(std::atomic<size_t> &mpmc_head, VItrTy B,
                               VItrTy E, size_t sample_id, size_t base,
-                              ItrTy eMask) = 0;
+                              ItrTy eMask, std::vector<ex_time_ms> &) = 0;
 
  protected:
   const GraphTy &G_;
@@ -77,6 +79,7 @@ class HCWorker {
 template <typename GraphTy, typename ItrTy, typename VItrTy>
 class HCCPUCountingWorker : public HCWorker<GraphTy, ItrTy, VItrTy> {
   using vertex_type = typename GraphTy::vertex_type;
+  using ex_time_ms = HillClimbingExecutionRecord::ex_time_ms;
   using HCWorker<GraphTy, ItrTy, VItrTy>::G_;
 
  public:
@@ -91,7 +94,8 @@ class HCCPUCountingWorker : public HCWorker<GraphTy, ItrTy, VItrTy> {
         base_counters_(base_counters),
         S_(S) {}
 
-  void build_frontier(std::atomic<size_t> &mpmc_head, ItrTy B, ItrTy E) {
+  void build_frontier(std::atomic<size_t> &mpmc_head, ItrTy B, ItrTy E,
+                      std::vector<ex_time_ms> &record) {
     size_t offset = 0;
     while ((offset = mpmc_head.fetch_add(batch_size_)) < std::distance(B, E)) {
       auto first = B;
@@ -100,19 +104,26 @@ class HCCPUCountingWorker : public HCWorker<GraphTy, ItrTy, VItrTy> {
       std::advance(last, batch_size_);
 
       if (last > E) last = E;
+      auto start = std::chrono::high_resolution_clock::now();
       batch_frontier(first, last, offset);
+      auto end = std::chrono::high_resolution_clock::now();
+      record.push_back(end - start);
     }
   }
 
   void build_counters(std::atomic<size_t> &mpmc_head, VItrTy B, VItrTy E,
-                      size_t sample_id, size_t base, ItrTy eMask) {
+                      size_t sample_id, size_t base, ItrTy eMask,
+                      std::vector<ex_time_ms> &record) {
     size_t offset = 0;
     while ((offset = mpmc_head.fetch_add(batch_size_)) < (E - B)) {
       auto first = B + offset;
       auto last = first + batch_size_;
 
       if (last > E) last = E;
+      auto start = std::chrono::high_resolution_clock::now();
       batch_counters(first, last, sample_id, base, eMask);
+      auto end = std::chrono::high_resolution_clock::now();
+      record.push_back(end - start);
     }
   }
 
@@ -150,6 +161,7 @@ class HCGPUCountingWorker : public HCWorker<GraphTy, ItrTy, VItrTy> {
   using d_vertex_type = typename cuda_device_graph<GraphTy>::vertex_t;
   using bfs_solver_t = nvgraph::Bfs<int>;
   using HCWorker<GraphTy, ItrTy, VItrTy>::G_;
+  using ex_time_ms = HillClimbingExecutionRecord::ex_time_ms;
 
  public:
   struct config_t {
@@ -210,7 +222,8 @@ class HCGPUCountingWorker : public HCWorker<GraphTy, ItrTy, VItrTy> {
     cuda_free(d_edge_filter_);
   }
 
-  void build_frontier(std::atomic<size_t> &mpmc_head, ItrTy B, ItrTy E) {
+  void build_frontier(std::atomic<size_t> &mpmc_head, ItrTy B, ItrTy E,
+                      std::vector<ex_time_ms> &record) {
     size_t offset = 0;
     while ((offset = mpmc_head.fetch_add(batch_size_)) < std::distance(B, E)) {
       auto first = B;
@@ -219,19 +232,26 @@ class HCGPUCountingWorker : public HCWorker<GraphTy, ItrTy, VItrTy> {
       std::advance(last, batch_size_);
 
       if (last > E) last = E;
+      auto start = std::chrono::high_resolution_clock::now();
       batch_frontier(first, last, offset);
+      auto end = std::chrono::high_resolution_clock::now();
+      record.push_back(end - start);
     }
   }
 
   void build_counters(std::atomic<size_t> &mpmc_head, VItrTy B, VItrTy E,
-                      size_t sample_id, size_t base, ItrTy eMask) {
+                      size_t sample_id, size_t base, ItrTy eMask,
+                      std::vector<ex_time_ms> &record) {
     size_t offset = 0;
     while ((offset = mpmc_head.fetch_add(batch_size_)) < (E - B)) {
       auto first = B + offset;
       auto last = first + batch_size_;
 
       if (last > E) last = E;
+      auto start = std::chrono::high_resolution_clock::now();
       batch_counters(first, last, sample_id, base, eMask);
+      auto end = std::chrono::high_resolution_clock::now();
+      record.push_back(end - start);
     }
   }
 
@@ -262,6 +282,7 @@ class HCGPUCountingWorker : public HCWorker<GraphTy, ItrTy, VItrTy> {
                       ItrTy eMask) {
     cuda_set_device(ctx_->gpu_id);
     std::vector<d_vertex_type> seeds(S_.begin(), S_.end());
+
     std::transform(eMask->begin(), eMask->end(), edge_filter_.get(),
                    [](bool v) -> d_vertex_type { return v ? 1 : 0; });
     cuda_h2d(d_edge_filter_, edge_filter_.get(),
@@ -314,14 +335,16 @@ class SeedSelectionEngine {
   using gpu_worker_type = mpi::HCGPUCountingWorker<GraphTy, ItrTy, vertex_type>;
 
  public:
-  SeedSelectionEngine(const GraphTy &G, size_t cpu_workers, size_t gpu_workers)
+  SeedSelectionEngine(const GraphTy &G, size_t cpu_workers, size_t gpu_workers,
+                      HillClimbingExecutionRecord &record)
       : G_(G),
         local_count_(),
         global_count_(),
         frontier_cache_(),
         S_(),
         logger_(spdlog::stdout_color_mt<spdlog::async_factory>(
-            "SeedSelectionEngine")) {
+            "SeedSelectionEngine")),
+        record_(record) {
     MPI_Comm_size(MPI_COMM_WORLD, &world_size);
     MPI_Comm_rank(MPI_COMM_WORLD, &mpi_rank);
 
@@ -391,8 +414,13 @@ class SeedSelectionEngine {
   }
 
   std::set<vertex_type> exec(ItrTy B, ItrTy E, size_t k) {
-    logger_->trace("Start Seed Selection");
+    using ex_time_ms = HillClimbingExecutionRecord::ex_time_ms;
+    logger_->trace("Start Seed Selection with {} workers", workers_.size());
 
+    record_.BuildFrontiersTasks.resize(
+        k, std::vector<std::vector<ex_time_ms>>(workers_.size()));
+    record_.BuildCountersTasks.resize(
+        k, std::vector<std::vector<ex_time_ms>>(workers_.size()));
     frontier_cache_.resize(std::distance(B, E),
                            std::vector<bool>(G_.num_nodes(), false));
     base_counters_.resize(frontier_cache_.size());
@@ -404,14 +432,14 @@ class SeedSelectionEngine {
         {
           assert(workers_.size() == omp_get_num_threads());
           size_t rank = omp_get_thread_num();
-          workers_[rank]->build_frontier(mpmc_head_, B, E);
+          workers_[rank]->build_frontier(mpmc_head_, B, E,
+                                         record_.BuildFrontiersTasks[i][rank]);
         }
       }
       for (int p = 1; p <= world_size; ++p) {
         int current_block = (p + mpi_rank) % world_size;
 
-        spdlog::get("console")->info("Rank {} - Block {}", mpi_rank,
-                                     current_block);
+        logger_->info("Rank {} - Block {}", mpi_rank, current_block);
         vertex_type start = current_block * vertex_block_size_;
         vertex_type end = std::min(start + vertex_block_size_, G_.num_nodes());
         for (auto itr = B; itr < E; ++itr) {
@@ -421,7 +449,8 @@ class SeedSelectionEngine {
             size_t sample_id = std::distance(B, itr);
             size_t rank = omp_get_thread_num();
             workers_[rank]->build_counters(mpmc_head_, start, end, sample_id,
-                                           base_counters_[sample_id], itr);
+                                           base_counters_[sample_id], itr,
+                                           record_.BuildCountersTasks[i][rank]);
           }
         }
 
@@ -435,6 +464,7 @@ class SeedSelectionEngine {
         }
       }
 
+      auto start_reduction = std::chrono::high_resolution_clock::now();
       MPI_Win_fence(0, win);
 
       vertex_type v = std::distance(
@@ -448,8 +478,11 @@ class SeedSelectionEngine {
       local.count = global_count_[v];
       local.index = mpi_rank * vertex_block_size_ + v;
 
-      spdlog::get("console")->info("R[{}] ({}, {})", mpi_rank, local.count,
-                                   local.index);
+      MPI_Request request;
+      MPI_Iallreduce(&local, &global, 1, MPI_LONG_INT, MPI_MAXLOC,
+                     MPI_COMM_WORLD, &request);
+
+      logger_->info("R[{}] ({}, {})", mpi_rank, local.count, local.index);
 
 #pragma omp parallel for
       for (size_t i = 0; i < global_count_.size(); ++i) {
@@ -457,9 +490,9 @@ class SeedSelectionEngine {
         global_count_[i] = 0;
       }
 
-      MPI_Allreduce(&local, &global, 1, MPI_LONG_INT, MPI_MAXLOC,
-                    MPI_COMM_WORLD);
-
+      MPI_Wait(&request, MPI_STATUS_IGNORE);
+      auto end_reduction = std::chrono::high_resolution_clock::now();
+      record_.NetworkReductions.push_back(end_reduction - start_reduction);
       S_.insert(global.index);
     }
     logger_->trace("End Seed Selection");
@@ -471,6 +504,7 @@ class SeedSelectionEngine {
   std::vector<long> local_count_;
   std::vector<long> global_count_;
   std::set<vertex_type> S_;
+  HillClimbingExecutionRecord &record_;
   // size_t gpu_workers_;
   // size_t cpu_workers_;
 
@@ -498,7 +532,7 @@ auto SeedSelection(GraphTy &G, GraphMaskItrTy B, GraphMaskItrTy E, ConfigTy CFG,
   using vertex_type = typename GraphTy::vertex_type;
 
   mpi::SeedSelectionEngine<GraphTy, GraphMaskItrTy> countingEngine(
-      G, CFG.streaming_workers, CFG.streaming_gpu_workers);
+      G, CFG.streaming_workers, CFG.streaming_gpu_workers, record);
 
   auto start = std::chrono::high_resolution_clock::now();
   auto S = countingEngine.exec(B, E, CFG.k);

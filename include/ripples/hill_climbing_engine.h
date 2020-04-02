@@ -72,13 +72,15 @@ namespace ripples {
 template <typename GraphTy, typename ItrTy>
 class HCWorker {
  public:
+  using ex_time_ms = std::chrono::duration<double, std::milli>;
   //! Construct the Sampling worker.
   //! \param G The input Graph.
   HCWorker(const GraphTy &G) : G_(G) {}
   //! Destructor.
   virtual ~HCWorker() = default;
 
-  virtual void svc_loop(std::atomic<size_t> &mpmc_head, ItrTy B, ItrTy E) = 0;
+  virtual void svc_loop(std::atomic<size_t> &mpmc_head, ItrTy B, ItrTy E,
+                        std::vector<ex_time_ms> &record) = 0;
 
  protected:
   const GraphTy &G_;
@@ -92,10 +94,13 @@ class HCCPUSamplingWorker : public HCWorker<GraphTy, ItrTy> {
   using HCWorker<GraphTy, ItrTy>::G_;
 
  public:
+  using ex_time_ms = std::chrono::duration<double, std::milli>;
+
   HCCPUSamplingWorker(const GraphTy &G, const PRNG &rng)
       : HCWorker<GraphTy, ItrTy>(G), rng_(rng), UD_() {}
 
-  void svc_loop(std::atomic<size_t> &mpmc_head, ItrTy B, ItrTy E) {
+  void svc_loop(std::atomic<size_t> &mpmc_head, ItrTy B, ItrTy E,
+                std::vector<ex_time_ms> &record) {
     size_t offset = 0;
     while ((offset = mpmc_head.fetch_add(batch_size_)) < std::distance(B, E)) {
       auto first = B;
@@ -104,7 +109,10 @@ class HCCPUSamplingWorker : public HCWorker<GraphTy, ItrTy> {
       std::advance(last, batch_size_);
 
       if (last > E) last = E;
+      auto start = std::chrono::high_resolution_clock::now();
       batch(first, last);
+      auto end = std::chrono::high_resolution_clock::now();
+      record.push_back(end - start);
     }
   }
 
@@ -147,6 +155,8 @@ class HCGPUSamplingWorker : public HCWorker<GraphTy, ItrTy> {
   using HCWorker<GraphTy, ItrTy>::G_;
 
  public:
+  using ex_time_ms = std::chrono::duration<double, std::milli>;
+
   struct config_t {
     static constexpr size_t block_size_ = 256;
     static constexpr size_t num_threads_ = 1 << 15;
@@ -175,7 +185,8 @@ class HCGPUSamplingWorker : public HCWorker<GraphTy, ItrTy> {
     cuda_free(d_flags_);
   }
 
-  void svc_loop(std::atomic<size_t> &mpmc_head, ItrTy B, ItrTy E) {
+  void svc_loop(std::atomic<size_t> &mpmc_head, ItrTy B, ItrTy E,
+                std::vector<ex_time_ms> &record) {
     size_t offset = 0;
     while ((offset = mpmc_head.fetch_add(batch_size_)) < std::distance(B, E)) {
       auto first = B;
@@ -184,7 +195,10 @@ class HCGPUSamplingWorker : public HCWorker<GraphTy, ItrTy> {
       std::advance(last, batch_size_);
 
       if (last > E) last = E;
+      auto start = std::chrono::high_resolution_clock::now();
       batch(first, last);
+      auto end = std::chrono::high_resolution_clock::now();
+      record.push_back(end - start);
     }
   }
 
@@ -240,6 +254,8 @@ class PhaseEngine {
   using gpu_worker_type = GpuWorkerTy;
 
  public:
+  using ex_time_ms = std::chrono::duration<double, std::milli>;
+
   PhaseEngine(const GraphTy &G, PRNGTy &master_rng, size_t cpu_workers,
               size_t gpu_workers, std::string loggerName)
       : G_(G), logger_(spdlog::stdout_color_mt(loggerName)) {
@@ -248,12 +264,12 @@ class PhaseEngine {
     logger_->debug("Number of Threads = {}", num_threads);
     workers_.resize(num_threads);
     cpu_workers_.resize(cpu_workers);
-    #if RIPPLES_ENABLE_CUDA
+#if RIPPLES_ENABLE_CUDA
     gpu_workers_.resize(gpu_workers);
     cuda_contexts_.resize(gpu_workers);
-    #endif
+#endif
 
-    #pragma omp parallel
+#pragma omp parallel
     {
       int rank = omp_get_thread_num();
       if (rank < cpu_workers) {
@@ -264,21 +280,22 @@ class PhaseEngine {
         cpu_workers_[rank] = w;
         logger_->debug("> mapping: omp {}\t->CPU", rank);
       } else {
-        #if RIPPLES_ENABLE_CUDA
+#if RIPPLES_ENABLE_CUDA
         size_t num_devices = cuda_num_devices();
         size_t device_id = rank % num_devices;
-        logger_->debug("> mapping: omp {}\t->GPU {}/{}", rank,
-                       device_id, num_devices);
+        logger_->debug("> mapping: omp {}\t->GPU {}/{}", rank, device_id,
+                       num_devices);
         logger_->trace("Building Cuda Context");
         cuda_contexts_[rank - cpu_workers] = cuda_make_ctx(G, device_id);
         auto rng = master_rng;
         rng.split(num_threads, rank);
-        auto w = new gpu_worker_type(G_, rng, cuda_contexts_[rank - cpu_workers]);
+        auto w =
+            new gpu_worker_type(G_, rng, cuda_contexts_[rank - cpu_workers]);
         w->rng_setup();
         workers_[rank] = w;
         gpu_workers_[rank - cpu_workers] = w;
         logger_->trace("Cuda Context Built!");
-        #endif
+#endif
       }
     }
   }
@@ -322,13 +339,16 @@ class SamplingEngine
                   HCCPUSamplingWorker<GraphTy, ItrTy, PRNGTy, diff_model_tag>,
                   HCGPUSamplingWorker<GraphTy, ItrTy, PRNGTy, diff_model_tag>>;
 
+  using ex_time_ms = std::chrono::duration<double, std::milli>;
+
  public:
   SamplingEngine(const GraphTy &G, PRNGTy &master_rng, size_t cpu_workers,
                  size_t gpu_workers)
       : phase_engine(G, master_rng, cpu_workers, gpu_workers,
                      "SamplingEngine") {}
 
-  void exec(ItrTy B, ItrTy E) {
+  void exec(ItrTy B, ItrTy E, std::vector<std::vector<ex_time_ms>> &record) {
+    record.resize(workers_.size());
     mpmc_head_.store(0);
 
     logger_->trace("Start Sampling");
@@ -336,7 +356,7 @@ class SamplingEngine
     {
       assert(workers_.size() == omp_get_num_threads());
       size_t rank = omp_get_thread_num();
-      workers_[rank]->svc_loop(mpmc_head_, B, E);
+      workers_[rank]->svc_loop(mpmc_head_, B, E, record[rank]);
     }
     logger_->trace("End Sampling");
   }
@@ -411,11 +431,14 @@ class HCCPUCountingWorker : public HCWorker<GraphTy, ItrTy> {
   using HCWorker<GraphTy, ItrTy>::G_;
 
  public:
+  using ex_time_ms = std::chrono::duration<double, std::milli>;
+
   HCCPUCountingWorker(const GraphTy &G, std::vector<size_t> &count,
                       std::set<vertex_type> &S)
       : HCWorker<GraphTy, ItrTy>(G), count_(count), S_(S) {}
 
-  void svc_loop(std::atomic<size_t> &mpmc_head, ItrTy B, ItrTy E) {
+  void svc_loop(std::atomic<size_t> &mpmc_head, ItrTy B, ItrTy E,
+                std::vector<ex_time_ms> &record) {
     size_t offset = 0;
     while ((offset = mpmc_head.fetch_add(batch_size_)) < std::distance(B, E)) {
       auto first = B;
@@ -427,8 +450,7 @@ class HCCPUCountingWorker : public HCWorker<GraphTy, ItrTy> {
       auto start = std::chrono::high_resolution_clock::now();
       batch(first, last);
       auto end = std::chrono::high_resolution_clock::now();
-      std::chrono::duration<double> duration = end - start;
-      spdlog::get("console")->trace("CPU duration of batch {}s", duration.count());
+      record.push_back(end - start);
     }
   }
 
@@ -464,6 +486,8 @@ class HCGPUCountingWorker : public HCWorker<GraphTy, ItrTy> {
   using HCWorker<GraphTy, ItrTy>::G_;
 
  public:
+  using ex_time_ms = std::chrono::duration<double, std::milli>;
+
   struct config_t {
     config_t(size_t num_workers)
         : block_size_(bfs_solver_t::traverse_block_size()),
@@ -518,7 +542,8 @@ class HCGPUCountingWorker : public HCWorker<GraphTy, ItrTy> {
     cuda_free(d_edge_filter_);
   }
 
-  void svc_loop(std::atomic<size_t> &mpmc_head, ItrTy B, ItrTy E) {
+  void svc_loop(std::atomic<size_t> &mpmc_head, ItrTy B,
+                ItrTy E, std::vector<ex_time_ms> &record) {
     size_t offset = 0;
     while ((offset = mpmc_head.fetch_add(batch_size_)) < std::distance(B, E)) {
       auto first = B;
@@ -530,8 +555,7 @@ class HCGPUCountingWorker : public HCWorker<GraphTy, ItrTy> {
       auto start = std::chrono::high_resolution_clock::now();
       batch(first, last);
       auto end = std::chrono::high_resolution_clock::now();
-      std::chrono::duration<double> duration = end - start;
-      spdlog::get("console")->trace("GPU duration of batch {}s", duration.count());
+      record.push_back(end - start);
     }
   }
 
@@ -546,7 +570,8 @@ class HCGPUCountingWorker : public HCWorker<GraphTy, ItrTy> {
                G_.num_edges() * sizeof(d_vertex_type), cuda_stream_);
 
       d_vertex_type base_count;
-      solver_->traverse(seeds.data(), seeds.size(), visited_.get(), &base_count);
+      solver_->traverse(seeds.data(), seeds.size(), visited_.get(),
+                        &base_count);
 
       // cuda_d2h(predecessors_, d_predecessors_,
       // G_.num_nodes() * sizeof(d_vertex_type), cuda_stream_);
@@ -590,6 +615,8 @@ class SeedSelectionEngine {
   using gpu_worker_type = HCGPUCountingWorker<GraphTy, ItrTy>;
 
  public:
+  using ex_time_ms = std::chrono::duration<double, std::milli>;
+
   SeedSelectionEngine(const GraphTy &G, size_t cpu_workers, size_t gpu_workers)
       : G_(G),
         count_(G_.num_nodes()),
@@ -600,12 +627,12 @@ class SeedSelectionEngine {
     logger_->debug("Number of Threads = {}", num_threads);
     workers_.resize(num_threads);
     cpu_workers_.resize(cpu_workers);
-    #if RIPPLES_ENABLE_CUDA
+#if RIPPLES_ENABLE_CUDA
     gpu_workers_.resize(gpu_workers);
     cuda_contexts_.resize(gpu_workers);
-    #endif
+#endif
 
-    #pragma omp parallel
+#pragma omp parallel
     {
       int rank = omp_get_thread_num();
       if (rank < cpu_workers) {
@@ -614,20 +641,20 @@ class SeedSelectionEngine {
         cpu_workers_[rank] = w;
         logger_->debug("> mapping: omp {}\t->CPU", rank);
       } else {
-        #if RIPPLES_ENABLE_CUDA
+#if RIPPLES_ENABLE_CUDA
         size_t num_devices = cuda_num_devices();
         size_t device_id = rank % num_devices;
-        logger_->debug("> mapping: omp {}\t->GPU {}/{}", rank,
-                       device_id, num_devices);
+        logger_->debug("> mapping: omp {}\t->GPU {}/{}", rank, device_id,
+                       num_devices);
         logger_->trace("Building Cuda Context");
         cuda_contexts_[rank - cpu_workers] = cuda_make_ctx(G, device_id);
         typename gpu_worker_type::config_t gpu_conf(gpu_workers);
-        auto w =
-            new gpu_worker_type(gpu_conf, G_, cuda_contexts_.back(), count_, S_);
+        auto w = new gpu_worker_type(gpu_conf, G_, cuda_contexts_.back(),
+                                     count_, S_);
         workers_[rank] = w;
         gpu_workers_[rank - cpu_workers] = w;
         logger_->trace("Cuda Context Built!");
-        #endif
+#endif
       }
     }
   }
@@ -644,9 +671,11 @@ class SeedSelectionEngine {
 #endif
   }
 
-  std::set<vertex_type> exec(ItrTy B, ItrTy E, size_t k) {
+  std::set<vertex_type> exec(ItrTy B, ItrTy E, size_t k,
+                             std::vector<std::vector<ex_time_ms>> &record) {
     logger_->trace("Start Seed Selection");
 
+    record.resize(workers_.size());
     for (size_t i = 0; i < k; ++i) {
 #pragma omp parallel for
       for (size_t j = 0; j < count_.size(); ++j) count_[j] = 0;
@@ -656,7 +685,7 @@ class SeedSelectionEngine {
       {
         assert(workers_.size() == omp_get_num_threads());
         size_t rank = omp_get_thread_num();
-        workers_[rank]->svc_loop(mpmc_head_, B, E);
+        workers_[rank]->svc_loop(mpmc_head_, B, E, record[rank]);
       }
 
       vertex_type v = std::distance(

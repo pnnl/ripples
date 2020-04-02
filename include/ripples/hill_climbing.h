@@ -91,8 +91,18 @@ struct HillClimbingExecutionRecord {
 
   //! Number of threads used during the execution.
   size_t NumThreads;
+  //! Number of threads used as GPU worker.
+  size_t NumGpuWorkers;
   //! Sampling time.
   ex_time_ms Sampling;
+  //! SamplingTask ex time
+  std::vector<std::vector<ex_time_ms>> SamplingTasks;
+  std::vector<std::vector<ex_time_ms>> SeedSelectionTasks;
+  //! Seed Selection Tasks
+  std::vector<std::vector<std::vector<ex_time_ms>>> BuildFrontiersTasks;
+  std::vector<std::vector<std::vector<ex_time_ms>>> BuildCountersTasks;
+  //! Network Communication
+  std::vector<ex_time_ms> NetworkReductions;
   //! Seed Selection time.
   ex_time_ms SeedSelection;
   //! Total execution time.
@@ -113,7 +123,7 @@ auto SampleFrom(GraphTy &G, ConfTy &CFG, GeneratorTy &gen,
   using iterator_type = typename std::vector<edge_mask>::iterator;
   SamplingEngine<GraphTy, iterator_type, GeneratorTy, diff_model_tag> SE(
       G, gen, CFG.streaming_workers, CFG.streaming_gpu_workers);
-  SE.exec(samples.begin(), samples.end());
+  SE.exec(samples.begin(), samples.end(), record.SamplingTasks);
   auto end = std::chrono::high_resolution_clock::now();
   record.Sampling = end - start;
   return samples;
@@ -125,7 +135,7 @@ auto SeedSelection(GraphTy &G, GraphMaskItrTy B, GraphMaskItrTy E,
   SeedSelectionEngine<GraphTy, GraphMaskItrTy> countingEngine(
       G, CFG.streaming_workers, CFG.streaming_gpu_workers);
   auto start = std::chrono::high_resolution_clock::now();
-  auto S = countingEngine.exec(B, E, CFG.k);
+  auto S = countingEngine.exec(B, E, CFG.k, record.SeedSelectionTasks);
   auto end = std::chrono::high_resolution_clock::now();
   record.SeedSelection = end - start;
 

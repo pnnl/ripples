@@ -75,14 +75,16 @@ auto GetExperimentRecord(
                             {"NumGPUWalkWorkers", CFG.streaming_gpu_workers},
                             {"Total", R.Total},
                             {"Sampling", R.Sampling},
-                            {"SeedSelection", R.SeedSelection}};
+                            {"SeedSelection", R.SeedSelection},
+                            {"SamplingTasks", R.SamplingTasks},
+                            {"SeedSelectionTasks", R.SeedSelectionTasks}};
 
   return experiment;
 }
 
 void parse_command_line(int argc, char** argv) {
   configuration().ParseCmdOptions(argc, argv);
-  #pragma omp single
+#pragma omp single
   configuration().streaming_workers = omp_get_max_threads();
 }
 }  // namespace ripples
@@ -117,7 +119,7 @@ int main(int argc, char** argv) {
   ripples::HillClimbingExecutionRecord R;
 
   ripples::configuration().streaming_workers -=
-    ripples::configuration().streaming_gpu_workers;
+      ripples::configuration().streaming_gpu_workers;
 
   if (ripples::configuration().diffusionModel == "IC") {
     auto start = std::chrono::high_resolution_clock::now();

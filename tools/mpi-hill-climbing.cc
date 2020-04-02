@@ -85,7 +85,11 @@ auto GetExperimentRecord(
                             {"WorldSize", world_size},
                             {"Total", R.Total},
                             {"Sampling", R.Sampling},
-                            {"SeedSelection", R.SeedSelection}};
+                            {"SeedSelection", R.SeedSelection},
+                            {"SamplingTasks", R.SamplingTasks},
+                            {"BuildFrontiersTasks", R.BuildFrontiersTasks},
+                            {"BuildCountersTasks", R.BuildCountersTasks},
+                            {"NetworkReductions", R.NetworkReductions}};
 
   return experiment;
 }
