@@ -43,6 +43,7 @@
 #ifndef RIPPLES_MPI_HILL_CLIMBING_H
 #define RIPPLES_MPI_HILL_CLIMBING_H
 
+#include "ripples/bitmask.h"
 #include "ripples/hill_climbing.h"
 #include "spdlog/async.h"
 #include "spdlog/spdlog.h"
@@ -85,7 +86,7 @@ class HCCPUCountingWorker : public HCWorker<GraphTy, ItrTy, VItrTy> {
  public:
   HCCPUCountingWorker(std::shared_ptr<spdlog::logger> logger, const GraphTy &G,
                       std::vector<long> &count,
-                      std::vector<std::vector<bool>> &frontier_cache,
+                      std::vector<Bitmask<int>> &frontier_cache,
                       std::vector<int> &base_counters, std::set<vertex_type> &S)
       : HCWorker<GraphTy, ItrTy, VItrTy>(G),
         logger_(logger),
@@ -131,8 +132,7 @@ class HCCPUCountingWorker : public HCWorker<GraphTy, ItrTy, VItrTy> {
   void batch_frontier(ItrTy B, ItrTy E, size_t offset) {
     for (auto itr = B; itr < E; ++itr, ++offset) {
       BFS(G_, *itr, S_.begin(), S_.end(), frontier_cache_[offset]);
-      base_counters_[offset] = std::count(frontier_cache_[offset].begin(),
-                                          frontier_cache_[offset].end(), true);
+      base_counters_[offset] = frontier_cache_[offset].popcount();
     }
   }
   void batch_counters(VItrTy B, VItrTy E, size_t sample_id, size_t base,
@@ -140,7 +140,7 @@ class HCCPUCountingWorker : public HCWorker<GraphTy, ItrTy, VItrTy> {
     for (vertex_type v = B; v < E; ++v) {
       if (S_.find(v) != S_.end()) continue;
       long count = base;
-      if (!frontier_cache_[sample_id][v])
+      if (!frontier_cache_[sample_id].get(v))
         count = BFS(G_, *eMask, v, frontier_cache_[sample_id]);
       count_[v % count_.size()] += count;
     }
@@ -148,7 +148,7 @@ class HCCPUCountingWorker : public HCWorker<GraphTy, ItrTy, VItrTy> {
 
   static constexpr size_t batch_size_ = 8;
   std::vector<long> &count_;
-  std::vector<std::vector<bool>> &frontier_cache_;
+  std::vector<Bitmask<int>> &frontier_cache_;
   std::vector<int> &base_counters_;
   std::set<vertex_type> &S_;
   std::shared_ptr<spdlog::logger> logger_;
@@ -167,8 +167,7 @@ class HCGPUCountingWorker : public HCWorker<GraphTy, ItrTy, VItrTy> {
   struct config_t {
     config_t(size_t num_workers)
         : block_size_(bfs_solver_t::traverse_block_size()),
-          max_blocks_(num_workers ? cuda_max_blocks() / num_workers : 0) {
-    }
+          max_blocks_(num_workers ? cuda_max_blocks() / num_workers : 0) {}
 
     size_t num_gpu_threads() const { return max_blocks_ * block_size_; }
 
@@ -179,7 +178,7 @@ class HCGPUCountingWorker : public HCWorker<GraphTy, ItrTy, VItrTy> {
   HCGPUCountingWorker(std::shared_ptr<spdlog::logger> logger,
                       const config_t &conf, const GraphTy &G,
                       cuda_ctx<GraphTy> *ctx, std::vector<long> &count,
-                      std::vector<std::vector<bool>> &frontier_cache,
+                      std::vector<Bitmask<int>> &frontier_cache,
                       std::vector<int> &base_counters, std::set<vertex_type> &S)
       : HCWorker<GraphTy, ItrTy, VItrTy>(G),
         logger_(logger),
@@ -256,19 +255,13 @@ class HCGPUCountingWorker : public HCWorker<GraphTy, ItrTy, VItrTy> {
     cuda_set_device(ctx_->gpu_id);
     std::vector<d_vertex_type> seeds(S_.begin(), S_.end());
     for (auto itr = B; itr < E; ++itr, ++offset) {
-      cuda_h2d(d_edge_filter_, &*itr,
-               G_.num_edges() * sizeof(d_vertex_type), cuda_stream_);
+      cuda_h2d(d_edge_filter_, &*itr, G_.num_edges() * sizeof(d_vertex_type),
+               cuda_stream_);
 
       d_vertex_type base_count;
-      solver_->traverse(seeds.data(), seeds.size(), visited_.get(),
-                        &base_count);
+      solver_->traverse(seeds.data(), seeds.size(),
+                        frontier_cache_[offset].data(), &base_count);
       cuda_sync(cuda_stream_);
-      for (vertex_type v = 0; v < G_.num_nodes(); ++v) {
-        int m = 1 << (v % (8 * sizeof(int)));
-        if ((visited_[v / (8 * sizeof(int))] && m) == 1) {
-          frontier_cache_[offset][v] = true;
-        }
-      }
     }
   }
   void batch_counters(VItrTy B, VItrTy E, size_t sample_id, size_t base_count,
@@ -276,23 +269,16 @@ class HCGPUCountingWorker : public HCWorker<GraphTy, ItrTy, VItrTy> {
     cuda_set_device(ctx_->gpu_id);
     std::vector<d_vertex_type> seeds(S_.begin(), S_.end());
 
-    cuda_h2d(d_edge_filter_, &*eMask,
-             G_.num_edges() * sizeof(d_vertex_type), cuda_stream_);
-
-    std::memset(visited_.get(), sizeof(int) * solver_->bmap_size(), 0);
-    for (vertex_type v = 0; v < G_.num_nodes(); ++v) {
-      if (frontier_cache_[sample_id][v]) {
-        int m = 1 << (v % (8 * sizeof(int)));
-        visited_[v / (8 * sizeof(int))] |= m;
-      }
-    }
+    cuda_h2d(d_edge_filter_, &*eMask, G_.num_edges() * sizeof(d_vertex_type),
+             cuda_stream_);
 
     for (vertex_type v = B; v < E; ++v) {
       if (S_.find(v) != S_.end()) continue;
       long update_count = base_count;
-      if (!frontier_cache_[sample_id][v]) {
+      if (!frontier_cache_[sample_id].get(v)) {
         d_vertex_type count;
-        solver_->traverse(v, base_count, visited_.get(), &count);
+        solver_->traverse(v, base_count, frontier_cache_[sample_id].data(),
+                          &count);
         cuda_sync(cuda_stream_);
 
         update_count = count;
@@ -312,7 +298,7 @@ class HCGPUCountingWorker : public HCWorker<GraphTy, ItrTy, VItrTy> {
 
   std::vector<long> &count_;
   std::set<vertex_type> &S_;
-  std::vector<std::vector<bool>> &frontier_cache_;
+  std::vector<Bitmask<int>> &frontier_cache_;
   std::vector<int> &base_counters_;
   std::shared_ptr<spdlog::logger> logger_;
 #endif
@@ -412,8 +398,7 @@ class SeedSelectionEngine {
         k, std::vector<std::vector<ex_time_ms>>(workers_.size()));
     record_.BuildCountersTasks.resize(
         k, std::vector<std::vector<ex_time_ms>>(workers_.size()));
-    frontier_cache_.resize(std::distance(B, E),
-                           std::vector<bool>(G_.num_nodes(), false));
+    frontier_cache_.resize(std::distance(B, E), Bitmask<int>(G_.num_nodes()));
     base_counters_.resize(frontier_cache_.size());
 
     for (size_t i = 0; i < k; ++i) {
@@ -507,7 +492,7 @@ class SeedSelectionEngine {
   std::vector<cuda_ctx<GraphTy> *> cuda_contexts_;
 #endif
 
-  std::vector<std::vector<bool>> frontier_cache_;
+  std::vector<Bitmask<int>> frontier_cache_;
   std::vector<int> base_counters_;
   size_t vertex_block_size_;
   std::vector<worker_type *> workers_;

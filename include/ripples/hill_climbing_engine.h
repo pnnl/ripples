@@ -55,6 +55,7 @@
 #include "spdlog/spdlog.h"
 #include "trng/uniform01_dist.hpp"
 
+#include "ripples/bitmask.h"
 #ifdef RIPPLES_ENABLE_CUDA
 #include "ripples/cuda/cuda_generate_rrr_sets.h"
 #include "ripples/cuda/cuda_graph.cuh"
@@ -362,7 +363,7 @@ class SamplingEngine
 namespace {
 template <typename GraphTy, typename GraphMaskTy, typename Itr>
 size_t BFS(GraphTy &G, GraphMaskTy &M, Itr b, Itr e,
-           std::vector<bool> &visited) {
+           Bitmask<int> &visited) {
   using vertex_type = typename GraphTy::vertex_type;
 
   std::queue<vertex_type> queue;
@@ -378,21 +379,21 @@ size_t BFS(GraphTy &G, GraphMaskTy &M, Itr b, Itr e,
         std::distance(G.neighbors(0).begin(), G.neighbors(u).begin());
 
     for (auto v : G.neighbors(u)) {
-      if (M[edge_number] && !visited[v.vertex]) {
+      if (M[edge_number] && !visited.get(v.vertex)) {
         queue.push(v.vertex);
       }
 
       ++edge_number;
     }
 
-    visited[u] = true;
+    visited.set(u);
   }
-  return std::count(visited.begin(), visited.end(), true);
+  return visited.popcount();
 }
 
 template <typename GraphTy, typename GraphMaskTy>
 size_t BFS(GraphTy &G, GraphMaskTy &M, typename GraphTy::vertex_type v,
-           std::vector<bool> visited) {
+           Bitmask<int> visited) {
   using vertex_type = typename GraphTy::vertex_type;
 
   std::queue<vertex_type> queue;
@@ -405,15 +406,15 @@ size_t BFS(GraphTy &G, GraphMaskTy &M, typename GraphTy::vertex_type v,
     size_t edge_number =
         std::distance(G.neighbors(0).begin(), G.neighbors(u).begin());
     for (auto v : G.neighbors(u)) {
-      if (M[edge_number] && !visited[v.vertex]) {
+      if (M[edge_number] && !visited.get(v.vertex)) {
         queue.push(v.vertex);
       }
       ++edge_number;
     }
 
-    visited[u] = true;
+    visited.set(u);
   }
-  return std::count(visited.begin(), visited.end(), true);
+  return visited.popcount();
 }
 }  // namespace
 
@@ -449,13 +450,13 @@ class HCCPUCountingWorker : public HCWorker<GraphTy, ItrTy> {
  private:
   void batch(ItrTy B, ItrTy E) {
     for (auto itr = B; itr < E; ++itr) {
-      std::vector<bool> visited(G_.num_nodes(), false);
+      Bitmask<int> visited(G_.num_nodes());
       size_t base_count = BFS(G_, *itr, S_.begin(), S_.end(), visited);
 
       for (vertex_type v = 0; v < G_.num_nodes(); ++v) {
         if (S_.find(v) != S_.end()) continue;
         size_t update_count = base_count + 1;
-        if (!visited[v]) {
+        if (!visited.get(v)) {
           update_count = BFS(G_, *itr, v, visited);
         }
 #pragma omp atomic
