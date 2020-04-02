@@ -52,7 +52,7 @@ template <typename GraphTy, typename PRNGTy>
 __global__ void generate_sample_ic_kernel(
     size_t batch_size, size_t num_edges,
     typename cuda_device_graph<GraphTy>::weight_t *weights,
-    PRNGTy *d_trng_states, char *d_flag) {
+    PRNGTy *d_trng_states, int *d_flag) {
   int tid = blockIdx.x * blockDim.x + threadIdx.x;
 
   int pos = tid;
@@ -73,7 +73,7 @@ template <typename GraphTy, typename PRNGTy>
 void cuda_generate_samples_ic(size_t n_blocks, size_t block_size,
                               size_t batch_size, size_t num_edges,
                               PRNGTy *d_trng_states, cuda_ctx<GraphTy> *ctx,
-                              char *d_flags, cudaStream_t stream) {
+                              int *d_flags, cudaStream_t stream) {
   generate_sample_ic_kernel<GraphTy, PRNGTy>
       <<<n_blocks, block_size, 0, stream>>>(batch_size, num_edges,
                                             ctx->d_graph->d_weights_,
@@ -85,14 +85,14 @@ template <typename GraphTy, typename PRNGTy>
 void cuda_generate_samples_lt(size_t n_blocks, size_t block_size,
                               size_t batch_size, size_t num_edges,
                               PRNGTy *d_trng_states, cuda_ctx<GraphTy> *ctx,
-                              char *d_flags, cudaStream_t stream) {}
+                              int *d_flags, cudaStream_t stream) {}
 
 template void cuda_generate_samples_lt<HCGraphTy, trng::lcg64>(
     size_t n_blocks, size_t block_size, size_t batch_size, size_t num_edges,
-    trng::lcg64 *d_trng_states, cuda_ctx<HCGraphTy> *ctx, char *d_flags,
+    trng::lcg64 *d_trng_states, cuda_ctx<HCGraphTy> *ctx, int *d_flags,
     cudaStream_t stream);
 template void cuda_generate_samples_ic<HCGraphTy, trng::lcg64>(
     size_t n_blocks, size_t block_size, size_t batch_size, size_t num_edges,
-    trng::lcg64 *d_trng_states, cuda_ctx<HCGraphTy> *ctx, char *d_flags,
+    trng::lcg64 *d_trng_states, cuda_ctx<HCGraphTy> *ctx, int *d_flags,
     cudaStream_t stream);
 }  // namespace ripples

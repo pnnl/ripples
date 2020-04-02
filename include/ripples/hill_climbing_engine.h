@@ -175,7 +175,7 @@ class HCGPUSamplingWorker : public HCWorker<GraphTy, ItrTy> {
 
     cuda_malloc((void **)&d_trng_state_,
                 conf_.num_gpu_threads() * sizeof(PRNGTy));
-    cuda_malloc((void **)&d_flags_, G_.num_edges() * batch_size_);
+    cuda_malloc((void **)&d_flags_, G_.num_edges() * batch_size_ * sizeof(int));
   }
 
   ~HCGPUSamplingWorker() {
@@ -210,7 +210,6 @@ class HCGPUSamplingWorker : public HCWorker<GraphTy, ItrTy> {
 
  private:
   void batch(ItrTy B, ItrTy E) {
-    std::vector<char> flags(G_.num_edges() * batch_size_);
     cuda_set_device(ctx_->gpu_id);
     if (std::is_same<diff_model_tag, independent_cascade_tag>::value) {
       cuda_generate_samples_ic(conf_.max_blocks_, conf_.block_size_,
@@ -221,17 +220,12 @@ class HCGPUSamplingWorker : public HCWorker<GraphTy, ItrTy> {
     }
 
     cuda_d2h(flags.data(), d_flags_, flags.size(), cuda_stream_);
-    cuda_sync(cuda_stream_);
 
-    auto Bf = flags.begin();
-    auto Ef = Bf;
-    std::advance(Ef, G_.num_nodes());
-    for (; Ef < flags.end() && B < E; ++B) {
-      std::transform(Bf, Ef, B->begin(),
-                     [](char v) -> bool { return v == 0 ? false : true; });
-      std::advance(Bf, G_.num_nodes());
-      std::advance(Ef, G_.num_nodes());
+    for (size_t i = 0; B < E; ++B, ++i) {
+      cuda_d2h(B->data(), d_flags_ + i * G_.num_edges(), flags.size(),
+               cuda_stream_);
     }
+    cuda_sync(cuda_stream_);
   }
 
   static constexpr size_t batch_size_ = 32;
@@ -241,7 +235,7 @@ class HCGPUSamplingWorker : public HCWorker<GraphTy, ItrTy> {
   cudaStream_t cuda_stream_;
   trng::uniform01_dist<float> UD_;
   PRNGTy *d_trng_state_;
-  char *d_flags_;
+  int *d_flags_;
 #endif
 };
 
@@ -542,8 +536,8 @@ class HCGPUCountingWorker : public HCWorker<GraphTy, ItrTy> {
     cuda_free(d_edge_filter_);
   }
 
-  void svc_loop(std::atomic<size_t> &mpmc_head, ItrTy B,
-                ItrTy E, std::vector<ex_time_ms> &record) {
+  void svc_loop(std::atomic<size_t> &mpmc_head, ItrTy B, ItrTy E,
+                std::vector<ex_time_ms> &record) {
     size_t offset = 0;
     while ((offset = mpmc_head.fetch_add(batch_size_)) < std::distance(B, E)) {
       auto first = B;
@@ -563,10 +557,7 @@ class HCGPUCountingWorker : public HCWorker<GraphTy, ItrTy> {
   void batch(ItrTy B, ItrTy E) {
     std::vector<d_vertex_type> seeds(S_.begin(), S_.end());
     for (auto itr = B; itr < E; ++itr) {
-      std::transform(itr->begin(), itr->end(), edge_filter_.get(),
-                     [](bool v) -> d_vertex_type { return v ? 1 : 0; });
-
-      cuda_h2d(d_edge_filter_, edge_filter_.get(),
+      cuda_h2d(d_edge_filter_, itr->data(),
                G_.num_edges() * sizeof(d_vertex_type), cuda_stream_);
 
       d_vertex_type base_count;
