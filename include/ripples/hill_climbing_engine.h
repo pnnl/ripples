@@ -221,8 +221,8 @@ class HCGPUSamplingWorker : public HCWorker<GraphTy, ItrTy> {
     }
 
     for (size_t i = 0; B < E; ++B, ++i) {
-      cuda_d2h(B->data(), d_flags_ + i * G_.num_edges(), G_.num_edges() * sizeof(int),
-               cuda_stream_);
+      cuda_d2h(B->data(), d_flags_ + i * G_.num_edges(),
+               G_.num_edges() * sizeof(int), cuda_stream_);
     }
     cuda_sync(cuda_stream_);
   }
@@ -362,8 +362,7 @@ class SamplingEngine
 
 namespace {
 template <typename GraphTy, typename GraphMaskTy, typename Itr>
-size_t BFS(GraphTy &G, GraphMaskTy &M, Itr b, Itr e,
-           Bitmask<int> &visited) {
+size_t BFS(GraphTy &G, GraphMaskTy &M, Itr b, Itr e, Bitmask<int> &visited) {
   using vertex_type = typename GraphTy::vertex_type;
 
   std::queue<vertex_type> queue;
@@ -661,11 +660,13 @@ class SeedSelectionEngine {
 #endif
   }
 
-  std::set<vertex_type> exec(ItrTy B, ItrTy E, size_t k,
-                             std::vector<std::vector<ex_time_ms>> &record) {
+  std::vector<vertex_type> exec(ItrTy B, ItrTy E, size_t k,
+                                std::vector<std::vector<ex_time_ms>> &record) {
     logger_->trace("Start Seed Selection");
 
     record.resize(workers_.size());
+    std::vector<vertex_type> result;
+    result.reserve(k);
     for (size_t i = 0; i < k; ++i) {
 #pragma omp parallel for
       for (size_t j = 0; j < count_.size(); ++j) count_[j] = 0;
@@ -681,11 +682,12 @@ class SeedSelectionEngine {
       vertex_type v = std::distance(
           count_.begin(), std::max_element(count_.begin(), count_.end()));
       S_.insert(v);
+      result.push_back(v);
       logger_->trace("Seed {} : {}", i, v);
     }
 
     logger_->trace("End Seed Selection");
-    return S_;
+    return result;
   }
 
  private:

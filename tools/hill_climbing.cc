@@ -110,7 +110,7 @@ int main(int argc, char** argv) {
 
   nlohmann::json executionLog;
 
-  std::set<typename GraphFwd::vertex_type> seeds;
+  std::vector<typename GraphFwd::vertex_type> seeds;
 
   trng::lcg64 generator;
   generator.seed(0UL);

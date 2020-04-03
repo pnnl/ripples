@@ -390,10 +390,12 @@ class SeedSelectionEngine {
     MPI_Win_free(&win);
   }
 
-  std::set<vertex_type> exec(ItrTy B, ItrTy E, size_t k) {
+  std::vector<vertex_type> exec(ItrTy B, ItrTy E, size_t k) {
     using ex_time_ms = HillClimbingExecutionRecord::ex_time_ms;
     logger_->trace("Start Seed Selection with {} workers", workers_.size());
 
+    std::vector<vertex_type> result;
+    result.reserve(k);
     record_.BuildFrontiersTasks.resize(
         k, std::vector<std::vector<ex_time_ms>>(workers_.size()));
     record_.BuildCountersTasks.resize(
@@ -470,9 +472,10 @@ class SeedSelectionEngine {
       auto end_reduction = std::chrono::high_resolution_clock::now();
       record_.NetworkReductions.push_back(end_reduction - start_reduction);
       S_.insert(global.index);
+      result.push_back(global.index);
     }
     logger_->trace("End Seed Selection");
-    return S_;
+    return result;
   }
 
  private:
