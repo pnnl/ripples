@@ -108,7 +108,7 @@ class HCCPUCountingWorker : public HCWorker<GraphTy, ItrTy, VItrTy> {
       auto start = std::chrono::high_resolution_clock::now();
       batch_frontier(first, last, offset);
       auto end = std::chrono::high_resolution_clock::now();
-      record.push_back(end - start);
+      if (record.size() < 100) record.push_back(end - start);
     }
   }
 
@@ -124,7 +124,7 @@ class HCCPUCountingWorker : public HCWorker<GraphTy, ItrTy, VItrTy> {
       auto start = std::chrono::high_resolution_clock::now();
       batch_counters(first, last, sample_id, base, eMask);
       auto end = std::chrono::high_resolution_clock::now();
-      record.push_back(end - start);
+      if (record.size() < 100) record.push_back(end - start);
     }
   }
 
@@ -146,7 +146,7 @@ class HCCPUCountingWorker : public HCWorker<GraphTy, ItrTy, VItrTy> {
     }
   }
 
-  static constexpr size_t batch_size_ = 8;
+  static constexpr size_t batch_size_ = 32;
   std::vector<long> &count_;
   std::vector<Bitmask<int>> &frontier_cache_;
   std::vector<int> &base_counters_;
@@ -230,7 +230,7 @@ class HCGPUCountingWorker : public HCWorker<GraphTy, ItrTy, VItrTy> {
       auto start = std::chrono::high_resolution_clock::now();
       batch_frontier(first, last, offset);
       auto end = std::chrono::high_resolution_clock::now();
-      record.push_back(end - start);
+      if (record.size() < 100) record.push_back(end - start);
     }
   }
 
@@ -246,7 +246,7 @@ class HCGPUCountingWorker : public HCWorker<GraphTy, ItrTy, VItrTy> {
       auto start = std::chrono::high_resolution_clock::now();
       batch_counters(first, last, sample_id, base, eMask);
       auto end = std::chrono::high_resolution_clock::now();
-      record.push_back(end - start);
+      if (record.size() < 100) record.push_back(end - start);
     }
   }
 
@@ -255,8 +255,8 @@ class HCGPUCountingWorker : public HCWorker<GraphTy, ItrTy, VItrTy> {
     cuda_set_device(ctx_->gpu_id);
     std::vector<d_vertex_type> seeds(S_.begin(), S_.end());
     for (auto itr = B; itr < E; ++itr, ++offset) {
-      cuda_h2d(d_edge_filter_, itr->data(), G_.num_edges() * sizeof(d_vertex_type),
-               cuda_stream_);
+      cuda_h2d(d_edge_filter_, itr->data(),
+               G_.num_edges() * sizeof(d_vertex_type), cuda_stream_);
 
       d_vertex_type base_count;
       solver_->traverse(seeds.data(), seeds.size(),
@@ -269,8 +269,8 @@ class HCGPUCountingWorker : public HCWorker<GraphTy, ItrTy, VItrTy> {
     cuda_set_device(ctx_->gpu_id);
     std::vector<d_vertex_type> seeds(S_.begin(), S_.end());
 
-    cuda_h2d(d_edge_filter_, eMask->data(), G_.num_edges() * sizeof(d_vertex_type),
-             cuda_stream_);
+    cuda_h2d(d_edge_filter_, eMask->data(),
+             G_.num_edges() * sizeof(d_vertex_type), cuda_stream_);
 
     for (vertex_type v = B; v < E; ++v) {
       if (S_.find(v) != S_.end()) continue;
@@ -287,7 +287,7 @@ class HCGPUCountingWorker : public HCWorker<GraphTy, ItrTy, VItrTy> {
     }
   }
 
-  static constexpr size_t batch_size_ = 8;
+  static constexpr size_t batch_size_ = 32;
   config_t conf_;
   cuda_ctx<GraphTy> *ctx_;
   cudaStream_t cuda_stream_;
