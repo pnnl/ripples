@@ -255,7 +255,7 @@ class HCGPUCountingWorker : public HCWorker<GraphTy, ItrTy, VItrTy> {
     cuda_set_device(ctx_->gpu_id);
     std::vector<d_vertex_type> seeds(S_.begin(), S_.end());
     for (auto itr = B; itr < E; ++itr, ++offset) {
-      cuda_h2d(d_edge_filter_, &*itr, G_.num_edges() * sizeof(d_vertex_type),
+      cuda_h2d(d_edge_filter_, itr->data(), G_.num_edges() * sizeof(d_vertex_type),
                cuda_stream_);
 
       d_vertex_type base_count;
@@ -269,7 +269,7 @@ class HCGPUCountingWorker : public HCWorker<GraphTy, ItrTy, VItrTy> {
     cuda_set_device(ctx_->gpu_id);
     std::vector<d_vertex_type> seeds(S_.begin(), S_.end());
 
-    cuda_h2d(d_edge_filter_, &*eMask, G_.num_edges() * sizeof(d_vertex_type),
+    cuda_h2d(d_edge_filter_, eMask->data(), G_.num_edges() * sizeof(d_vertex_type),
              cuda_stream_);
 
     for (vertex_type v = B; v < E; ++v) {

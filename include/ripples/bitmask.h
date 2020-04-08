@@ -50,7 +50,7 @@ namespace ripples {
 template <typename BaseTy>
 class Bitmask {
  public:
-  Bitmask() = default;
+  Bitmask() : size_(0), data_size_(0), data_(nullptr) {}
   Bitmask(const Bitmask &O)
       : size_(O.size_),
         data_size_(O.data_size_),
