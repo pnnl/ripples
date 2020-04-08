@@ -54,8 +54,8 @@ class Bitmask {
   Bitmask(const Bitmask &O)
       : size_(O.size_),
         data_size_(O.data_size_),
-        data_(new BaseTy[data_size_]) {
-    std::memcpy(data_.get(), O.data_.get(), data_size_);
+        data_(new BaseTy[O.data_size_]) {
+    std::memcpy(data_.get(), O.data_.get(), data_size_ * sizeof(BaseTy));
   }
 
   Bitmask(Bitmask &&) = default;
@@ -63,15 +63,15 @@ class Bitmask {
   explicit Bitmask(size_t num_bits)
       : size_(num_bits),
         data_size_((size_ / (8 * sizeof(BaseTy)) + 1)),
-        data_(new BaseTy[data_size_]) {
-    std::memset(data_.get(), 0, data_size_);
+        data_(new BaseTy[(size_ / (8 * sizeof(BaseTy)) + 1)]) {
+    std::memset(data_.get(), 0, data_size_ * sizeof(BaseTy));
   }
 
   Bitmask &operator=(const Bitmask &O) {
     size_ = O.size_;
     data_size_ = O.data_size_;
     data_ = std::unique_ptr<BaseTy[]>(new BaseTy[data_size_]);
-    std::memcpy(data_.get(), O.data_.get(), data_size_);
+    std::memcpy(data_.get(), O.data_.get(), data_size_ * sizeof(BaseTy));
   }
   Bitmask &operator=(Bitmask &&) = default;
 
@@ -81,7 +81,7 @@ class Bitmask {
   }
   bool get(size_t i) const {
     BaseTy m = 1 << (i % (8 * sizeof(BaseTy)));
-    return data_[i / (8 * sizeof(BaseTy))] && m;
+    return data_[i / (8 * sizeof(BaseTy))] & m;
   }
 
   size_t popcount() const {

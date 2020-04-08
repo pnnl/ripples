@@ -140,8 +140,9 @@ class HCCPUCountingWorker : public HCWorker<GraphTy, ItrTy, VItrTy> {
     for (vertex_type v = B; v < E; ++v) {
       if (S_.find(v) != S_.end()) continue;
       long count = base;
-      if (!frontier_cache_[sample_id].get(v))
+      if (!frontier_cache_[sample_id].get(v)) {
         count = BFS(G_, *eMask, v, frontier_cache_[sample_id]);
+      }
       count_[v % count_.size()] += count;
     }
   }
