@@ -124,8 +124,7 @@ class HCCPUSamplingWorker : public HCWorker<GraphTy, ItrTy> {
       if (std::is_same<diff_model_tag, independent_cascade_tag>::value) {
         for (vertex_type v = 0; v < G_.num_nodes(); ++v) {
           for (auto &e : G_.neighbors(v)) {
-            if (UD_(rng_) <= e.weight) (*B)[edge_number] = true;
-
+            (*B)[edge_number] = UD_(rng_) <= e.weight ? 1 : 0;
             ++edge_number;
           }
         }
@@ -134,9 +133,7 @@ class HCCPUSamplingWorker : public HCWorker<GraphTy, ItrTy> {
           double threshold = UD_(rng_);
           for (auto &e : G_.neighbors(v)) {
             threshold -= e.weight;
-            if (threshold <= 0) {
-              (*B)[edge_number] = true;
-            }
+            (*B)[edge_number] = threshold <= 0 ? 1 : 0;
             ++edge_number;
           }
         }
@@ -368,6 +365,7 @@ size_t BFS(GraphTy &G, GraphMaskTy &M, Itr b, Itr e, Bitmask<int> &visited) {
   std::queue<vertex_type> queue;
   for (; b != e; ++b) {
     queue.push(*b);
+    visited.set(*b);
   }
 
   while (!queue.empty()) {
@@ -379,14 +377,14 @@ size_t BFS(GraphTy &G, GraphMaskTy &M, Itr b, Itr e, Bitmask<int> &visited) {
 
     for (auto v : G.neighbors(u)) {
       if (M[edge_number] && !visited.get(v.vertex)) {
+        visited.set(u);
         queue.push(v.vertex);
       }
 
       ++edge_number;
     }
-
-    visited.set(u);
   }
+
   return visited.popcount();
 }
 
@@ -398,6 +396,7 @@ size_t BFS(GraphTy &G, GraphMaskTy &M, typename GraphTy::vertex_type v,
   std::queue<vertex_type> queue;
 
   queue.push(v);
+  visited.set(v);
   while (!queue.empty()) {
     vertex_type u = queue.front();
     queue.pop();
@@ -407,11 +406,10 @@ size_t BFS(GraphTy &G, GraphMaskTy &M, typename GraphTy::vertex_type v,
     for (auto v : G.neighbors(u)) {
       if (M[edge_number] && !visited.get(v.vertex)) {
         queue.push(v.vertex);
+        visited.set(v.vertex);
       }
       ++edge_number;
     }
-
-    visited.set(u);
   }
   return visited.popcount();
 }
