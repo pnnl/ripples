@@ -63,7 +63,7 @@ __global__ void generate_sample_ic_kernel(
   while (pos < num_edges * batch_size) {
     int idx = pos % num_edges;
     typename cuda_device_graph<GraphTy>::weight_t w = weights[idx];
-    d_flag[pos] = u(r) > w ? 1 : 0;
+    d_flag[pos] = u(r) <= w ? 1 : 0;
 
     pos += blockDim.x * gridDim.x;
   }

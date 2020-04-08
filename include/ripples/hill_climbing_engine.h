@@ -124,7 +124,7 @@ class HCCPUSamplingWorker : public HCWorker<GraphTy, ItrTy> {
       if (std::is_same<diff_model_tag, independent_cascade_tag>::value) {
         for (vertex_type v = 0; v < G_.num_nodes(); ++v) {
           for (auto &e : G_.neighbors(v)) {
-            if (UD_(rng_) >= e.weight) (*B)[edge_number] = true;
+            if (UD_(rng_) <= e.weight) (*B)[edge_number] = true;
 
             ++edge_number;
           }
