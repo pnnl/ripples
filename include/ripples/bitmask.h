@@ -72,6 +72,7 @@ class Bitmask {
     data_size_ = O.data_size_;
     data_ = std::unique_ptr<BaseTy[]>(new BaseTy[data_size_]);
     std::memcpy(data_.get(), O.data_.get(), data_size_ * sizeof(BaseTy));
+    return *this;
   }
   Bitmask &operator=(Bitmask &&) = default;
 

@@ -224,7 +224,7 @@ class HCGPUSamplingWorker : public HCWorker<GraphTy, ItrTy> {
     cuda_sync(cuda_stream_);
   }
 
-  static constexpr size_t batch_size_ = 32;
+  static constexpr size_t batch_size_ = 4;
   cuda_ctx<GraphTy> *ctx_;
   config_t conf_;
   PRNGTy master_rng_;

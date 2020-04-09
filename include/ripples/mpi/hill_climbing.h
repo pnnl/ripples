@@ -149,7 +149,7 @@ class HCCPUCountingWorker : public HCWorker<GraphTy, ItrTy, VItrTy> {
     }
   }
 
-  static constexpr size_t batch_size_ = 32;
+  static constexpr size_t batch_size_ = 8;
   std::vector<long> &count_;
   std::vector<Bitmask<int>> &frontier_cache_;
   std::vector<int> &base_counters_;
@@ -274,7 +274,6 @@ class HCGPUCountingWorker : public HCWorker<GraphTy, ItrTy, VItrTy> {
       cuda_sync(cuda_stream_);
     }
   }
-
   void batch_counters(VItrTy B, VItrTy E, size_t sample_id, size_t base_count) {
     cuda_set_device(ctx_->gpu_id);
     std::vector<d_vertex_type> seeds(S_.begin(), S_.end());
@@ -294,7 +293,7 @@ class HCGPUCountingWorker : public HCWorker<GraphTy, ItrTy, VItrTy> {
     }
   }
 
-  static constexpr size_t batch_size_ = 32;
+  static constexpr size_t batch_size_ = 8;
   config_t conf_;
   cuda_ctx<GraphTy> *ctx_;
   cudaStream_t cuda_stream_;
