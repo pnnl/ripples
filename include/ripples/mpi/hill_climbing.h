@@ -69,9 +69,10 @@ class HCWorker {
 
   virtual void build_frontier(std::atomic<size_t> &mpmc_head, ItrTy B, ItrTy E,
                               std::vector<ex_time_ms> &) = 0;
+  virtual void setup_build_counters(ItrTy eMask) = 0;
   virtual void build_counters(std::atomic<size_t> &mpmc_head, VItrTy B,
                               VItrTy E, size_t sample_id, size_t base,
-                              ItrTy eMask, std::vector<ex_time_ms> &) = 0;
+                              std::vector<ex_time_ms> &) = 0;
 
  protected:
   const GraphTy &G_;
@@ -112,8 +113,10 @@ class HCCPUCountingWorker : public HCWorker<GraphTy, ItrTy, VItrTy> {
     }
   }
 
+  void setup_build_counters(ItrTy eMask) { eMask_ = eMask; }
+
   void build_counters(std::atomic<size_t> &mpmc_head, VItrTy B, VItrTy E,
-                      size_t sample_id, size_t base, ItrTy eMask,
+                      size_t sample_id, size_t base,
                       std::vector<ex_time_ms> &record) {
     size_t offset = 0;
     while ((offset = mpmc_head.fetch_add(batch_size_)) < (E - B)) {
@@ -122,7 +125,7 @@ class HCCPUCountingWorker : public HCWorker<GraphTy, ItrTy, VItrTy> {
 
       if (last > E) last = E;
       auto start = std::chrono::high_resolution_clock::now();
-      batch_counters(first, last, sample_id, base, eMask);
+      batch_counters(first, last, sample_id, base);
       auto end = std::chrono::high_resolution_clock::now();
       if (record.size() < 100) record.push_back(end - start);
     }
@@ -135,13 +138,12 @@ class HCCPUCountingWorker : public HCWorker<GraphTy, ItrTy, VItrTy> {
       base_counters_[offset] = frontier_cache_[offset].popcount();
     }
   }
-  void batch_counters(VItrTy B, VItrTy E, size_t sample_id, size_t base,
-                      ItrTy eMask) {
+  void batch_counters(VItrTy B, VItrTy E, size_t sample_id, size_t base) {
     for (vertex_type v = B; v < E; ++v) {
       if (S_.find(v) != S_.end()) continue;
       long count = base;
       if (!frontier_cache_[sample_id].get(v)) {
-        count = BFS(G_, *eMask, v, frontier_cache_[sample_id]);
+        count = BFS(G_, *eMask_, v, frontier_cache_[sample_id]);
       }
       count_[v % count_.size()] += count;
     }
@@ -153,6 +155,7 @@ class HCCPUCountingWorker : public HCWorker<GraphTy, ItrTy, VItrTy> {
   std::vector<int> &base_counters_;
   std::set<vertex_type> &S_;
   std::shared_ptr<spdlog::logger> logger_;
+  ItrTy eMask_;
 };
 
 template <typename GraphTy, typename ItrTy, typename VItrTy>
@@ -235,8 +238,14 @@ class HCGPUCountingWorker : public HCWorker<GraphTy, ItrTy, VItrTy> {
     }
   }
 
+  void setup_build_counters(ItrTy eMask) {
+    cuda_set_device(ctx_->gpu_id);
+    cuda_h2d(d_edge_filter_, eMask->data(),
+             G_.num_edges() * sizeof(d_vertex_type), cuda_stream_);
+  }
+
   void build_counters(std::atomic<size_t> &mpmc_head, VItrTy B, VItrTy E,
-                      size_t sample_id, size_t base, ItrTy eMask,
+                      size_t sample_id, size_t base,
                       std::vector<ex_time_ms> &record) {
     size_t offset = 0;
     while ((offset = mpmc_head.fetch_add(batch_size_)) < (E - B)) {
@@ -245,7 +254,7 @@ class HCGPUCountingWorker : public HCWorker<GraphTy, ItrTy, VItrTy> {
 
       if (last > E) last = E;
       auto start = std::chrono::high_resolution_clock::now();
-      batch_counters(first, last, sample_id, base, eMask);
+      batch_counters(first, last, sample_id, base);
       auto end = std::chrono::high_resolution_clock::now();
       if (record.size() < 100) record.push_back(end - start);
     }
@@ -265,13 +274,10 @@ class HCGPUCountingWorker : public HCWorker<GraphTy, ItrTy, VItrTy> {
       cuda_sync(cuda_stream_);
     }
   }
-  void batch_counters(VItrTy B, VItrTy E, size_t sample_id, size_t base_count,
-                      ItrTy eMask) {
+
+  void batch_counters(VItrTy B, VItrTy E, size_t sample_id, size_t base_count) {
     cuda_set_device(ctx_->gpu_id);
     std::vector<d_vertex_type> seeds(S_.begin(), S_.end());
-
-    cuda_h2d(d_edge_filter_, eMask->data(),
-             G_.num_edges() * sizeof(d_vertex_type), cuda_stream_);
 
     for (vertex_type v = B; v < E; ++v) {
       if (S_.find(v) != S_.end()) continue;
@@ -427,8 +433,9 @@ class SeedSelectionEngine {
           {
             size_t sample_id = std::distance(B, itr);
             size_t rank = omp_get_thread_num();
+            workers_[rank]->setup_build_counters(itr);
             workers_[rank]->build_counters(mpmc_head_, start, end, sample_id,
-                                           base_counters_[sample_id], itr,
+                                           base_counters_[sample_id],
                                            record_.BuildCountersTasks[i][rank]);
           }
         }
