@@ -285,6 +285,7 @@ class HCGPUCountingWorker : public HCWorker<GraphTy, ItrTy, VItrTy> {
         d_vertex_type count;
         solver_->traverse(v, base_count, frontier_cache_[sample_id].data(),
                           &count);
+        solver_->traverse(v, &count);
         cuda_sync(cuda_stream_);
 
         update_count = count;

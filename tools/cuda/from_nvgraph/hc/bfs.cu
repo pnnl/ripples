@@ -118,8 +118,7 @@ namespace nvgraph {
 
     //Computing isolated_bmap
     //Only dependent on graph - not source vertex - done once
-    flag_isolated_vertices(n, isolated_bmap, row_offsets, vertex_degree,
-                           d_nisolated, dyn_max_blocks, stream);
+    flag_isolated_vertices(n, isolated_bmap, row_offsets, vertex_degree, d_nisolated, stream);
     cudaMemcpyAsync(&nisolated, d_nisolated, sizeof(IndexType), cudaMemcpyDeviceToHost, stream);
     cudaCheckError()
     ;
@@ -160,213 +159,364 @@ namespace nvgraph {
   }
 
   template<typename IndexType>
-  NVGRAPH_ERROR Bfs<IndexType>::traverse(IndexType source_vertex) {
+  NVGRAPH_ERROR Bfs<IndexType>::traverse(IndexType source_vertex, IndexType *num_visited) {
+		//Init visited_bmap
+		//If the graph is undirected, we not that
+		//we will never discover isolated vertices (in degree = out degree = 0)
+		//we avoid a lot of work by flagging them now
+		//in g500 graphs they represent ~25% of total vertices
+		//more than that for wiki and twitter graphs
 
-    //Init visited_bmap
-    //If the graph is undirected, we not that
-    //we will never discover isolated vertices (in degree = out degree = 0)
-    //we avoid a lot of work by flagging them now
-    //in g500 graphs they represent ~25% of total vertices
-    //more than that for wiki and twitter graphs
+		if (directed) {
+			cudaMemsetAsync(visited_bmap, 0, vertices_bmap_size * sizeof(int), stream);
+		} else {
+			cudaMemcpyAsync(	visited_bmap,
+									isolated_bmap,
+									vertices_bmap_size * sizeof(int),
+									cudaMemcpyDeviceToDevice,
+									stream);
+		}
+		cudaCheckError()
+		;
 
-    if (directed) {
-      cudaMemsetAsync(visited_bmap, 0, vertices_bmap_size * sizeof(int), stream);
-    } else {
-      cudaMemcpyAsync(  visited_bmap,
-                  isolated_bmap,
-                  vertices_bmap_size * sizeof(int),
-                  cudaMemcpyDeviceToDevice,
-                  stream);
-    }
-    cudaCheckError()
-    ;
+		//If needed, setting all vertices as undiscovered (inf distance)
+		//We dont use computeDistances here
+		//if the graph is undirected, we may need distances even if
+		//computeDistances is false
+		if (distances)
+			fill_vec(distances, n, vec_t<IndexType>::max, stream);
 
-    //If needed, setting all vertices as undiscovered (inf distance)
-    //We dont use computeDistances here
-    //if the graph is undirected, we may need distances even if
-    //computeDistances is false
-    if (distances)
-      fill_vec(distances, n, vec_t<IndexType>::max, stream);
+		//If needed, setting all predecessors to non-existent (-1)
+		if (computePredecessors)
+		{
+			cudaMemsetAsync(predecessors, -1, n * sizeof(IndexType), stream);
+			cudaCheckError()
+			;
+		}
 
-    //If needed, setting all predecessors to non-existent (-1)
-    if (computePredecessors)
-    {
-      cudaMemsetAsync(predecessors, -1, n * sizeof(IndexType), stream);
-      cudaCheckError()
-      ;
-    }
+		//
+		//Initial frontier
+		//
 
-    //
-    //Initial frontier
-    //
+		frontier = original_frontier;
 
-    frontier = original_frontier;
+		if (distances)
+		{
+			cudaMemsetAsync(&distances[source_vertex], 0, sizeof(IndexType), stream);
+			cudaCheckError()
+			;
+		}
 
-    if (distances)
-    {
-      cudaMemsetAsync(&distances[source_vertex], 0, sizeof(IndexType), stream);
-      cudaCheckError()
-      ;
-    }
+		//Setting source_vertex as visited
+		//There may be bit already set on that bmap (isolated vertices) - if the graph is undirected
+		int current_visited_bmap_source_vert = 0;
 
-    //Setting source_vertex as visited
-    //There may be bit already set on that bmap (isolated vertices) - if the graph is undirected
-    int current_visited_bmap_source_vert = 0;
+		if (!directed) {
+			cudaMemcpyAsync(&current_visited_bmap_source_vert,
+									&visited_bmap[source_vertex / INT_SIZE],
+									sizeof(int),
+									cudaMemcpyDeviceToHost);
+			cudaCheckError()
+			;
+			//We need current_visited_bmap_source_vert
+			cudaStreamSynchronize(stream);
+			cudaCheckError()
+			;
+			//We could detect that source is isolated here
+		}
 
-    if (!directed) {
-      cudaMemcpyAsync(&current_visited_bmap_source_vert,
-                  &visited_bmap[source_vertex / INT_SIZE],
-                  sizeof(int),
-                  cudaMemcpyDeviceToHost);
-      cudaCheckError()
-      ;
-      //We need current_visited_bmap_source_vert
-      cudaStreamSynchronize(stream);
-      cudaCheckError()
-      ;
-      //We could detect that source is isolated here
-    }
+		int m = (1 << (source_vertex % INT_SIZE));
 
-    int m = (1 << (source_vertex % INT_SIZE));
+		//In that case, source is isolated, done now
+		if (!directed && (m & current_visited_bmap_source_vert)) {
+			//Init distances and predecessors are done, (cf Streamsync in previous if)
+			cudaCheckError()
+			;
+			return NVGRAPH_OK;
+		}
 
-    //In that case, source is isolated, done now
-    if (!directed && (m & current_visited_bmap_source_vert)) {
-      //Init distances and predecessors are done, (cf Streamsync in previous if)
-      cudaCheckError()
-      ;
-      return NVGRAPH_OK;
-    }
+		m |= current_visited_bmap_source_vert;
 
-    m |= current_visited_bmap_source_vert;
+		cudaMemcpyAsync(	&visited_bmap[source_vertex / INT_SIZE],
+								&m,
+								sizeof(int),
+								cudaMemcpyHostToDevice,
+								stream);
+		cudaCheckError()
+		;
 
-    cudaMemcpyAsync(  &visited_bmap[source_vertex / INT_SIZE],
-                &m,
-                sizeof(int),
-                cudaMemcpyHostToDevice,
-                stream);
-    cudaCheckError()
-    ;
+		//Adding source_vertex to init frontier
+		cudaMemcpyAsync(	&frontier[0],
+								&source_vertex,
+								sizeof(IndexType),
+								cudaMemcpyHostToDevice,
+								stream);
+		cudaCheckError()
+		;
 
-    //Adding source_vertex to init frontier
-    cudaMemcpyAsync(  &frontier[0],
-                &source_vertex,
-                sizeof(IndexType),
-                cudaMemcpyHostToDevice,
-                stream);
-    cudaCheckError()
-    ;
+		//mf : edges in frontier
+		//nf : vertices in frontier
+		//mu : edges undiscovered
+		//nu : nodes undiscovered
+		//lvl : current frontier's depth
+		IndexType mf, nf, mu, nu;
+		bool growing;
+		IndexType lvl = 1;
 
-    //mf : edges in frontier
-    //nf : vertices in frontier
-    //mu : edges undiscovered
-    //nu : nodes undiscovered
-    //lvl : current frontier's depth
-    IndexType mf, nf, mu, nu;
-    IndexType lvl = 1;
+		//Frontier has one vertex
+		nf = 1;
 
-    //Frontier has one vertex
-    nf = 1;
+		//all edges are undiscovered (by def isolated vertices have 0 edges)
+		mu = nnz;
 
-    //all edges are undiscovered (by def isolated vertices have 0 edges)
-    mu = nnz;
+		//all non isolated vertices are undiscovered (excepted source vertex, which is in frontier)
+		//That number is wrong if source_vertex is also isolated - but it's not important
+		nu = n - nisolated - nf;
 
-    //all non isolated vertices are undiscovered (excepted source vertex, which is in frontier)
-    //That number is wrong if source_vertex is also isolated - but it's not important
-    nu = n - nisolated - nf;
+		//Last frontier was 0, now it is 1
+		growing = true;
 
-    //Typical pre-top down workflow. set_frontier_degree + exclusive-scan
-    set_frontier_degree(frontier_vertex_degree, frontier, vertex_degree, nf,
-                        dyn_max_blocks, stream);
-    exclusive_sum(  d_cub_exclusive_sum_storage,
-              cub_exclusive_sum_storage_bytes,
-              frontier_vertex_degree,
-              exclusive_sum_frontier_vertex_degree,
-              nf + 1,
-              stream);
+		IndexType size_last_left_unvisited_queue = n; //we just need value > 0
+		IndexType size_last_unvisited_queue = 0; //queue empty
 
-    cudaMemcpyAsync(  &mf,
-                &exclusive_sum_frontier_vertex_degree[nf],
-                sizeof(IndexType),
-                cudaMemcpyDeviceToHost,
-                stream);
-    cudaCheckError()
-    ;
+		//Typical pre-top down workflow. set_frontier_degree + exclusive-scan
+		set_frontier_degree(frontier_vertex_degree, frontier, vertex_degree, nf, stream);
+		exclusive_sum(	d_cub_exclusive_sum_storage,
+							cub_exclusive_sum_storage_bytes,
+							frontier_vertex_degree,
+							exclusive_sum_frontier_vertex_degree,
+							nf + 1,
+							stream);
 
-    //We need mf
-    cudaStreamSynchronize(stream);
-    cudaCheckError()
-    ;
+		cudaMemcpyAsync(	&mf,
+								&exclusive_sum_frontier_vertex_degree[nf],
+								sizeof(IndexType),
+								cudaMemcpyDeviceToHost,
+								stream);
+		cudaCheckError()
+		;
 
-    while (nf > 0) {
-      // Each vertices can appear only once in the frontierer array - we know it
-      // will fit
-      new_frontier = frontier + nf;
-      resetDevicePointers();
+		//We need mf
+		cudaStreamSynchronize(stream);
+		cudaCheckError()
+		;
 
-      // Executing algo
-      compute_bucket_offsets(exclusive_sum_frontier_vertex_degree,
-                             exclusive_sum_frontier_vertex_buckets_offsets, nf,
-                             mf, dyn_max_blocks, stream);
+		//At first we know we have to use top down
+		BFS_ALGO_STATE algo_state = TOPDOWN;
 
-#if CUDA_CHECK
-      if (mf) {
-        auto block_size = frontier_expand_block_size<IndexType>();
-        IndexType max_items_per_thread =
-            (mf + dyn_max_blocks * block_size - 1) / (dyn_max_blocks * block_size);
-        auto num_blocks = min((mf + max_items_per_thread * block_size - 1) /
-                                  (max_items_per_thread * block_size),
-                              dyn_max_blocks);
-        auto max_num_threads =
-          dyn_max_blocks * frontier_expand_block_size<IndexType>();
-        assert(block_size * num_blocks <= max_num_threads);
-      }
-#endif
+		//useDistances : we check if a vertex is a parent using distances in bottom up - distances become working data
+		//undirected g : need parents to be in children's neighbors
+		bool can_use_bottom_up = !directed && distances;
 
-      frontier_expand(row_offsets, col_indices, weights, frontier, nf, mf, lvl,
-                      new_frontier, d_new_frontier_cnt,
-                      exclusive_sum_frontier_vertex_degree,
-                      exclusive_sum_frontier_vertex_buckets_offsets,
-                      visited_bmap, distances, predecessors, edge_mask,
-                      isolated_bmap, directed, dyn_max_blocks, stream,
-                      deterministic);
+		while (nf > 0) {
+			//Each vertices can appear only once in the frontierer array - we know it will fit
+			new_frontier = frontier + nf;
+			IndexType old_nf = nf;
+			resetDevicePointers();
 
-      mu -= mf;
+			if (can_use_bottom_up) {
+				//Choosing algo
+				//Finite machine described in http://parlab.eecs.berkeley.edu/sites/all/parlab/files/main.pdf
 
-      cudaMemcpyAsync(&nf, d_new_frontier_cnt, sizeof(IndexType),
-                      cudaMemcpyDeviceToHost, stream);
-      cudaCheckError();
+				switch (algo_state) {
+				case TOPDOWN:
+					if (mf > mu / alpha)
+						algo_state = BOTTOMUP;
+					break;
+				case BOTTOMUP:
+					if (!growing && nf < n / beta) {
 
-      // We need nf
-      cudaStreamSynchronize(stream);
-      cudaCheckError();
+						//We need to prepare the switch back to top down
+						//We couldnt keep track of mu during bottom up - because we dont know what mf is. Computing mu here
+						count_unvisited_edges(	unvisited_queue,
+														size_last_unvisited_queue,
+														visited_bmap,
+														vertex_degree,
+														d_mu,
+														stream);
 
-      if (nf) {
-        // Typical pre-top down workflow. set_frontier_degree + exclusive-scan
-        set_frontier_degree(frontier_vertex_degree, new_frontier, vertex_degree,
-                            nf, dyn_max_blocks, stream);
-        exclusive_sum(d_cub_exclusive_sum_storage,
-                      cub_exclusive_sum_storage_bytes, frontier_vertex_degree,
-                      exclusive_sum_frontier_vertex_degree, nf + 1, stream);
-        cudaMemcpyAsync(&mf, &exclusive_sum_frontier_vertex_degree[nf],
-                        sizeof(IndexType), cudaMemcpyDeviceToHost, stream);
-        cudaCheckError();
+						//Typical pre-top down workflow. set_frontier_degree + exclusive-scan
+						set_frontier_degree(frontier_vertex_degree, frontier, vertex_degree, nf, stream);
+						exclusive_sum(	d_cub_exclusive_sum_storage,
+											cub_exclusive_sum_storage_bytes,
+											frontier_vertex_degree,
+											exclusive_sum_frontier_vertex_degree,
+											nf + 1,
+											stream);
 
-        // We need mf
-        cudaStreamSynchronize(stream);
-        cudaCheckError();
-      }
+						cudaMemcpyAsync(	&mf,
+												&exclusive_sum_frontier_vertex_degree[nf],
+												sizeof(IndexType),
+												cudaMemcpyDeviceToHost,
+												stream);
+						cudaCheckError()
+						;
 
-      // Updating undiscovered edges count
-      nu -= nf;
+						cudaMemcpyAsync(&mu, d_mu, sizeof(IndexType), cudaMemcpyDeviceToHost, stream);
+						cudaCheckError()
+						;
 
-      // Using new frontier
-      frontier = new_frontier;
+						//We will need mf and mu
+						cudaStreamSynchronize(stream);
+						cudaCheckError()
+						;
 
-      ++lvl;
-    }
+						algo_state = TOPDOWN;
+					}
+					break;
+				}
+			}
 
-    cudaCheckError()
-    ;
+			//Executing algo
+
+			switch (algo_state) {
+			case TOPDOWN:
+				compute_bucket_offsets(	exclusive_sum_frontier_vertex_degree,
+												exclusive_sum_frontier_vertex_buckets_offsets,
+												nf,
+												mf,
+												stream);
+				frontier_expand(	row_offsets,
+										col_indices,
+										frontier,
+										nf,
+										mf,
+										lvl,
+										new_frontier,
+										d_new_frontier_cnt,
+										exclusive_sum_frontier_vertex_degree,
+										exclusive_sum_frontier_vertex_buckets_offsets,
+										visited_bmap,
+										distances,
+										predecessors,
+										edge_mask,
+										isolated_bmap,
+										directed,
+										stream,
+										deterministic);
+
+				mu -= mf;
+
+				cudaMemcpyAsync(	&nf,
+										d_new_frontier_cnt,
+										sizeof(IndexType),
+										cudaMemcpyDeviceToHost,
+										stream);
+				cudaCheckError();
+
+				//We need nf
+				cudaStreamSynchronize(stream);
+				cudaCheckError();
+
+				if (nf) {
+
+					//Typical pre-top down workflow. set_frontier_degree + exclusive-scan
+					set_frontier_degree(frontier_vertex_degree, new_frontier, vertex_degree, nf, stream);
+					exclusive_sum(	d_cub_exclusive_sum_storage,
+										cub_exclusive_sum_storage_bytes,
+										frontier_vertex_degree,
+										exclusive_sum_frontier_vertex_degree,
+										nf + 1,
+										stream);
+					cudaMemcpyAsync(	&mf,
+											&exclusive_sum_frontier_vertex_degree[nf],
+											sizeof(IndexType),
+											cudaMemcpyDeviceToHost,
+											stream);
+					cudaCheckError()
+					;
+
+					//We need mf
+					cudaStreamSynchronize(stream);
+					cudaCheckError()
+					;
+				}
+				break;
+
+			case BOTTOMUP:
+				fill_unvisited_queue(visited_bmap,
+											vertices_bmap_size,
+											n,
+											unvisited_queue,
+											d_unvisited_cnt,
+											stream,
+											deterministic);
+
+				size_last_unvisited_queue = nu;
+
+				bottom_up_main(unvisited_queue,
+									size_last_unvisited_queue,
+									left_unvisited_queue,
+									d_left_unvisited_cnt,
+									visited_bmap,
+									row_offsets,
+									col_indices,
+									lvl,
+									new_frontier,
+									d_new_frontier_cnt,
+									distances,
+									predecessors,
+									edge_mask,
+									stream,
+									deterministic);
+
+				//The number of vertices left unvisited decreases
+				//If it wasnt necessary last time, it wont be this time
+				if (size_last_left_unvisited_queue) {
+					cudaMemcpyAsync(	&size_last_left_unvisited_queue,
+											d_left_unvisited_cnt,
+											sizeof(IndexType),
+											cudaMemcpyDeviceToHost,
+											stream);
+					cudaCheckError()
+					;
+					//We need last_left_unvisited_size
+					cudaStreamSynchronize(stream);
+					cudaCheckError()
+					;
+					bottom_up_large(	left_unvisited_queue,
+											size_last_left_unvisited_queue,
+											visited_bmap,
+											row_offsets,
+											col_indices,
+											lvl,
+											new_frontier,
+											d_new_frontier_cnt,
+											distances,
+											predecessors,
+											edge_mask,
+											stream,
+											deterministic);
+				}
+				cudaMemcpyAsync(	&nf,
+										d_new_frontier_cnt,
+										sizeof(IndexType),
+										cudaMemcpyDeviceToHost,
+										stream);
+				cudaCheckError()
+				;
+
+				//We will need nf
+				cudaStreamSynchronize(stream);
+				cudaCheckError()
+				;
+
+				break;
+			}
+
+			//Updating undiscovered edges count
+			nu -= nf;
+
+			//Using new frontier
+			frontier = new_frontier;
+			growing = (nf > old_nf);
+
+			++lvl;
+		}
+
+		cudaCheckError()
+		;
+    *num_visited = n - nu;
     return NVGRAPH_OK;
   }
 
@@ -401,154 +551,343 @@ namespace nvgraph {
     cudaCheckError()
       ;
 
-    //If needed, setting all vertices as undiscovered (inf distance)
-    //We dont use computeDistances here
-    //if the graph is undirected, we may need distances even if
-    //computeDistances is false
-    if (distances)
-      fill_vec(distances, n, vec_t<IndexType>::max, stream);
+		//If needed, setting all vertices as undiscovered (inf distance)
+		//We dont use computeDistances here
+		//if the graph is undirected, we may need distances even if
+		//computeDistances is false
+		if (distances)
+			fill_vec(distances, n, vec_t<IndexType>::max, stream);
 
-    //If needed, setting all predecessors to non-existent (-1)
-    if (computePredecessors)
-    {
-      cudaMemsetAsync(predecessors, -1, n * sizeof(IndexType), stream);
-      cudaCheckError()
-      ;
-    }
+		//If needed, setting all predecessors to non-existent (-1)
+		if (computePredecessors)
+		{
+			cudaMemsetAsync(predecessors, -1, n * sizeof(IndexType), stream);
+			cudaCheckError()
+			;
+		}
 
-    //
-    //Initial frontier
-    //
+		//
+		//Initial frontier
+		//
 
-    frontier = original_frontier;
+		frontier = original_frontier;
 
-    if (distances)
-    {
-      cudaMemsetAsync(&distances[source_vertex], 0, sizeof(IndexType), stream);
-      cudaCheckError()
-      ;
-    }
+		if (distances)
+		{
+			cudaMemsetAsync(&distances[source_vertex], 0, sizeof(IndexType), stream);
+			cudaCheckError()
+			;
+		}
 
-    //Adding source_vertex to init frontier
-    cudaMemcpyAsync(  &frontier[0],
-                &source_vertex,
-                sizeof(IndexType),
-                cudaMemcpyHostToDevice,
-                stream);
-    cudaCheckError()
-    ;
+		//Setting source_vertex as visited
+		//There may be bit already set on that bmap (isolated vertices) - if the graph is undirected
+		int current_visited_bmap_source_vert = 0;
 
-    //mf : edges in frontier
-    //nf : vertices in frontier
-    //mu : edges undiscovered
-    //nu : nodes undiscovered
-    //lvl : current frontier's depth
-    IndexType mf, nf, mu, nu;
-    IndexType lvl = 1;
+		if (!directed) {
+			cudaMemcpyAsync(&current_visited_bmap_source_vert,
+									&visited_bmap[source_vertex / INT_SIZE],
+									sizeof(int),
+									cudaMemcpyDeviceToHost);
+			cudaCheckError()
+			;
+			//We need current_visited_bmap_source_vert
+			cudaStreamSynchronize(stream);
+			cudaCheckError()
+			;
+			//We could detect that source is isolated here
+		}
 
-    //Frontier has one vertex
-    nf = 1;
+		m = (1 << (source_vertex % INT_SIZE));
 
-    //all edges are undiscovered (by def isolated vertices have 0 edges)
-    mu = nnz;
+		//In that case, source is isolated, done now
+		if (!directed && (m & current_visited_bmap_source_vert)) {
+			//Init distances and predecessors are done, (cf Streamsync in previous if)
+			cudaCheckError()
+			;
+			return NVGRAPH_OK;
+		}
 
-    //all non isolated vertices are undiscovered (excepted source vertex, which is in frontier)
-    //That number is wrong if source_vertex is also isolated - but it's not important
-    nu = n - nisolated - nf - base_count;
+		m |= current_visited_bmap_source_vert;
 
-    //Typical pre-top down workflow. set_frontier_degree + exclusive-scan
-    set_frontier_degree(frontier_vertex_degree, frontier, vertex_degree, nf,
-                        dyn_max_blocks, stream);
-    exclusive_sum(  d_cub_exclusive_sum_storage,
-              cub_exclusive_sum_storage_bytes,
-              frontier_vertex_degree,
-              exclusive_sum_frontier_vertex_degree,
-              nf + 1,
-              stream);
+		cudaMemcpyAsync(	&visited_bmap[source_vertex / INT_SIZE],
+								&m,
+								sizeof(int),
+								cudaMemcpyHostToDevice,
+								stream);
+		cudaCheckError()
+		;
 
-    cudaMemcpyAsync(  &mf,
-                &exclusive_sum_frontier_vertex_degree[nf],
-                sizeof(IndexType),
-                cudaMemcpyDeviceToHost,
-                stream);
-    cudaCheckError()
-    ;
+		//Adding source_vertex to init frontier
+		cudaMemcpyAsync(	&frontier[0],
+								&source_vertex,
+								sizeof(IndexType),
+								cudaMemcpyHostToDevice,
+								stream);
+		cudaCheckError()
+		;
 
-    //We need mf
-    cudaStreamSynchronize(stream);
-    cudaCheckError()
-    ;
+		//mf : edges in frontier
+		//nf : vertices in frontier
+		//mu : edges undiscovered
+		//nu : nodes undiscovered
+		//lvl : current frontier's depth
+		IndexType mf, nf, mu, nu;
+		bool growing;
+		IndexType lvl = 1;
 
-    while (nf > 0) {
-      // Each vertices can appear only once in the frontierer array - we know it
-      // will fit
-      new_frontier = frontier + nf;
-      resetDevicePointers();
+		//Frontier has one vertex
+		nf = 1;
 
-      // Executing algo
-      compute_bucket_offsets(exclusive_sum_frontier_vertex_degree,
-                             exclusive_sum_frontier_vertex_buckets_offsets, nf,
-                             mf, dyn_max_blocks, stream);
+		//all edges are undiscovered (by def isolated vertices have 0 edges)
+		mu = nnz;
 
-#if CUDA_CHECK
-      if (mf) {
-        auto block_size = frontier_expand_block_size<IndexType>();
-        IndexType max_items_per_thread =
-            (mf + dyn_max_blocks * block_size - 1) / (dyn_max_blocks * block_size);
-        auto num_blocks = min((mf + max_items_per_thread * block_size - 1) /
-                                  (max_items_per_thread * block_size),
-                              dyn_max_blocks);
-        auto max_num_threads =
-          dyn_max_blocks * frontier_expand_block_size<IndexType>();
-        assert(block_size * num_blocks <= max_num_threads);
-      }
-#endif
+		//all non isolated vertices are undiscovered (excepted source vertex, which is in frontier)
+		//That number is wrong if source_vertex is also isolated - but it's not important
+		nu = n - nisolated - nf - base_count;
 
-      frontier_expand(row_offsets, col_indices, weights, frontier, nf, mf, lvl,
-                      new_frontier, d_new_frontier_cnt,
-                      exclusive_sum_frontier_vertex_degree,
-                      exclusive_sum_frontier_vertex_buckets_offsets,
-                      visited_bmap, distances, predecessors, edge_mask,
-                      isolated_bmap, directed, dyn_max_blocks, stream,
-                      deterministic);
+		//Last frontier was 0, now it is 1
+		growing = true;
 
-      mu -= mf;
+		IndexType size_last_left_unvisited_queue = n; //we just need value > 0
+		IndexType size_last_unvisited_queue = 0; //queue empty
 
-      cudaMemcpyAsync(&nf, d_new_frontier_cnt, sizeof(IndexType),
-                      cudaMemcpyDeviceToHost, stream);
-      cudaCheckError();
+		//Typical pre-top down workflow. set_frontier_degree + exclusive-scan
+		set_frontier_degree(frontier_vertex_degree, frontier, vertex_degree, nf, stream);
+		exclusive_sum(	d_cub_exclusive_sum_storage,
+							cub_exclusive_sum_storage_bytes,
+							frontier_vertex_degree,
+							exclusive_sum_frontier_vertex_degree,
+							nf + 1,
+							stream);
 
-      // We need nf
-      cudaStreamSynchronize(stream);
-      cudaCheckError();
+		cudaMemcpyAsync(	&mf,
+								&exclusive_sum_frontier_vertex_degree[nf],
+								sizeof(IndexType),
+								cudaMemcpyDeviceToHost,
+								stream);
+		cudaCheckError()
+		;
 
-      if (nf) {
-        // Typical pre-top down workflow. set_frontier_degree + exclusive-scan
-        set_frontier_degree(frontier_vertex_degree, new_frontier, vertex_degree,
-                            nf, dyn_max_blocks, stream);
-        exclusive_sum(d_cub_exclusive_sum_storage,
-                      cub_exclusive_sum_storage_bytes, frontier_vertex_degree,
-                      exclusive_sum_frontier_vertex_degree, nf + 1, stream);
-        cudaMemcpyAsync(&mf, &exclusive_sum_frontier_vertex_degree[nf],
-                        sizeof(IndexType), cudaMemcpyDeviceToHost, stream);
-        cudaCheckError();
+		//We need mf
+		cudaStreamSynchronize(stream);
+		cudaCheckError()
+		;
 
-        // We need mf
-        cudaStreamSynchronize(stream);
-        cudaCheckError();
-      }
+		//At first we know we have to use top down
+		BFS_ALGO_STATE algo_state = TOPDOWN;
 
-      // Updating undiscovered edges count
-      nu -= nf;
+		//useDistances : we check if a vertex is a parent using distances in bottom up - distances become working data
+		//undirected g : need parents to be in children's neighbors
+		bool can_use_bottom_up = !directed && distances;
 
-      // Using new frontier
-      frontier = new_frontier;
+		while (nf > 0) {
+			//Each vertices can appear only once in the frontierer array - we know it will fit
+			new_frontier = frontier + nf;
+			IndexType old_nf = nf;
+			resetDevicePointers();
 
-      ++lvl;
-    }
+			if (can_use_bottom_up) {
+				//Choosing algo
+				//Finite machine described in http://parlab.eecs.berkeley.edu/sites/all/parlab/files/main.pdf
 
-    cudaCheckError()
-    ;
+				switch (algo_state) {
+				case TOPDOWN:
+					if (mf > mu / alpha)
+						algo_state = BOTTOMUP;
+					break;
+				case BOTTOMUP:
+					if (!growing && nf < n / beta) {
+
+						//We need to prepare the switch back to top down
+						//We couldnt keep track of mu during bottom up - because we dont know what mf is. Computing mu here
+						count_unvisited_edges(	unvisited_queue,
+														size_last_unvisited_queue,
+														visited_bmap,
+														vertex_degree,
+														d_mu,
+														stream);
+
+						//Typical pre-top down workflow. set_frontier_degree + exclusive-scan
+						set_frontier_degree(frontier_vertex_degree, frontier, vertex_degree, nf, stream);
+						exclusive_sum(	d_cub_exclusive_sum_storage,
+											cub_exclusive_sum_storage_bytes,
+											frontier_vertex_degree,
+											exclusive_sum_frontier_vertex_degree,
+											nf + 1,
+											stream);
+
+						cudaMemcpyAsync(	&mf,
+												&exclusive_sum_frontier_vertex_degree[nf],
+												sizeof(IndexType),
+												cudaMemcpyDeviceToHost,
+												stream);
+						cudaCheckError()
+						;
+
+						cudaMemcpyAsync(&mu, d_mu, sizeof(IndexType), cudaMemcpyDeviceToHost, stream);
+						cudaCheckError()
+						;
+
+						//We will need mf and mu
+						cudaStreamSynchronize(stream);
+						cudaCheckError()
+						;
+
+						algo_state = TOPDOWN;
+					}
+					break;
+				}
+			}
+
+			//Executing algo
+
+			switch (algo_state) {
+			case TOPDOWN:
+				compute_bucket_offsets(	exclusive_sum_frontier_vertex_degree,
+												exclusive_sum_frontier_vertex_buckets_offsets,
+												nf,
+												mf,
+												stream);
+				frontier_expand(	row_offsets,
+										col_indices,
+										frontier,
+										nf,
+										mf,
+										lvl,
+										new_frontier,
+										d_new_frontier_cnt,
+										exclusive_sum_frontier_vertex_degree,
+										exclusive_sum_frontier_vertex_buckets_offsets,
+										visited_bmap,
+										distances,
+										predecessors,
+										edge_mask,
+										isolated_bmap,
+										directed,
+										stream,
+										deterministic);
+
+				mu -= mf;
+
+				cudaMemcpyAsync(	&nf,
+										d_new_frontier_cnt,
+										sizeof(IndexType),
+										cudaMemcpyDeviceToHost,
+										stream);
+				cudaCheckError();
+
+				//We need nf
+				cudaStreamSynchronize(stream);
+				cudaCheckError();
+
+				if (nf) {
+
+					//Typical pre-top down workflow. set_frontier_degree + exclusive-scan
+					set_frontier_degree(frontier_vertex_degree, new_frontier, vertex_degree, nf, stream);
+					exclusive_sum(	d_cub_exclusive_sum_storage,
+										cub_exclusive_sum_storage_bytes,
+										frontier_vertex_degree,
+										exclusive_sum_frontier_vertex_degree,
+										nf + 1,
+										stream);
+					cudaMemcpyAsync(	&mf,
+											&exclusive_sum_frontier_vertex_degree[nf],
+											sizeof(IndexType),
+											cudaMemcpyDeviceToHost,
+											stream);
+					cudaCheckError()
+					;
+
+					//We need mf
+					cudaStreamSynchronize(stream);
+					cudaCheckError()
+					;
+				}
+				break;
+
+			case BOTTOMUP:
+				fill_unvisited_queue(visited_bmap,
+											vertices_bmap_size,
+											n,
+											unvisited_queue,
+											d_unvisited_cnt,
+											stream,
+											deterministic);
+
+				size_last_unvisited_queue = nu;
+
+				bottom_up_main(unvisited_queue,
+									size_last_unvisited_queue,
+									left_unvisited_queue,
+									d_left_unvisited_cnt,
+									visited_bmap,
+									row_offsets,
+									col_indices,
+									lvl,
+									new_frontier,
+									d_new_frontier_cnt,
+									distances,
+									predecessors,
+									edge_mask,
+									stream,
+									deterministic);
+
+				//The number of vertices left unvisited decreases
+				//If it wasnt necessary last time, it wont be this time
+				if (size_last_left_unvisited_queue) {
+					cudaMemcpyAsync(	&size_last_left_unvisited_queue,
+											d_left_unvisited_cnt,
+											sizeof(IndexType),
+											cudaMemcpyDeviceToHost,
+											stream);
+					cudaCheckError()
+					;
+					//We need last_left_unvisited_size
+					cudaStreamSynchronize(stream);
+					cudaCheckError()
+					;
+					bottom_up_large(	left_unvisited_queue,
+											size_last_left_unvisited_queue,
+											visited_bmap,
+											row_offsets,
+											col_indices,
+											lvl,
+											new_frontier,
+											d_new_frontier_cnt,
+											distances,
+											predecessors,
+											edge_mask,
+											stream,
+											deterministic);
+				}
+				cudaMemcpyAsync(	&nf,
+										d_new_frontier_cnt,
+										sizeof(IndexType),
+										cudaMemcpyDeviceToHost,
+										stream);
+				cudaCheckError()
+				;
+
+				//We will need nf
+				cudaStreamSynchronize(stream);
+				cudaCheckError()
+				;
+
+				break;
+			}
+
+			//Updating undiscovered edges count
+			nu -= nf;
+
+			//Using new frontier
+			frontier = new_frontier;
+			growing = (nf > old_nf);
+
+			++lvl;
+		}
+
+		cudaCheckError()
+		;
     *num_visited = n - nu;
     return NVGRAPH_OK;
   }
@@ -556,8 +895,9 @@ namespace nvgraph {
   //Just used for benchmarks now
   template<typename IndexType>
   NVGRAPH_ERROR Bfs<IndexType>::traverse(IndexType *source_vertices, IndexType nsources) {
+    IndexType v;
     for (IndexType i = 0; i < nsources; ++i)
-      traverse(source_vertices[i]);
+      traverse(source_vertices[i], &v);
 
     return NVGRAPH_OK;
   }
@@ -571,39 +911,39 @@ namespace nvgraph {
       return NVGRAPH_OK;
     }
 
-    //Init visited_bmap
-    //If the graph is undirected, we not that
-    //we will never discover isolated vertices (in degree = out degree = 0)
-    //we avoid a lot of work by flagging them now
-    //in g500 graphs they represent ~25% of total vertices
-    //more than that for wiki and twitter graphs
+		//Init visited_bmap
+		//If the graph is undirected, we not that
+		//we will never discover isolated vertices (in degree = out degree = 0)
+		//we avoid a lot of work by flagging them now
+		//in g500 graphs they represent ~25% of total vertices
+		//more than that for wiki and twitter graphs
 
-    if (directed) {
-      cudaMemsetAsync(visited_bmap, 0, vertices_bmap_size * sizeof(int), stream);
-    } else {
-      cudaMemcpyAsync(  visited_bmap,
-                  isolated_bmap,
-                  vertices_bmap_size * sizeof(int),
-                  cudaMemcpyDeviceToDevice,
-                  stream);
-    }
-    cudaCheckError()
-    ;
+		if (directed) {
+			cudaMemsetAsync(visited_bmap, 0, vertices_bmap_size * sizeof(int), stream);
+		} else {
+			cudaMemcpyAsync(	visited_bmap,
+									isolated_bmap,
+									vertices_bmap_size * sizeof(int),
+									cudaMemcpyDeviceToDevice,
+									stream);
+		}
+		cudaCheckError()
+		;
 
-    //If needed, setting all vertices as undiscovered (inf distance)
-    //We dont use computeDistances here
-    //if the graph is undirected, we may need distances even if
-    //computeDistances is false
-    if (distances)
-      fill_vec(distances, n, vec_t<IndexType>::max, stream);
+		//If needed, setting all vertices as undiscovered (inf distance)
+		//We dont use computeDistances here
+		//if the graph is undirected, we may need distances even if
+		//computeDistances is false
+		if (distances)
+			fill_vec(distances, n, vec_t<IndexType>::max, stream);
 
-    //If needed, setting all predecessors to non-existent (-1)
-    if (computePredecessors)
-    {
-      cudaMemsetAsync(predecessors, -1, n * sizeof(IndexType), stream);
-      cudaCheckError()
-      ;
-    }
+		//If needed, setting all predecessors to non-existent (-1)
+		if (computePredecessors)
+		{
+			cudaMemsetAsync(predecessors, -1, n * sizeof(IndexType), stream);
+			cudaCheckError()
+			;
+		}
 
     //
     //Initial frontier
@@ -668,131 +1008,269 @@ namespace nvgraph {
                       stream);
     cudaCheckError()
       ;
-    //mf : edges in frontier
-    //nf : vertices in frontier
-    //mu : edges undiscovered
-    //nu : nodes undiscovered
-    //lvl : current frontier's depth
-    IndexType mf, nf, mu, nu;
-    IndexType lvl = 1;
+		//mf : edges in frontier
+		//nf : vertices in frontier
+		//mu : edges undiscovered
+		//nu : nodes undiscovered
+		//lvl : current frontier's depth
+		IndexType mf, nf, mu, nu;
+		bool growing;
+		IndexType lvl = 1;
 
-    //Frontier has one vertex
-    nf = nsources;
+		//Frontier has one vertex
+		nf = nsources;
 
-    //all edges are undiscovered (by def isolated vertices have 0 edges)
-    mu = nnz;
+		//all edges are undiscovered (by def isolated vertices have 0 edges)
+		mu = nnz;
 
-    //all non isolated vertices are undiscovered (excepted source vertex, which is in frontier)
-    //That number is wrong if source_vertex is also isolated - but it's not important
-    nu = n - nisolated - nf;
+		//all non isolated vertices are undiscovered (excepted source vertex, which is in frontier)
+		//That number is wrong if source_vertex is also isolated - but it's not important
+		nu = n - nisolated - nf;
 
-    //Typical pre-top down workflow. set_frontier_degree + exclusive-scan
-    set_frontier_degree(frontier_vertex_degree, frontier, vertex_degree, nf,
-                        dyn_max_blocks, stream);
-    exclusive_sum(  d_cub_exclusive_sum_storage,
-              cub_exclusive_sum_storage_bytes,
-              frontier_vertex_degree,
-              exclusive_sum_frontier_vertex_degree,
-              nf + 1,
-              stream);
+		//Last frontier was 0, now it is 1
+		growing = true;
 
-    cudaMemcpyAsync(  &mf,
-                &exclusive_sum_frontier_vertex_degree[nf],
-                sizeof(IndexType),
-                cudaMemcpyDeviceToHost,
-                stream);
-    cudaCheckError()
-    ;
+		IndexType size_last_left_unvisited_queue = n; //we just need value > 0
+		IndexType size_last_unvisited_queue = 0; //queue empty
 
-    //We need mf
-    cudaStreamSynchronize(stream);
-    cudaCheckError()
-    ;
+		//Typical pre-top down workflow. set_frontier_degree + exclusive-scan
+		set_frontier_degree(frontier_vertex_degree, frontier, vertex_degree, nf, stream);
+		exclusive_sum(	d_cub_exclusive_sum_storage,
+							cub_exclusive_sum_storage_bytes,
+							frontier_vertex_degree,
+							exclusive_sum_frontier_vertex_degree,
+							nf + 1,
+							stream);
 
-    while (nf > 0) {
-      // Each vertices can appear only once in the frontierer array - we know it
-      // will fit
-      new_frontier = frontier + nf;
-      resetDevicePointers();
+		cudaMemcpyAsync(	&mf,
+								&exclusive_sum_frontier_vertex_degree[nf],
+								sizeof(IndexType),
+								cudaMemcpyDeviceToHost,
+								stream);
+		cudaCheckError()
+		;
 
-      // Executing algo
-      compute_bucket_offsets(exclusive_sum_frontier_vertex_degree,
-                             exclusive_sum_frontier_vertex_buckets_offsets, nf,
-                             mf, dyn_max_blocks, stream);
+		//We need mf
+		cudaStreamSynchronize(stream);
+		cudaCheckError()
+		;
 
-#if CUDA_CHECK
-      if (mf) {
-        auto block_size = frontier_expand_block_size<IndexType>();
-        IndexType max_items_per_thread =
-            (mf + dyn_max_blocks * block_size - 1) / (dyn_max_blocks * block_size);
-        auto num_blocks = min((mf + max_items_per_thread * block_size - 1) /
-                                  (max_items_per_thread * block_size),
-                              dyn_max_blocks);
-        auto max_num_threads =
-          dyn_max_blocks * frontier_expand_block_size<IndexType>();
-        assert(block_size * num_blocks <= max_num_threads);
-      }
-#endif
+		//At first we know we have to use top down
+		BFS_ALGO_STATE algo_state = TOPDOWN;
 
-      frontier_expand(row_offsets, col_indices, weights, frontier, nf, mf, lvl,
-                      new_frontier, d_new_frontier_cnt,
-                      exclusive_sum_frontier_vertex_degree,
-                      exclusive_sum_frontier_vertex_buckets_offsets,
-                      visited_bmap, distances, predecessors, edge_mask,
-                      isolated_bmap, directed, dyn_max_blocks, stream,
-                      deterministic);
+		//useDistances : we check if a vertex is a parent using distances in bottom up - distances become working data
+		//undirected g : need parents to be in children's neighbors
+		bool can_use_bottom_up = !directed && distances;
 
-      mu -= mf;
+		while (nf > 0) {
+			//Each vertices can appear only once in the frontierer array - we know it will fit
+			new_frontier = frontier + nf;
+			IndexType old_nf = nf;
+			resetDevicePointers();
 
-      cudaMemcpyAsync(&nf, d_new_frontier_cnt, sizeof(IndexType),
-                      cudaMemcpyDeviceToHost, stream);
-      cudaCheckError();
+			if (can_use_bottom_up) {
+				//Choosing algo
+				//Finite machine described in http://parlab.eecs.berkeley.edu/sites/all/parlab/files/main.pdf
 
-      // We need nf
-      cudaStreamSynchronize(stream);
-      cudaCheckError();
+				switch (algo_state) {
+				case TOPDOWN:
+					if (mf > mu / alpha)
+						algo_state = BOTTOMUP;
+					break;
+				case BOTTOMUP:
+					if (!growing && nf < n / beta) {
 
-      if (nf) {
-        // Typical pre-top down workflow. set_frontier_degree + exclusive-scan
-        set_frontier_degree(frontier_vertex_degree, new_frontier, vertex_degree,
-                            nf, dyn_max_blocks, stream);
-        exclusive_sum(d_cub_exclusive_sum_storage,
-                      cub_exclusive_sum_storage_bytes, frontier_vertex_degree,
-                      exclusive_sum_frontier_vertex_degree, nf + 1, stream);
-        cudaMemcpyAsync(&mf, &exclusive_sum_frontier_vertex_degree[nf],
-                        sizeof(IndexType), cudaMemcpyDeviceToHost, stream);
-        cudaCheckError();
+						//We need to prepare the switch back to top down
+						//We couldnt keep track of mu during bottom up - because we dont know what mf is. Computing mu here
+						count_unvisited_edges(	unvisited_queue,
+														size_last_unvisited_queue,
+														visited_bmap,
+														vertex_degree,
+														d_mu,
+														stream);
 
-        // We need mf
-        cudaStreamSynchronize(stream);
-        cudaCheckError();
-      }
+						//Typical pre-top down workflow. set_frontier_degree + exclusive-scan
+						set_frontier_degree(frontier_vertex_degree, frontier, vertex_degree, nf, stream);
+						exclusive_sum(	d_cub_exclusive_sum_storage,
+											cub_exclusive_sum_storage_bytes,
+											frontier_vertex_degree,
+											exclusive_sum_frontier_vertex_degree,
+											nf + 1,
+											stream);
 
-      // Updating undiscovered edges count
-      nu -= nf;
+						cudaMemcpyAsync(	&mf,
+												&exclusive_sum_frontier_vertex_degree[nf],
+												sizeof(IndexType),
+												cudaMemcpyDeviceToHost,
+												stream);
+						cudaCheckError()
+						;
 
-      // Using new frontier
-      frontier = new_frontier;
+						cudaMemcpyAsync(&mu, d_mu, sizeof(IndexType), cudaMemcpyDeviceToHost, stream);
+						cudaCheckError()
+						;
 
-      ++lvl;
-    }
+						//We will need mf and mu
+						cudaStreamSynchronize(stream);
+						cudaCheckError()
+						;
 
-    cudaCheckError()
-    ;
+						algo_state = TOPDOWN;
+					}
+					break;
+				}
+			}
 
-    cudaMemcpyAsync(visited, visited_bmap, sizeof(int) * vertices_bmap_size,
-                    cudaMemcpyDeviceToHost, stream);
-    cudaCheckError();
+			//Executing algo
 
-    // thrust::transform(thrust::cuda::par.on(stream),
-    //                   thrust::device_pointer_cast(&visited_bmap[0]),
-    //                   thrust::device_pointer_cast(&visited_bmap[vertices_bmap_size]),
-    //                   thrust::device_pointer_cast(&visited_bmap[0]), PopCount());
+			switch (algo_state) {
+			case TOPDOWN:
+				compute_bucket_offsets(	exclusive_sum_frontier_vertex_degree,
+												exclusive_sum_frontier_vertex_buckets_offsets,
+												nf,
+												mf,
+												stream);
+				frontier_expand(	row_offsets,
+										col_indices,
+										frontier,
+										nf,
+										mf,
+										lvl,
+										new_frontier,
+										d_new_frontier_cnt,
+										exclusive_sum_frontier_vertex_degree,
+										exclusive_sum_frontier_vertex_buckets_offsets,
+										visited_bmap,
+										distances,
+										predecessors,
+										edge_mask,
+										isolated_bmap,
+										directed,
+										stream,
+										deterministic);
+
+				mu -= mf;
+
+				cudaMemcpyAsync(	&nf,
+										d_new_frontier_cnt,
+										sizeof(IndexType),
+										cudaMemcpyDeviceToHost,
+										stream);
+				cudaCheckError();
+
+				//We need nf
+				cudaStreamSynchronize(stream);
+				cudaCheckError();
+
+				if (nf) {
+
+					//Typical pre-top down workflow. set_frontier_degree + exclusive-scan
+					set_frontier_degree(frontier_vertex_degree, new_frontier, vertex_degree, nf, stream);
+					exclusive_sum(	d_cub_exclusive_sum_storage,
+										cub_exclusive_sum_storage_bytes,
+										frontier_vertex_degree,
+										exclusive_sum_frontier_vertex_degree,
+										nf + 1,
+										stream);
+					cudaMemcpyAsync(	&mf,
+											&exclusive_sum_frontier_vertex_degree[nf],
+											sizeof(IndexType),
+											cudaMemcpyDeviceToHost,
+											stream);
+					cudaCheckError()
+					;
+
+					//We need mf
+					cudaStreamSynchronize(stream);
+					cudaCheckError()
+					;
+				}
+				break;
+
+			case BOTTOMUP:
+				fill_unvisited_queue(visited_bmap,
+											vertices_bmap_size,
+											n,
+											unvisited_queue,
+											d_unvisited_cnt,
+											stream,
+											deterministic);
+
+				size_last_unvisited_queue = nu;
+
+				bottom_up_main(unvisited_queue,
+									size_last_unvisited_queue,
+									left_unvisited_queue,
+									d_left_unvisited_cnt,
+									visited_bmap,
+									row_offsets,
+									col_indices,
+									lvl,
+									new_frontier,
+									d_new_frontier_cnt,
+									distances,
+									predecessors,
+									edge_mask,
+									stream,
+									deterministic);
+
+				//The number of vertices left unvisited decreases
+				//If it wasnt necessary last time, it wont be this time
+				if (size_last_left_unvisited_queue) {
+					cudaMemcpyAsync(	&size_last_left_unvisited_queue,
+											d_left_unvisited_cnt,
+											sizeof(IndexType),
+											cudaMemcpyDeviceToHost,
+											stream);
+					cudaCheckError()
+					;
+					//We need last_left_unvisited_size
+					cudaStreamSynchronize(stream);
+					cudaCheckError()
+					;
+					bottom_up_large(	left_unvisited_queue,
+											size_last_left_unvisited_queue,
+											visited_bmap,
+											row_offsets,
+											col_indices,
+											lvl,
+											new_frontier,
+											d_new_frontier_cnt,
+											distances,
+											predecessors,
+											edge_mask,
+											stream,
+											deterministic);
+				}
+				cudaMemcpyAsync(	&nf,
+										d_new_frontier_cnt,
+										sizeof(IndexType),
+										cudaMemcpyDeviceToHost,
+										stream);
+				cudaCheckError()
+				;
+
+				//We will need nf
+				cudaStreamSynchronize(stream);
+				cudaCheckError()
+				;
+
+				break;
+			}
+
+			//Updating undiscovered edges count
+			nu -= nf;
+
+			//Using new frontier
+			frontier = new_frontier;
+			growing = (nf > old_nf);
+
+			++lvl;
+		}
+
+		cudaCheckError()
+		;
     *num_visited = n - nu;
-    //   thrust::reduce(thrust::cuda::par.on(stream),
-    //                  thrust::device_pointer_cast(&visited_bmap[0]),
-    //                  thrust::device_pointer_cast(&visited_bmap[vertices_bmap_size]));
-    // cudaStreamSynchronize(stream);
     return NVGRAPH_OK;
   }
 

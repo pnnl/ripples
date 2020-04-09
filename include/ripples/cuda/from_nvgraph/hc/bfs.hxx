@@ -145,7 +145,7 @@ class Bfs
   configure(IndexType *distances, IndexType *predecessors, int *edge_mask);
 
   IndexType bmap_size() const { return vertices_bmap_size; }
-  NVGRAPH_ERROR traverse(IndexType source_vertex);
+  NVGRAPH_ERROR traverse(IndexType source_vertex, IndexType *num_visited);
   NVGRAPH_ERROR traverse(IndexType source_vertex, IndexType base_count,
                          int *visited_bmap, IndexType *num_visited);
   NVGRAPH_ERROR traverse(IndexType *source_vertices, IndexType nsources,
