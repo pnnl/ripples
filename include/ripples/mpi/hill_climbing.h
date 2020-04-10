@@ -51,6 +51,8 @@
 #include <chrono>
 #include "mpi.h"
 
+#define ONE_SIDED 0
+
 namespace ripples {
 namespace mpi {
 //! Engine scheduling dynamically sampling tasks for the Hill Climbing.
@@ -332,6 +334,7 @@ class SeedSelectionEngine {
     MPI_Comm_size(MPI_COMM_WORLD, &world_size);
     MPI_Comm_rank(MPI_COMM_WORLD, &mpi_rank);
 
+    #if ONE_SIDED
     vertex_block_size_ =
         world_size > 1 ? (G.num_nodes() / world_size) + 1 : G.num_nodes();
     global_count_.resize(vertex_block_size_, 0);
@@ -339,6 +342,11 @@ class SeedSelectionEngine {
 
     MPI_Win_create(global_count_.data(), vertex_block_size_ * sizeof(long),
                    sizeof(long), MPI_INFO_NULL, MPI_COMM_WORLD, &win);
+    #else
+    vertex_block_size_ = G.num_nodes();
+    global_count_.resize(vertex_block_size_, 0);
+    local_count_.resize(vertex_block_size_, 0);
+    #endif
 
     size_t num_threads = cpu_workers + gpu_workers;
     // Construct workers.
@@ -381,8 +389,9 @@ class SeedSelectionEngine {
 #endif
       }
     }
-
+#if ONE_SIDED
     MPI_Win_fence(0, win);
+    #endif
   }
 
   ~SeedSelectionEngine() {
@@ -394,7 +403,9 @@ class SeedSelectionEngine {
       delete ctx;
     }
 #endif
+    #if ONE_SIDED
     MPI_Win_free(&win);
+    #endif
   }
 
   std::vector<vertex_type> exec(ItrTy B, ItrTy E, size_t k) {
@@ -410,6 +421,7 @@ class SeedSelectionEngine {
     frontier_cache_.resize(std::distance(B, E), Bitmask<int>(G_.num_nodes()));
     base_counters_.resize(frontier_cache_.size());
 
+ #if ONE_SIDED
     for (size_t i = 0; i < k; ++i) {
       mpmc_head_.store(0);
       if (i != 0) {
@@ -482,6 +494,53 @@ class SeedSelectionEngine {
       S_.insert(global.index);
       result.push_back(global.index);
     }
+#else
+   for (size_t i = 0; i < k; ++i) {
+      mpmc_head_.store(0);
+      if (i != 0) {
+#pragma omp parallel
+        {
+          assert(workers_.size() == omp_get_num_threads());
+          size_t rank = omp_get_thread_num();
+          workers_[rank]->build_frontier(mpmc_head_, B, E,
+                                         record_.BuildFrontiersTasks[i][rank]);
+        }
+      }
+      vertex_type start = 0;
+      vertex_type end = G_.num_nodes();
+      for (auto itr = B; itr < E; ++itr) {
+        mpmc_head_.store(0);
+#pragma omp parallel
+        {
+          size_t sample_id = std::distance(B, itr);
+          size_t rank = omp_get_thread_num();
+          workers_[rank]->setup_build_counters(itr);
+          workers_[rank]->build_counters(mpmc_head_, start, end, sample_id,
+                                         base_counters_[sample_id],
+                                         record_.BuildCountersTasks[i][rank]);
+        }
+      }
+
+      auto start_reduction = std::chrono::high_resolution_clock::now();
+
+      MPI_Allreduce(local_count_.data(), global_count_.data(),
+                     G_.num_nodes(), MPI_FLOAT, MPI_SUM,
+                     MPI_COMM_WORLD);
+
+#pragma omp parallel for
+      for (size_t i = 0; i < global_count_.size(); ++i) {
+        local_count_[i] = 0;
+        global_count_[i] = 0;
+      }
+
+      auto itr = std::max_element(global_count_.begin(), global_count_.end());
+      auto end_reduction = std::chrono::high_resolution_clock::now();
+      record_.NetworkReductions.push_back(end_reduction - start_reduction);
+      vertex_type v = std::distance(global_count_.begin(), itr);
+      S_.insert(v);
+      result.push_back(v);
+    }
+#endif
     logger_->trace("End Seed Selection");
     return result;
   }
