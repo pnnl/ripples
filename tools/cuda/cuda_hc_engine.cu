@@ -48,11 +48,23 @@
 #include "trng/uniform01_dist.hpp"
 
 namespace ripples {
+__inline__ __device__
+int warpReduceSum(int val) {
+  constexpr int warpSize = 32;
+  #define FULL_MASK 0xffffffff
+
+  for (int offset = warpSize/2; offset > 0; offset /= 2)
+    val += __shfl_down_sync(FULL_MASK, val, offset);
+
+  return val;
+}
+
 template <typename GraphTy, typename PRNGTy>
 __global__ void generate_sample_ic_kernel(
     size_t batch_size, size_t num_edges,
     typename cuda_device_graph<GraphTy>::weight_t *weights,
     PRNGTy *d_trng_states, int *d_flag) {
+  constexpr int warpSize = 32;
   int tid = blockIdx.x * blockDim.x + threadIdx.x;
 
   int pos = tid;
@@ -63,7 +75,10 @@ __global__ void generate_sample_ic_kernel(
   while (pos < num_edges * batch_size) {
     int idx = pos % num_edges;
     typename cuda_device_graph<GraphTy>::weight_t w = weights[idx];
-    d_flag[pos] = u(r) <= w ? 1 : 0;
+    int edge_flag = u(r) <= w ? 1 << (tid % warpSize) : 0;
+    edge_flag = warpReduceSum(edge_flag);
+    if (tid % warpSize)
+      d_flag[pos] = edge_flag;
 
     pos += blockDim.x * gridDim.x;
   }

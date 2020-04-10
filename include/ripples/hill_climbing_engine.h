@@ -124,7 +124,9 @@ class HCCPUSamplingWorker : public HCWorker<GraphTy, ItrTy> {
       if (std::is_same<diff_model_tag, independent_cascade_tag>::value) {
         for (vertex_type v = 0; v < G_.num_nodes(); ++v) {
           for (auto &e : G_.neighbors(v)) {
-            (*B)[edge_number] = UD_(rng_) <= e.weight ? 1 : 0;
+            // (*B)[edge_number] = UD_(rng_) <= e.weight ? 1 : 0;
+            if (UD_(rng_) <= e.weight)
+              B->set(edge_number);
             ++edge_number;
           }
         }
@@ -133,7 +135,9 @@ class HCCPUSamplingWorker : public HCWorker<GraphTy, ItrTy> {
           double threshold = UD_(rng_);
           for (auto &e : G_.neighbors(v)) {
             threshold -= e.weight;
-            (*B)[edge_number] = threshold <= 0 ? 1 : 0;
+            if (threshold <= 0)
+              B->set(edge_number);
+            // (*B)[edge_number] = threshold <= 0 ? 1 : 0;
             ++edge_number;
           }
         }
@@ -173,7 +177,8 @@ class HCGPUSamplingWorker : public HCWorker<GraphTy, ItrTy> {
 
     cuda_malloc((void **)&d_trng_state_,
                 conf_.num_gpu_threads() * sizeof(PRNGTy));
-    cuda_malloc((void **)&d_flags_, G_.num_edges() * batch_size_ * sizeof(int));
+    cuda_malloc((void **)&d_flags_,
+                ((G.num_edges() / (8 * sizeof(int)) + 1) * sizeof(int) * batch_size_));
   }
 
   ~HCGPUSamplingWorker() {
@@ -218,8 +223,8 @@ class HCGPUSamplingWorker : public HCWorker<GraphTy, ItrTy> {
     }
 
     for (size_t i = 0; B < E; ++B, ++i) {
-      cuda_d2h(B->data(), d_flags_ + i * G_.num_edges(),
-               G_.num_edges() * sizeof(int), cuda_stream_);
+      cuda_d2h(B->data(), d_flags_ + i * B->bytes(),
+               B->bytes(), cuda_stream_);
     }
     cuda_sync(cuda_stream_);
   }
@@ -334,7 +339,7 @@ class SamplingEngine
  public:
   SamplingEngine(const GraphTy &G, PRNGTy &master_rng, size_t cpu_workers,
                  size_t gpu_workers)
-      : phase_engine(G, master_rng, cpu_workers, gpu_workers,
+    : phase_engine(G, master_rng, cpu_workers, gpu_workers,
                      "SamplingEngine") {}
 
   void exec(ItrTy B, ItrTy E, std::vector<std::vector<ex_time_ms>> &record) {
@@ -376,7 +381,7 @@ size_t BFS(GraphTy &G, GraphMaskTy &M, Itr b, Itr e, Bitmask<int> &visited) {
         std::distance(G.neighbors(0).begin(), G.neighbors(u).begin());
 
     for (auto v : G.neighbors(u)) {
-      if (M[edge_number] && !visited.get(v.vertex)) {
+      if (M.get(edge_number) && !visited.get(v.vertex)) {
         visited.set(u);
         queue.push(v.vertex);
       }
@@ -404,7 +409,7 @@ size_t BFS(GraphTy &G, GraphMaskTy &M, typename GraphTy::vertex_type v,
     size_t edge_number =
         std::distance(G.neighbors(0).begin(), G.neighbors(u).begin());
     for (auto v : G.neighbors(u)) {
-      if (M[edge_number] && !visited.get(v.vertex)) {
+      if (M.get(edge_number) && !visited.get(v.vertex)) {
         queue.push(v.vertex);
         visited.set(v.vertex);
       }

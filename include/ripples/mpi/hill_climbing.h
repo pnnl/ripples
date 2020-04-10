@@ -200,7 +200,7 @@ class HCGPUCountingWorker : public HCWorker<GraphTy, ItrTy, VItrTy> {
 
     // allocate host/device memory
     cuda_malloc((void **)&d_edge_filter_,
-                G_.num_edges() * sizeof(d_vertex_type));
+                ((G_.num_edges() / (8 * sizeof(d_vertex_type))) + 1) * sizeof(d_vertex_type));
 
     // create the solver
     solver_ = new bfs_solver_t(this->G_.num_nodes(), this->G_.num_edges(),
@@ -242,8 +242,7 @@ class HCGPUCountingWorker : public HCWorker<GraphTy, ItrTy, VItrTy> {
 
   void setup_build_counters(ItrTy eMask) {
     cuda_set_device(ctx_->gpu_id);
-    cuda_h2d(d_edge_filter_, eMask->data(),
-             G_.num_edges() * sizeof(d_vertex_type), cuda_stream_);
+    cuda_h2d(d_edge_filter_, eMask->data(), eMask->bytes(), cuda_stream_);
   }
 
   void build_counters(std::atomic<size_t> &mpmc_head, VItrTy B, VItrTy E,

@@ -115,9 +115,9 @@ auto SampleFrom(GraphTy &G, ConfTy &CFG, GeneratorTy &gen,
                 HillClimbingExecutionRecord &record,
                 diff_model_tag &&diff_model) {
   using vertex_type = typename GraphTy::vertex_type;
-  using edge_mask = std::vector<int>;  // same type used in the GPUs.
+  using edge_mask = Bitmask<int>;
   std::vector<edge_mask> samples(CFG.samples,
-                                 edge_mask(G.num_edges(), false));
+                                 edge_mask(G.num_edges()));
   auto start = std::chrono::high_resolution_clock::now();
 
   using iterator_type = typename std::vector<edge_mask>::iterator;

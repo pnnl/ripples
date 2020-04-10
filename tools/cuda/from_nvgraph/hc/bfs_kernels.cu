@@ -114,6 +114,12 @@ namespace bfs_kernels {
 	// ------------------------- Helper device functions -------------------
 	//
 
+  __forceinline__ __device__ bool isEdgeTaken(const int * edge_mask, int edge) {
+    int m = 1 << (edge % (8 * sizeof(int)));
+    bool edge_taken = edge_mask[edge / (8 * sizeof(int))] & m;
+    return edge_taken;
+  }
+
 	__forceinline__ __device__ int getMaskNRightmostBitSet(int n) {
 		if (n == INT_SIZE)
 			return (~0);
@@ -490,7 +496,7 @@ namespace bfs_kernels {
 				for (IndexType edge = edge_begin;
 						edge < min(edge_end, edge_begin + MAIN_BOTTOMUP_MAX_EDGES); ++edge)
 						{
-					if (edge_mask && !edge_mask[edge])
+					if (edge_mask && !isEdgeTaken(edge_mask, edge))
 						continue;
 
 					IndexType parent_candidate = col_ind[edge];
@@ -1089,7 +1095,7 @@ namespace bfs_kernels {
 						IndexType row_ptr_u = vec_row_ptr_u[iv];
 						IndexType edge = row_ptr_u + gid - vec_frontier_degrees_exclusive_sum_index[iv];
 
-						if (edge_mask && !edge_mask[edge])
+						if (edge_mask && !isEdgeTaken(edge_mask, edge))
 							row_ptr_u = -1; //disabling edge
 
 						//Destination of this edge
