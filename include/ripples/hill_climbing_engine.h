@@ -223,13 +223,13 @@ class HCGPUSamplingWorker : public HCWorker<GraphTy, ItrTy> {
     }
 
     for (size_t i = 0; B < E; ++B, ++i) {
-      cuda_d2h(B->data(), d_flags_ + i * B->bytes(),
+      cuda_d2h(B->data(), d_flags_ + i * (B->bytes() / sizeof(int)),
                B->bytes(), cuda_stream_);
     }
     cuda_sync(cuda_stream_);
   }
 
-  static constexpr size_t batch_size_ = 4;
+  static constexpr size_t batch_size_ = 32;
   cuda_ctx<GraphTy> *ctx_;
   config_t conf_;
   PRNGTy master_rng_;
