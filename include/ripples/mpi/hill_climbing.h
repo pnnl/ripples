@@ -200,7 +200,8 @@ class HCGPUCountingWorker : public HCWorker<GraphTy, ItrTy, VItrTy> {
 
     // allocate host/device memory
     cuda_malloc((void **)&d_edge_filter_,
-                ((G_.num_edges() / (8 * sizeof(d_vertex_type))) + 1) * sizeof(d_vertex_type));
+                ((G_.num_edges() / (8 * sizeof(d_vertex_type))) + 1) *
+                    sizeof(d_vertex_type));
 
     // create the solver
     solver_ = new bfs_solver_t(this->G_.num_nodes(), this->G_.num_edges(),
@@ -312,6 +313,16 @@ class HCGPUCountingWorker : public HCWorker<GraphTy, ItrTy, VItrTy> {
 #endif
 };
 
+struct Cmp {
+  size_t i;
+  long count;
+};
+
+#pragma omp declare reduction( \
+    maximum                    \
+    : Cmp               \
+    : omp_out = omp_in.count < omp_out.count ? omp_out : omp_in)
+
 template <typename GraphTy, typename ItrTy>
 class SeedSelectionEngine {
   using vertex_type = typename GraphTy::vertex_type;
@@ -333,7 +344,7 @@ class SeedSelectionEngine {
     MPI_Comm_size(MPI_COMM_WORLD, &world_size);
     MPI_Comm_rank(MPI_COMM_WORLD, &mpi_rank);
 
-    #if ONE_SIDED
+#if ONE_SIDED
     vertex_block_size_ =
         world_size > 1 ? (G.num_nodes() / world_size) + 1 : G.num_nodes();
     global_count_.resize(vertex_block_size_, 0);
@@ -341,11 +352,11 @@ class SeedSelectionEngine {
 
     MPI_Win_create(global_count_.data(), vertex_block_size_ * sizeof(long),
                    sizeof(long), MPI_INFO_NULL, MPI_COMM_WORLD, &win);
-    #else
+#else
     vertex_block_size_ = G.num_nodes();
     global_count_.resize(vertex_block_size_, 0);
     local_count_.resize(vertex_block_size_, 0);
-    #endif
+#endif
 
     size_t num_threads = cpu_workers + gpu_workers;
     // Construct workers.
@@ -390,7 +401,7 @@ class SeedSelectionEngine {
     }
 #if ONE_SIDED
     MPI_Win_fence(0, win);
-    #endif
+#endif
   }
 
   ~SeedSelectionEngine() {
@@ -402,9 +413,9 @@ class SeedSelectionEngine {
       delete ctx;
     }
 #endif
-    #if ONE_SIDED
+#if ONE_SIDED
     MPI_Win_free(&win);
-    #endif
+#endif
   }
 
   std::vector<vertex_type> exec(ItrTy B, ItrTy E, size_t k) {
@@ -420,7 +431,7 @@ class SeedSelectionEngine {
     frontier_cache_.resize(std::distance(B, E), Bitmask<int>(G_.num_nodes()));
     base_counters_.resize(frontier_cache_.size());
 
- #if ONE_SIDED
+#if ONE_SIDED
     for (size_t i = 0; i < k; ++i) {
       mpmc_head_.store(0);
       if (i != 0) {
@@ -494,7 +505,7 @@ class SeedSelectionEngine {
       result.push_back(global.index);
     }
 #else
-   for (size_t i = 0; i < k; ++i) {
+    for (size_t i = 0; i < k; ++i) {
       mpmc_head_.store(0);
       if (i != 0) {
 #pragma omp parallel
@@ -522,22 +533,24 @@ class SeedSelectionEngine {
 
       auto start_reduction = std::chrono::high_resolution_clock::now();
 
-      MPI_Allreduce(local_count_.data(), global_count_.data(),
-                     G_.num_nodes(), MPI_FLOAT, MPI_SUM,
-                     MPI_COMM_WORLD);
+      MPI_Allreduce(local_count_.data(), global_count_.data(), G_.num_nodes(),
+                    MPI_FLOAT, MPI_SUM, MPI_COMM_WORLD);
 
-#pragma omp parallel for
-      for (size_t i = 0; i < global_count_.size(); ++i) {
+      Cmp maxelement{0, 0};
+#pragma omp parallel for reduction(maximum : maxelement)
+      for (size_t i = 0; i < G_.num_nodes(); ++i) {
+        if (global_count_[i] > maxelement.count) {
+          maxelement.count = global_count_[i];
+          maxelement.i = i;
+        }
         local_count_[i] = 0;
         global_count_[i] = 0;
       }
 
-      auto itr = std::max_element(global_count_.begin(), global_count_.end());
       auto end_reduction = std::chrono::high_resolution_clock::now();
       record_.NetworkReductions.push_back(end_reduction - start_reduction);
-      vertex_type v = std::distance(global_count_.begin(), itr);
-      S_.insert(v);
-      result.push_back(v);
+      S_.insert(maxelement.i);
+      result.push_back(maxelement.i);
     }
 #endif
     logger_->trace("End Seed Selection");
