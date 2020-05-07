@@ -79,6 +79,7 @@ void CudaReduceCounters(uint32_t * src, uint32_t * dest, size_t N);
 void CudaReduceCounters(cudaStream_t S, uint32_t * src, uint32_t * dest, size_t N);
 
 size_t CountZeros(char * d_rr_mask, size_t N);
+size_t CountOnes(char * d_rr_mask, size_t N);
 
 }  // namespace ripples
 

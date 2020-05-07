@@ -133,6 +133,7 @@ inline size_t Theta(double epsilon, double l, size_t k, double LB,
   double lamdaStar = 2 * num_nodes * (term1 * alpha + beta) *
                      (term1 * alpha + beta) * pow(epsilon, -2);
 
+  // std::cout << "#### " << lamdaStar << " / " << LB << " = " << lamdaStar / LB << std::endl;
   return lamdaStar / LB;
 }
 
@@ -199,6 +200,7 @@ auto Sampling(const GraphTy &G, std::size_t k, double epsilon, double l,
     record.ThetaEstimationMostInfluential.push_back(timeMostInfluential);
 
     if (f >= std::pow(2, -x)) {
+      // std::cout << "Fraction " << f << std::endl;
       LB = (G.num_nodes() * f) / (1 + epsilonPrime);
       break;
     }

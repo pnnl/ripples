@@ -157,7 +157,6 @@ void CudaUpdateCounters(cudaStream_t compute_stream,
                           d_rr_vertices, d_rr_edges, d_mask, last_seed,
                           compute_stream);
 
-
   cuda_memset(reinterpret_cast<void *>(d_Counters), 0, num_nodes * sizeof(uint32_t), data_stream);
   cuda_sync(compute_stream);
   cuda_sync(data_stream);
@@ -187,6 +186,12 @@ size_t CountZeros(char * d_rr_mask, size_t N) {
   thrust::device_ptr<char> dev_ptr = thrust::device_pointer_cast(d_rr_mask);
   char zero = 0;
   return thrust::count(dev_ptr, dev_ptr + N, zero);
+}
+
+size_t CountOnes(char * d_rr_mask, size_t N) {
+  thrust::device_ptr<char> dev_ptr = thrust::device_pointer_cast(d_rr_mask);
+  char one = 1;
+  return thrust::count(dev_ptr, dev_ptr + N, one);
 }
 
 

@@ -177,12 +177,14 @@ auto Sampling(const GraphTy &G, std::size_t k, double epsilon, double l,
     double f;
     auto timeMostInfluential = measure<>::exec_time([&]() {
       const auto &S = FindMostInfluentialSet(
-          G, k, RR, typename ExTagTrait::seed_selection_ex_tag{});
+          G, k, RR, generator.isGpuEnabled(),
+          typename ExTagTrait::seed_selection_ex_tag{});
       f = S.first;
     });
     record.ThetaEstimationMostInfluential.push_back(timeMostInfluential);
 
     if (f >= std::pow(2, -x)) {
+      // std::cout << "Fraction " << f << std::endl;
       LB = (G.num_nodes() * f) / (1 + epsilonPrime);
       break;
     }
@@ -244,7 +246,8 @@ auto IMM(const GraphTy &G, std::size_t k, double epsilon, double l, GeneratorTy 
 
   auto start = std::chrono::high_resolution_clock::now();
   const auto &S = FindMostInfluentialSet(
-      G, k, R, typename ExTagTrait::seed_selection_ex_tag{});
+      G, k, R, gen.isGpuEnabled(),
+      typename ExTagTrait::seed_selection_ex_tag{});
   auto end = std::chrono::high_resolution_clock::now();
 
   record.FindMostInfluentialSet = end - start;

@@ -40,6 +40,9 @@
 //
 //===----------------------------------------------------------------------===//
 
+#ifndef RIPPLES_STREAMING_FIND_MOST_INFLUENTIAL_H
+#define RIPPLES_STREAMING_FIND_MOST_INFLUENTIAL_H
+
 #include <cstddef>
 #include <queue>
 #include <utility>
@@ -50,11 +53,12 @@
 #include "ripples/generate_rrr_sets.h"
 #include "ripples/partition.h"
 
+// #include "mpi.h"
+
 #ifdef RIPPLES_ENABLE_CUDA
 #include "ripples/cuda/cuda_utils.h"
 #include "ripples/cuda/find_most_influential.h"
 #endif
-
 
 namespace ripples {
 
@@ -105,6 +109,7 @@ class GPUFindMostInfluentialWorker : public FindMostInfluentialWorker<GraphTy>
       , reduction_step_(reduction_step)
       , d_counters_dest_(d_counters_dest)
   {
+    // std::cout << "Reduction Target" << d_counters_dest_ << std::endl;
     cuda_set_device(device_number);
     cuda_stream_create(&stream_);
     if (reduction_target_ != device_number) {
@@ -133,7 +138,7 @@ class GPUFindMostInfluentialWorker : public FindMostInfluentialWorker<GraphTy>
   LoadData(rrr_set_iterator B, rrr_set_iterator E) {
     cuda_set_device(device_number_);
     // Ask runtime available memory.
-    size_t avail_space = cuda_available_memory();
+    size_t avail_space = cuda_available_memory() - (1 << 29);
 
     size_t space = 0;
 
@@ -144,6 +149,7 @@ class GPUFindMostInfluentialWorker : public FindMostInfluentialWorker<GraphTy>
     }
 
     cuda_malloc(reinterpret_cast<void**>(&d_mask_), std::distance(B, pivot));
+    d_mask_size_ = std::distance(B, pivot);
     cuda_memset(reinterpret_cast<void*>(d_mask_), 0, sizeof(char) * std::distance(B, pivot));
     space -= std::distance(B, pivot);
 
@@ -250,6 +256,14 @@ class GPUFindMostInfluentialWorker : public FindMostInfluentialWorker<GraphTy>
 
     CudaUpdateCounters(stream_, d_rr_set_size_, d_rr_vertices_, d_rr_edges_,
                        d_mask_, d_counters_, num_nodes_, last_seed);
+    cuda_sync(stream_);
+
+    // #pragma omp critical
+    // {
+    //   int mpi_rank;
+    //   MPI_Comm_rank(MPI_COMM_WORLD, &mpi_rank);
+    //   std::cout << "Rank["<< mpi_rank << ":" << device_number_ << "] = " << CountOnes(d_mask_, d_mask_size_) << std::endl;
+    // }
   }
 
   void ReduceCounters(size_t step) {
@@ -273,6 +287,7 @@ class GPUFindMostInfluentialWorker : public FindMostInfluentialWorker<GraphTy>
   size_t d_rr_set_size_;
 
   char * d_mask_;
+  size_t d_mask_size_;
   size_t num_nodes_;
 };
 
@@ -449,6 +464,7 @@ class StreamingFindMostInfluential {
     auto tree = cuda_get_reduction_tree();
 
     // Construct GPU workers
+    // std::cout << "NUM GPUs" << num_gpu_workers_ << std::endl;
     for (size_t i = 0; i < num_gpu_workers_; ++i) {
       reduction_steps_ = std::max(reduction_steps_, tree[i].second);
 
@@ -629,3 +645,5 @@ class StreamingFindMostInfluential {
 };
 
 }  // namespace ripples
+
+#endif
