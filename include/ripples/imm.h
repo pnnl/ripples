@@ -7,7 +7,7 @@
 //===----------------------------------------------------------------------===//
 //
 // Copyright (c) 2019, Battelle Memorial Institute
-// 
+//
 // Battelle Memorial Institute (hereinafter Battelle) hereby grants permission
 // to any person or entity lawfully obtaining a copy of this software and
 // associated documentation files (hereinafter “the Software”) to redistribute
@@ -15,18 +15,18 @@
 // modification.  Such person or entity may use, copy, modify, merge, publish,
 // distribute, sublicense, and/or sell copies of the Software, and may permit
 // others to do so, subject to the following conditions:
-// 
+//
 // 1. Redistributions of source code must retain the above copyright notice,
 //    this list of conditions and the following disclaimers.
-// 
+//
 // 2. Redistributions in binary form must reproduce the above copyright notice,
 //    this list of conditions and the following disclaimer in the documentation
 //    and/or other materials provided with the distribution.
-// 
+//
 // 3. Other than as used herein, neither the name Battelle Memorial Institute or
 //    Battelle may be used in any form whatsoever without the express written
 //    consent of Battelle.
-// 
+//
 // THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
 // AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
 // IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
@@ -70,6 +70,8 @@ namespace ripples {
 struct IMMConfiguration : public TIMConfiguration {
   size_t streaming_workers{0};
   size_t streaming_gpu_workers{0};
+  size_t seed_select_max_workers{0};
+  size_t seed_select_max_gpu_workers{0};
   std::string gpu_mapping_string{""};
   std::unordered_map<size_t, size_t> worker_to_gpu;
 
@@ -78,11 +80,18 @@ struct IMMConfiguration : public TIMConfiguration {
   //! \param app The command-line parser object.
   void addCmdOptions(CLI::App &app) {
     TIMConfiguration::addCmdOptions(app);
-    app.add_option("--streaming-gpu-workers", streaming_gpu_workers,
-                   "The number of GPU workers for the CPU+GPU streaming engine.")
+    app.add_option(
+           "--streaming-gpu-workers", streaming_gpu_workers,
+           "The number of GPU workers for the CPU+GPU streaming engine.")
         ->group("Streaming-Engine Options");
     app.add_option("--streaming-gpu-mapping", gpu_mapping_string,
                    "A comma-separated set of OpenMP numbers for GPU workers.")
+        ->group("Streaming-Engine Options");
+    app.add_option("--seed-select-max-workers", seed_select_max_workers,
+                   "The max number of workers for seed selection.")
+        ->group("Streaming-Engine Options");
+    app.add_option("--seed-select-max-gpu-workers", seed_select_max_gpu_workers,
+                   "The max number of GPU workers for seed selection.")
         ->group("Streaming-Engine Options");
   }
 };
@@ -137,7 +146,6 @@ inline size_t Theta(double epsilon, double l, size_t k, double LB,
   return lamdaStar / LB;
 }
 
-
 //! Collect a set of Random Reverse Reachable set.
 //!
 //! \tparam GraphTy The type of the input graph.
@@ -153,12 +161,14 @@ inline size_t Theta(double epsilon, double l, size_t k, double LB,
 //! \param record Data structure storing timing and event counts.
 //! \param model_tag The diffusion model tag.
 //! \param ex_tag The execution policy tag.
-template <typename GraphTy, typename RRRGeneratorTy, typename diff_model_tag,
-          typename execution_tag>
-auto Sampling(const GraphTy &G, std::size_t k, double epsilon, double l,
+template <typename GraphTy, typename ConfTy, typename RRRGeneratorTy,
+          typename diff_model_tag, typename execution_tag>
+auto Sampling(const GraphTy &G, const ConfTy &CFG, double l,
               RRRGeneratorTy &generator, IMMExecutionRecord &record,
               diff_model_tag &&model_tag, execution_tag &&ex_tag) {
   using vertex_type = typename GraphTy::vertex_type;
+  size_t k = CFG.k;
+  double epsilon = CFG.epsilon;
 
   // sqrt(2) * epsilon
   double epsilonPrime = 1.4142135623730951 * epsilon;
@@ -191,8 +201,8 @@ auto Sampling(const GraphTy &G, std::size_t k, double epsilon, double l,
 
     auto timeMostInfluential = measure<>::exec_time([&]() {
       const auto &S =
-      FindMostInfluentialSet(G, k, RR, record, generator.isGpuEnabled(),
-                             std::forward<execution_tag>(ex_tag));
+          FindMostInfluentialSet(G, CFG, RR, record, generator.isGpuEnabled(),
+                                 std::forward<execution_tag>(ex_tag));
 
       f = S.first;
     });
@@ -229,11 +239,14 @@ auto Sampling(const GraphTy &G, std::size_t k, double epsilon, double l,
   return RR;
 }
 
-template <typename GraphTy, typename RRRGeneratorTy, typename diff_model_tag>
-auto Sampling(const GraphTy &G, std::size_t k, double epsilon, double l,
+template <typename GraphTy, typename ConfTy, typename RRRGeneratorTy,
+          typename diff_model_tag>
+auto Sampling(const GraphTy &G, const ConfTy &CFG, double l,
               RRRGeneratorTy &generator, IMMExecutionRecord &record,
               diff_model_tag &&model_tag, sequential_tag &&ex_tag) {
   using vertex_type = typename GraphTy::vertex_type;
+  size_t k = CFG.k;
+  double epsilon = CFG.epsilon;
 
   // sqrt(2) * epsilon
   double epsilonPrime = 1.4142135623730951 * epsilon;
@@ -265,9 +278,8 @@ auto Sampling(const GraphTy &G, std::size_t k, double epsilon, double l,
     double f;
 
     auto timeMostInfluential = measure<>::exec_time([&]() {
-      const auto &S =
-      FindMostInfluentialSet(G, k, RR, record, false,
-                             std::forward<sequential_tag>(ex_tag));
+      const auto &S = FindMostInfluentialSet(
+          G, CFG, RR, record, false, std::forward<sequential_tag>(ex_tag));
 
       f = S.first;
     });
@@ -302,45 +314,47 @@ auto Sampling(const GraphTy &G, std::size_t k, double epsilon, double l,
 
   return RR;
 }
+
 //! The IMM algroithm for Influence Maximization
 //!
 //! \tparam GraphTy The type of the input graph.
+//! \tparam ConfTy The configuration type.
 //! \tparam PRNG The type of the parallel random number generator.
 //! \tparam diff_model_tag Type-Tag to selecte the diffusion model.
 //!
 //! \param G The input graph.  The graph is transoposed.
-//! \param k The size of the seed set.
-//! \param epsilon The parameter controlling the approximation guarantee.
+//! \param CFG The configuration.
 //! \param l Parameter usually set to 1.
 //! \param gen The parallel random number generator.
 //! \param model_tag The diffusion model tag.
 //! \param ex_tag The execution policy tag.
-template <typename GraphTy, typename PRNG, typename diff_model_tag>
-auto IMM(const GraphTy &G, std::size_t k, double epsilon, double l, PRNG &gen,
+template <typename GraphTy, typename ConfTy, typename PRNG,
+          typename diff_model_tag>
+auto IMM(const GraphTy &G, const ConfTy &CFG, double l, PRNG &gen,
          IMMExecutionRecord &record, diff_model_tag &&model_tag,
          sequential_tag &&ex_tag) {
   using vertex_type = typename GraphTy::vertex_type;
+  size_t k = CFG.k;
+  double epsilon = CFG.epsilon;
 
   std::vector<trng::lcg64> generator(1, gen);
 
   l = l * (1 + 1 / std::log2(G.num_nodes()));
 
-  auto R = Sampling(G, k, epsilon, l, generator, record,
+  auto R = Sampling(G, CFG, l, generator, record,
                     std::forward<diff_model_tag>(model_tag),
                     std::forward<sequential_tag>(ex_tag));
 
 #if CUDA_PROFILE
   auto logst = spdlog::stdout_color_st("IMM-profile");
   std::vector<size_t> rrr_sizes;
-  for(auto &rrr_set : R)
-	  rrr_sizes.push_back(rrr_set.size());
+  for (auto &rrr_set : R) rrr_sizes.push_back(rrr_set.size());
   print_profile_counter(logst, rrr_sizes, "RRR sizes");
 #endif
 
   auto start = std::chrono::high_resolution_clock::now();
-  const auto &S =
-      FindMostInfluentialSet(G, k, R, record, false,
-                             std::forward<sequential_tag>(ex_tag));
+  const auto &S = FindMostInfluentialSet(G, CFG, R, record, false,
+                                         std::forward<sequential_tag>(ex_tag));
   auto end = std::chrono::high_resolution_clock::now();
 
   record.FindMostInfluentialSet = end - start;
@@ -351,37 +365,37 @@ auto IMM(const GraphTy &G, std::size_t k, double epsilon, double l, PRNG &gen,
 //! The IMM algroithm for Influence Maximization
 //!
 //! \tparam GraphTy The type of the input graph.
+//! \tparam ConfTy The configuration type
 //! \tparam PRNG The type of the parallel random number generator.
 //! \tparam diff_model_tag Type-Tag to selecte the diffusion model.
 //! \tparam execution_tag Type-Tag to select the execution policy.
 //!
 //! \param G The input graph.  The graph is transoposed.
-//! \param k The size of the seed set.
-//! \param epsilon The parameter controlling the approximation guarantee.
+//! \param CFG The configuration.
 //! \param l Parameter usually set to 1.
 //! \param gen The parallel random number generator.
 //! \param model_tag The diffusion model tag.
 //! \param ex_tag The execution policy tag.
-template <typename GraphTy, typename GeneratorTy, typename diff_model_tag>
-auto IMM(const GraphTy &G, std::size_t k, double epsilon, double l,
-         GeneratorTy &gen, diff_model_tag &&model_tag,
-         omp_parallel_tag &&ex_tag) {
+template <typename GraphTy, typename ConfTy, typename GeneratorTy,
+          typename diff_model_tag>
+auto IMM(const GraphTy &G, const ConfTy &CFG, double l, GeneratorTy &gen,
+         diff_model_tag &&model_tag, omp_parallel_tag &&ex_tag) {
   using vertex_type = typename GraphTy::vertex_type;
-
+  size_t k = CFG.k;
+  double epsilon = CFG.epsilon;
   auto &record(gen.execution_record());
 
   l = l * (1 + 1 / std::log2(G.num_nodes()));
 
-  auto R = Sampling(G, k, epsilon, l, gen, record,
-                    std::forward<diff_model_tag>(model_tag),
-                    std::forward<omp_parallel_tag>(ex_tag));
-
+  auto R =
+      Sampling(G, CFG, l, gen, record, std::forward<diff_model_tag>(model_tag),
+               std::forward<omp_parallel_tag>(ex_tag));
 
 #if CUDA_PROFILE
   auto logst = spdlog::stdout_color_st("IMM-profile");
   std::vector<size_t> rrr_sizes;
   size_t sizeBytes = 0;
-  for(auto &rrr_set : R) {
+  for (auto &rrr_set : R) {
     rrr_sizes.push_back(rrr_set.size());
     sizeBytes += rrr_set.size() * sizeof(rrr_set[0]);
   }
@@ -391,7 +405,7 @@ auto IMM(const GraphTy &G, std::size_t k, double epsilon, double l,
 
   auto start = std::chrono::high_resolution_clock::now();
   const auto &S =
-      FindMostInfluentialSet(G, k, R, record, gen.isGpuEnabled(),
+      FindMostInfluentialSet(G, CFG, R, record, gen.isGpuEnabled(),
                              std::forward<omp_parallel_tag>(ex_tag));
   auto end = std::chrono::high_resolution_clock::now();
 

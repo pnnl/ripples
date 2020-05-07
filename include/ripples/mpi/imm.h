@@ -66,13 +66,11 @@ struct MPI_Plus_X {
   // using seed_selection_ex_tag
 };
 
-
-template<>
+template <>
 struct MPI_Plus_X<mpi_omp_parallel_tag> {
   using generate_ex_tag = omp_parallel_tag;
   using seed_selection_ex_tag = mpi_omp_parallel_tag;
 };
-
 
 //! Compute ThetaPrime for the MPI implementation.
 //!
@@ -107,9 +105,8 @@ void split_generator(PRNG &gen) {
   gen.split(world_size, world_rank);
 }
 
-
 template <typename PRNG>
-std::vector<PRNG> rank_split_generator(const PRNG & gen) {
+std::vector<PRNG> rank_split_generator(const PRNG &gen) {
   size_t max_num_threads(1);
 
 #pragma omp single
@@ -125,7 +122,6 @@ std::vector<PRNG> rank_split_generator(const PRNG & gen) {
   return generator;
 }
 
-
 //! Collect a set of Random Reverse Reachable set.
 //!
 //! \tparam GraphTy The type of the input graph.
@@ -140,12 +136,14 @@ std::vector<PRNG> rank_split_generator(const PRNG & gen) {
 //! \param record Data structure storing timing and event counts.
 //! \param model_tag The diffusion model tag.
 //! \param ex_tag The execution policy tag.
-template <typename GraphTy, typename PRNGeneratorTy,
+template <typename GraphTy, typename ConfTy, typename PRNGeneratorTy,
           typename diff_model_tag, typename ExTagTrait>
-auto Sampling(const GraphTy &G, std::size_t k, double epsilon, double l,
+auto Sampling(const GraphTy &G, const ConfTy &CFG, double l,
               PRNGeneratorTy &generator, IMMExecutionRecord &record,
               diff_model_tag &&model_tag, ExTagTrait &&) {
   using vertex_type = typename GraphTy::vertex_type;
+  size_t k = CFG.k;
+  double epsilon = CFG.epsilon;
 
   // sqrt(2) * epsilon
   double epsilonPrime = 1.4142135623730951 * epsilon;
@@ -176,9 +174,9 @@ auto Sampling(const GraphTy &G, std::size_t k, double epsilon, double l,
 
     double f;
     auto timeMostInfluential = measure<>::exec_time([&]() {
-      const auto &S = FindMostInfluentialSet(
-          G, k, RR, generator.isGpuEnabled(),
-          typename ExTagTrait::seed_selection_ex_tag{});
+      const auto &S =
+          FindMostInfluentialSet(G, CFG, RR, generator.isGpuEnabled(),
+                                 typename ExTagTrait::seed_selection_ex_tag{});
       f = S.first;
     });
     record.ThetaEstimationMostInfluential.push_back(timeMostInfluential);
@@ -232,22 +230,23 @@ auto Sampling(const GraphTy &G, std::size_t k, double epsilon, double l,
 //! \param gen The parallel random number generator.
 //! \param model_tag The diffusion model tag.
 //! \param ex_tag The execution policy tag.
-template <typename GraphTy, typename diff_model_tag, typename GeneratorTy, typename ExTagTrait>
-auto IMM(const GraphTy &G, std::size_t k, double epsilon, double l, GeneratorTy &gen,
+template <typename GraphTy, typename ConfTy, typename diff_model_tag,
+          typename GeneratorTy, typename ExTagTrait>
+auto IMM(const GraphTy &G, const ConfTy &CFG, double l, GeneratorTy &gen,
          IMMExecutionRecord &record, diff_model_tag &&model_tag,
          ExTagTrait &&ex_tag) {
   using vertex_type = typename GraphTy::vertex_type;
 
   l = l * (1 + 1 / std::log2(G.num_nodes()));
 
-  auto R = mpi::Sampling(G, k, epsilon, l, gen, record,
+  auto R = mpi::Sampling(G, CFG, l, gen, record,
                          std::forward<diff_model_tag>(model_tag),
                          std::forward<ExTagTrait>(ex_tag));
 
   auto start = std::chrono::high_resolution_clock::now();
-  const auto &S = FindMostInfluentialSet(
-      G, k, R, gen.isGpuEnabled(),
-      typename ExTagTrait::seed_selection_ex_tag{});
+  const auto &S =
+      FindMostInfluentialSet(G, CFG, R, gen.isGpuEnabled(),
+                             typename ExTagTrait::seed_selection_ex_tag{});
   auto end = std::chrono::high_resolution_clock::now();
 
   record.FindMostInfluentialSet = end - start;

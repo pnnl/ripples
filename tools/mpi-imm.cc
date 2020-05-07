@@ -163,7 +163,7 @@ int main(int argc, char *argv[]) {
            CFG.worker_to_gpu);
     auto start = std::chrono::high_resolution_clock::now();
     seeds = ripples::mpi::IMM(
-        G, CFG.k, CFG.epsilon, 1.0, se, R, ripples::independent_cascade_tag{},
+        G, CFG, 1.0, se, R, ripples::independent_cascade_tag{},
         ripples::mpi::MPI_Plus_X<ripples::mpi_omp_parallel_tag>{});
     auto end = std::chrono::high_resolution_clock::now();
     R.Total = end - start;
@@ -176,7 +176,7 @@ int main(int argc, char *argv[]) {
            CFG.worker_to_gpu);
     auto start = std::chrono::high_resolution_clock::now();
     seeds = ripples::mpi::IMM(
-        G, CFG.k, CFG.epsilon, 1.0, se, R, ripples::linear_threshold_tag{},
+        G, CFG, 1.0, se, R, ripples::linear_threshold_tag{},
         ripples::mpi::MPI_Plus_X<ripples::mpi_omp_parallel_tag>{});
     auto end = std::chrono::high_resolution_clock::now();
     R.Total = end - start;

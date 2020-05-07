@@ -72,8 +72,8 @@ class MPIStreamingFindMostInfluential {
 
  public:
   MPIStreamingFindMostInfluential(const GraphTy &G, RRRsets<GraphTy> &RRRsets,
-                                  size_t num_gpus)
-      : num_cpu_workers_(0),
+                                  size_t num_max_cpu, size_t num_gpus)
+      : num_cpu_workers_(num_max_cpu),
         num_gpu_workers_(num_gpus),
         workers_(),
         vertex_coverage_(G.num_nodes(), 0),
@@ -83,9 +83,6 @@ class MPIStreamingFindMostInfluential {
         RRRsets_(RRRsets),
         reduction_steps_(1),
         d_cpu_counters_(nullptr) {
-#pragma omp single
-    { num_cpu_workers_ = omp_get_max_threads(); }
-
     MPI_Comm_rank(MPI_COMM_WORLD, &mpi_rank);
 
 #ifdef RIPPLES_ENABLE_CUDA
@@ -489,18 +486,24 @@ auto FindMostInfluentialSet(const GraphTy &G, size_t k,
 }
 #endif
 
-template <typename GraphTy, typename RRRset>
-auto FindMostInfluentialSet(const GraphTy &G, size_t k,
+template <typename GraphTy, typename ConfTy, typename RRRset>
+auto FindMostInfluentialSet(const GraphTy &G, const ConfTy &CFG,
                             std::vector<RRRset> &RRRsets, bool enableGPU,
                             mpi_omp_parallel_tag &&ex_tag) {
   size_t num_gpu = 0;
+  size_t num_max_cpu = 0;
+#pragma omp single
+  {
+    num_max_cpu =
+        std::min<size_t>(omp_get_max_threads(), CFG.seed_select_max_workers);
+  }
 #ifdef RIPPLES_ENABLE_CUDA
   if (enableGPU) {
-    num_gpu = cuda_num_devices();
+    num_gpu = std::min(cuda_num_devices(), CFG.seed_select_max_gpus_workers);
   }
 #endif
-  MPIStreamingFindMostInfluential<GraphTy> SE(G, RRRsets, num_gpu);
-  return SE.find_most_influential_set(k);
+  MPIStreamingFindMostInfluential<GraphTy> SE(G, RRRsets, num_max_cpu, num_gpu);
+  return SE.find_most_influential_set(CFG.k);
 }
 
 }  // namespace ripples

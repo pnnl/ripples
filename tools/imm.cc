@@ -7,7 +7,7 @@
 //===----------------------------------------------------------------------===//
 //
 // Copyright (c) 2019, Battelle Memorial Institute
-// 
+//
 // Battelle Memorial Institute (hereinafter Battelle) hereby grants permission
 // to any person or entity lawfully obtaining a copy of this software and
 // associated documentation files (hereinafter “the Software”) to redistribute
@@ -15,18 +15,18 @@
 // modification.  Such person or entity may use, copy, modify, merge, publish,
 // distribute, sublicense, and/or sell copies of the Software, and may permit
 // others to do so, subject to the following conditions:
-// 
+//
 // 1. Redistributions of source code must retain the above copyright notice,
 //    this list of conditions and the following disclaimers.
-// 
+//
 // 2. Redistributions in binary form must reproduce the above copyright notice,
 //    this list of conditions and the following disclaimer in the documentation
 //    and/or other materials provided with the distribution.
-// 
+//
 // 3. Other than as used herein, neither the name Battelle Memorial Institute or
 //    Battelle may be used in any form whatsoever without the express written
 //    consent of Battelle.
-// 
+//
 // THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
 // AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
 // IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
@@ -65,13 +65,13 @@ namespace ripples {
 auto GetWalkIterationRecord(
     const typename IMMExecutionRecord::walk_iteration_prof &iter) {
   nlohmann::json res{{"NumSets", iter.NumSets}, {"Total", iter.Total}};
-  for(size_t wi = 0; wi < iter.CPUWalks.size(); ++wi) {
+  for (size_t wi = 0; wi < iter.CPUWalks.size(); ++wi) {
     std::stringstream wname;
     wname << "CPU Worker " << wi;
     res[wname.str()] = nlohmann::json{{"NumSets", iter.CPUWalks[wi].NumSets},
                                       {"Total", iter.CPUWalks[wi].Total}};
   }
-  for(size_t wi = 0; wi < iter.GPUWalks.size(); ++wi) {
+  for (size_t wi = 0; wi < iter.GPUWalks.size(); ++wi) {
     std::stringstream wname;
     wname << "GPU Worker " << wi;
     res[wname.str()] = nlohmann::json{{"NumSets", iter.GPUWalks[wi].NumSets},
@@ -88,7 +88,7 @@ auto GetExperimentRecord(const ToolConfiguration<IMMConfiguration> &CFG,
                          const IMMExecutionRecord &R, const SeedSet &seeds) {
   nlohmann::json experiment{
       {"Algorithm", "IMM"},
-      {"Input", CFG.IFileName },
+      {"Input", CFG.IFileName},
       {"Output", CFG.OutputFile},
       {"DiffusionModel", CFG.diffusionModel},
       {"Epsilon", CFG.epsilon},
@@ -103,15 +103,14 @@ auto GetExperimentRecord(const ToolConfiguration<IMMConfiguration> &CFG,
       {"ThetaEstimationGenerateRRR", R.ThetaEstimationGenerateRRR},
       {"ThetaEstimationMostInfluential", R.ThetaEstimationMostInfluential},
       {"Theta", R.Theta},
-      {"Counting", R.Counting },
-      {"Pivoting", R.Pivoting },
-      {"RRRSetSizeBytes", R.RRRSetSize },
+      {"Counting", R.Counting},
+      {"Pivoting", R.Pivoting},
+      {"RRRSetSizeBytes", R.RRRSetSize},
       {"GenerateRRRSets", R.GenerateRRRSets},
       {"FindMostInfluentialSet", R.FindMostInfluentialSet},
       {"Seeds", seeds}};
   for (auto &ri : R.WalkIterations) {
-    experiment["Iterations"].push_back(
-        GetWalkIterationRecord(ri));
+    experiment["Iterations"].push_back(GetWalkIterationRecord(ri));
   }
   return experiment;
 }
@@ -124,9 +123,7 @@ void parse_command_line(int argc, char **argv) {
   CFG.streaming_workers = omp_get_max_threads();
 }
 
-ToolConfiguration<ripples::IMMConfiguration> configuration() {
-  return CFG;
-}
+ToolConfiguration<ripples::IMMConfiguration> configuration() { return CFG; }
 
 }  // namespace ripples
 
@@ -137,9 +134,9 @@ int main(int argc, char **argv) {
   ripples::parse_command_line(argc, argv);
   auto CFG = ripples::configuration();
   if (CFG.parallel) {
-    if (ripples::streaming_command_line(CFG.worker_to_gpu, CFG.streaming_workers,
-                                        CFG.streaming_gpu_workers,
-                                        CFG.gpu_mapping_string) != 0) {
+    if (ripples::streaming_command_line(
+            CFG.worker_to_gpu, CFG.streaming_workers, CFG.streaming_gpu_workers,
+            CFG.gpu_mapping_string) != 0) {
       console->error("invalid command line");
       return -1;
     }
@@ -178,27 +175,27 @@ int main(int argc, char **argv) {
     auto workers = CFG.streaming_workers;
     auto gpu_workers = CFG.streaming_gpu_workers;
     if (CFG.diffusionModel == "IC") {
-      ripples::StreamingRRRGenerator<decltype(G), decltype(generator),
-                                     typename ripples::RRRsets<decltype(G)>::iterator,
-                                     ripples::independent_cascade_tag>
+      ripples::StreamingRRRGenerator<
+          decltype(G), decltype(generator),
+          typename ripples::RRRsets<decltype(G)>::iterator,
+          ripples::independent_cascade_tag>
           se(G, generator, R, workers - gpu_workers, gpu_workers,
              CFG.worker_to_gpu);
       auto start = std::chrono::high_resolution_clock::now();
-      seeds =
-          IMM(G, CFG.k, CFG.epsilon, 1, se, ripples::independent_cascade_tag{},
-              ripples::omp_parallel_tag{});
+      seeds = IMM(G, CFG, 1, se, ripples::independent_cascade_tag{},
+                  ripples::omp_parallel_tag{});
       auto end = std::chrono::high_resolution_clock::now();
       R.Total = end - start;
     } else if (CFG.diffusionModel == "LT") {
-      ripples::StreamingRRRGenerator<decltype(G), decltype(generator),
-                                     typename ripples::RRRsets<decltype(G)>::iterator,
-                                     ripples::linear_threshold_tag>
+      ripples::StreamingRRRGenerator<
+          decltype(G), decltype(generator),
+          typename ripples::RRRsets<decltype(G)>::iterator,
+          ripples::linear_threshold_tag>
           se(G, generator, R, workers - gpu_workers, gpu_workers,
              CFG.worker_to_gpu);
       auto start = std::chrono::high_resolution_clock::now();
-      seeds =
-          IMM(G, CFG.k, CFG.epsilon, 1, se, ripples::linear_threshold_tag{},
-              ripples::omp_parallel_tag{});
+      seeds = IMM(G, CFG, 1, se, ripples::linear_threshold_tag{},
+                  ripples::omp_parallel_tag{});
       auto end = std::chrono::high_resolution_clock::now();
       R.Total = end - start;
     }
@@ -216,16 +213,14 @@ int main(int argc, char **argv) {
   } else {
     if (CFG.diffusionModel == "IC") {
       auto start = std::chrono::high_resolution_clock::now();
-      seeds =
-          IMM(G, CFG.k, CFG.epsilon, 1, generator, R,
-              ripples::independent_cascade_tag{}, ripples::sequential_tag{});
+      seeds = IMM(G, CFG, 1, generator, R, ripples::independent_cascade_tag{},
+                  ripples::sequential_tag{});
       auto end = std::chrono::high_resolution_clock::now();
       R.Total = end - start;
     } else if (CFG.diffusionModel == "LT") {
       auto start = std::chrono::high_resolution_clock::now();
-      seeds =
-          IMM(G, CFG.k, CFG.epsilon, 1, generator, R,
-              ripples::linear_threshold_tag{}, ripples::sequential_tag{});
+      seeds = IMM(G, CFG, 1, generator, R, ripples::linear_threshold_tag{},
+                  ripples::sequential_tag{});
       auto end = std::chrono::high_resolution_clock::now();
       R.Total = end - start;
     }
