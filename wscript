@@ -102,6 +102,8 @@ def configure(conf):
 
     conf.setenv('debug', env)
     conf.env.append_value('CXXFLAGS', ['-g', '-DDEBUG'])
+    if conf.env.CXX == 'clang++':
+        conf.env.append_value('CXXFLAGS', ['-O1', '-fsanitize=address', '-fno-omit-frame-pointer'])
     conf.env.append_value('CUDAFLAGS', ['-DDEBUG'])
 
 

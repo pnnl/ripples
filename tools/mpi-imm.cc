@@ -101,6 +101,11 @@ void parse_command_line(int argc, char **argv) {
   CFG.ParseCmdOptions(argc, argv);
 #pragma omp single
   CFG.streaming_workers = omp_get_max_threads();
+
+  if (CFG.seed_select_max_workers == 0)
+    CFG.seed_select_max_workers = CFG.streaming_workers;
+  if (CFG.seed_select_max_gpu_workers == 0)
+    CFG.seed_select_max_gpu_workers = CFG.streaming_gpu_workers;
 }
 
 ToolConfiguration<ripples::IMMConfiguration> configuration() { return CFG; }
