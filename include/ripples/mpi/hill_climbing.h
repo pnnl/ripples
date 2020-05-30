@@ -90,7 +90,7 @@ class HCCPUCountingWorker : public HCWorker<GraphTy, ItrTy, VItrTy> {
   HCCPUCountingWorker(std::shared_ptr<spdlog::logger> logger, const GraphTy &G,
                       std::vector<long> &count,
                       std::vector<Bitmask<int>> &frontier_cache,
-                      std::vector<int> &base_counters, std::set<vertex_type> &S)
+                      std::vector<int> &base_counters, const std::set<vertex_type> &S)
       : HCWorker<GraphTy, ItrTy, VItrTy>(G),
         logger_(logger),
         count_(count),
@@ -155,7 +155,7 @@ class HCCPUCountingWorker : public HCWorker<GraphTy, ItrTy, VItrTy> {
   std::vector<long> &count_;
   std::vector<Bitmask<int>> &frontier_cache_;
   std::vector<int> &base_counters_;
-  std::set<vertex_type> &S_;
+  const std::set<vertex_type> &S_;
   std::shared_ptr<spdlog::logger> logger_;
   ItrTy eMask_;
 };
@@ -185,7 +185,7 @@ class HCGPUCountingWorker : public HCWorker<GraphTy, ItrTy, VItrTy> {
                       const config_t &conf, const GraphTy &G,
                       cuda_ctx<GraphTy> *ctx, std::vector<long> &count,
                       std::vector<Bitmask<int>> &frontier_cache,
-                      std::vector<int> &base_counters, std::set<vertex_type> &S)
+                      std::vector<int> &base_counters, const std::set<vertex_type> &S)
       : HCWorker<GraphTy, ItrTy, VItrTy>(G),
         logger_(logger),
         conf_(conf),
@@ -306,7 +306,7 @@ class HCGPUCountingWorker : public HCWorker<GraphTy, ItrTy, VItrTy> {
   d_vertex_type *d_edge_filter_;
 
   std::vector<long> &count_;
-  std::set<vertex_type> &S_;
+  const std::set<vertex_type> &S_;
   std::vector<Bitmask<int>> &frontier_cache_;
   std::vector<int> &base_counters_;
   std::shared_ptr<spdlog::logger> logger_;
@@ -506,6 +506,7 @@ class SeedSelectionEngine {
     }
 #else
     for (size_t i = 0; i < k; ++i) {
+      logger_->debug("|S| = {}", S_.size());
       mpmc_head_.store(0);
       if (i != 0) {
 #pragma omp parallel
@@ -534,10 +535,9 @@ class SeedSelectionEngine {
       auto start_reduction = std::chrono::high_resolution_clock::now();
 
       MPI_Allreduce(local_count_.data(), global_count_.data(), G_.num_nodes(),
-                    MPI_FLOAT, MPI_SUM, MPI_COMM_WORLD);
+                    MPI_LONG, MPI_SUM, MPI_COMM_WORLD);
 
       Cmp maxelement{0, 0};
-#pragma omp parallel for reduction(maximum : maxelement)
       for (size_t i = 0; i < G_.num_nodes(); ++i) {
         if (global_count_[i] > maxelement.count) {
           maxelement.count = global_count_[i];
@@ -549,6 +549,7 @@ class SeedSelectionEngine {
 
       auto end_reduction = std::chrono::high_resolution_clock::now();
       record_.NetworkReductions.push_back(end_reduction - start_reduction);
+      logger_->trace("Adding vertex {}", maxelement.i);
       S_.insert(maxelement.i);
       result.push_back(maxelement.i);
     }

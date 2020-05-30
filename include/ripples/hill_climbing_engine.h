@@ -429,7 +429,7 @@ class HCCPUCountingWorker : public HCWorker<GraphTy, ItrTy> {
   using ex_time_ms = std::chrono::duration<double, std::milli>;
 
   HCCPUCountingWorker(const GraphTy &G, std::vector<size_t> &count,
-                      std::set<vertex_type> &S)
+                      const std::set<vertex_type> &S)
       : HCWorker<GraphTy, ItrTy>(G), count_(count), S_(S) {}
 
   void svc_loop(std::atomic<size_t> &mpmc_head, ItrTy B, ItrTy E,
@@ -469,7 +469,7 @@ class HCCPUCountingWorker : public HCWorker<GraphTy, ItrTy> {
 
   static constexpr size_t batch_size_ = 2;
   std::vector<size_t> &count_;
-  std::set<vertex_type> &S_;
+  const std::set<vertex_type> &S_;
 };
 
 template <typename GraphTy, typename ItrTy>
@@ -502,7 +502,7 @@ class HCGPUCountingWorker : public HCWorker<GraphTy, ItrTy> {
 
   HCGPUCountingWorker(const config_t &conf, const GraphTy &G,
                       cuda_ctx<GraphTy> *ctx, std::vector<size_t> &count,
-                      std::set<vertex_type> &S)
+                      const std::set<vertex_type> &S)
       : HCWorker<GraphTy, ItrTy>(G),
         conf_(conf),
         ctx_(ctx),
@@ -595,7 +595,7 @@ class HCGPUCountingWorker : public HCWorker<GraphTy, ItrTy> {
   d_vertex_type *d_edge_filter_;
 
   std::vector<size_t> &count_;
-  std::set<vertex_type> &S_;
+  const std::set<vertex_type> &S_;
 #endif
 };
 
