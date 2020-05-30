@@ -101,7 +101,7 @@ class HCCPUCountingWorker : public HCWorker<GraphTy, ItrTy, VItrTy> {
   void build_frontier(std::atomic<size_t> &mpmc_head, ItrTy B, ItrTy E,
                       std::vector<ex_time_ms> &record) {
     size_t offset = 0;
-    while ((offset = mpmc_head.fetch_add(batch_size_)) < std::distance(B, E)) {
+    while ((offset = mpmc_head.fetch_add(frontier_batch_size_)) < std::distance(B, E)) {
       auto first = B;
       std::advance(first, offset);
       auto last = first;
@@ -151,6 +151,7 @@ class HCCPUCountingWorker : public HCWorker<GraphTy, ItrTy, VItrTy> {
     }
   }
 
+  static constexpr size_t frontier_batch_size_ = 1;
   static constexpr size_t batch_size_ = 8;
   std::vector<long> &count_;
   std::vector<Bitmask<int>> &frontier_cache_;
@@ -250,7 +251,7 @@ class HCGPUCountingWorker : public HCWorker<GraphTy, ItrTy, VItrTy> {
                       size_t sample_id, size_t base,
                       std::vector<ex_time_ms> &record) {
     size_t offset = 0;
-    while ((offset = mpmc_head.fetch_add(batch_size_)) < (E - B)) {
+    while ((offset = mpmc_head.fetch_add(frontier_batch_size_)) < (E - B)) {
       auto first = B + offset;
       auto last = first + batch_size_;
 
@@ -296,6 +297,7 @@ class HCGPUCountingWorker : public HCWorker<GraphTy, ItrTy, VItrTy> {
     }
   }
 
+  static constexpr size_t frontier_batch_size_ = 2;
   static constexpr size_t batch_size_ = 8;
   config_t conf_;
   cuda_ctx<GraphTy> *ctx_;
