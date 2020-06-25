@@ -275,6 +275,9 @@ GraphTy loadGraph(ConfTy &CFG, PrngTy &PRNG) {
         trng::truncated_normal_dist<float>(CFG.mean, CFG.variance, 0.0, 1.0),
         CFG.scale_factor);
     G = loadGraph_helper<GraphTy>(CFG, gen);
+  } else if (CFG.distribution == "const") {
+    auto gen = [&]() -> float { return CFG.mean; };
+    G = loadGraph_helper<GraphTy>(CFG, gen);
   } else {
     throw std::domain_error("Unsupported distribution");
   }
