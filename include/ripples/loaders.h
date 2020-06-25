@@ -88,6 +88,7 @@ std::vector<EdgeTy> load(const std::string &inputFile, const bool undirected,
 
   std::vector<EdgeTy> result;
   for (std::string line; std::getline(GFS, line); ++lineNumber) {
+    if (line.empty()) continue;
     if (line.find('%') != std::string::npos) continue;
     if (line.find('#') != std::string::npos) continue;
 
@@ -154,6 +155,7 @@ std::vector<EdgeTy> load(const std::string &inputFile, const bool undirected,
 
   std::vector<EdgeTy> result;
   for (std::string line; std::getline(GFS, line); ++lineNumber) {
+    if (line.empty()) continue;
     if (line.find('%') != std::string::npos) continue;
     if (line.find('#') != std::string::npos) continue;
 
@@ -239,7 +241,7 @@ GraphTy loadGraph_helper(ConfTy &CFG, PrngTy &PRNG) {
     using weight_type = typename GraphTy::edge_type::edge_weight;
     using edge_type = ripples::Edge<vertex_type, weight_type>;
     auto edgeList = ripples::loadEdgeList<edge_type>(CFG, PRNG);
-    GraphTy tmpG(edgeList.begin(), edgeList.end());
+    GraphTy tmpG(edgeList.begin(), edgeList.end(), CFG.disable_renumbering);
     G = std::move(tmpG);
   } else {
     std::ifstream binaryDump(CFG.IFileName, std::ios::binary);

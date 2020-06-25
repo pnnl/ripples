@@ -54,14 +54,15 @@ namespace ripples {
 //! The GraphInputConfiguration stores the command-line input describing the
 //! input graphs.
 struct GraphInputConfiguration {
-  std::string IFileName{""};  //!< The input file name
-  bool weighted{false};       //!< is Graph weighted?
-  bool undirected{false};     //!< is Graph undirected?
-  bool reload{false};         //!< are we reloading a binary dump?
+  std::string IFileName{""};        //!< The input file name
+  bool weighted{false};             //!< is Graph weighted?
+  bool undirected{false};           //!< is Graph undirected?
+  bool disable_renumbering{false};  //!< trust the input to be clean.
+  bool reload{false};               //!< are we reloading a binary dump?
   std::string distribution{"uniform"};
-  float mean{0.5};            //!< mean of the normal distribution
-  float variance{1.0};        //!< variance of the normal distribution
-  float scale_factor{1.0};    //!< scaling factor for the weights.
+  float mean{0.5};          //!< mean of the normal distribution
+  float variance{1.0};      //!< variance of the normal distribution
+  float scale_factor{1.0};  //!< scaling factor for the weights.
 
   //! \brief Add command line options for the input grah.
   //!
@@ -88,6 +89,9 @@ struct GraphInputConfiguration {
         ->group("Input Options");
     app.add_option("--scale-factor", scale_factor,
                    "Scaling Factor for the generated weights")
+        ->group("Input Options");
+    app.add_flag("--disable-renumbering", disable_renumbering,
+                 "Load the graph as is from the input.")
         ->group("Input Options");
   }
 };

@@ -76,7 +76,7 @@ SCENARIO("Generate RRR sets", "[rrrsets]") {
                                     ripples::BackwardDirection<uint32_t>>;
     using vertex_type = typename GraphFwd::vertex_type;
 
-    GraphFwd Gfwd(karate.begin(), karate.end());
+    GraphFwd Gfwd(karate.begin(), karate.end(), false);
     GraphBwd G = Gfwd.get_transpose();
 
     WHEN("I build the theta RRR sets sequentially") {

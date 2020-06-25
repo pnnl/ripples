@@ -327,24 +327,24 @@ class Graph {
   //! \param begin The start of the edge list.
   //! \param end The end of the edge list.
   template <typename EdgeIterator>
-  Graph(EdgeIterator begin, EdgeIterator end) {
+  Graph(EdgeIterator begin, EdgeIterator end, bool renumbering) {
     for (auto itr = begin; itr != end; ++itr) {
       idMap[itr->source];
       idMap[itr->destination];
     }
 
-    size_t num_nodes = idMap.size();
+    size_t num_nodes = renumbering ? idMap.size() : idMap.rbegin()->first + 1;
     size_t num_edges = std::distance(begin, end);
 
     index = new edge_type *[num_nodes + 1];
     edges = new edge_type[num_edges];
 
-#pragma omp parallel for simd
+#pragma omp parallel for
     for (size_t i = 0; i < num_nodes + 1; ++i) {
       index[i] = edges;
     }
 
-#pragma omp parallel for simd
+#pragma omp parallel for
     for (size_t i = 0; i < num_edges; ++i) {
       edges[i] = DestinationTy();
     }
@@ -356,9 +356,14 @@ class Graph {
     reverseMap.resize(numNodes);
     for (auto itr = std::begin(idMap), end = std::end(idMap); itr != end;
          ++itr) {
-      reverseMap[currentID] = itr->first;
-      itr->second = currentID;
-      currentID++;
+      if (!renumbering) {
+        reverseMap.at(itr->first) = itr->first;
+        itr->second = itr->first;
+      } else {
+        reverseMap[currentID] = itr->first;
+        itr->second = currentID;
+        currentID++;
+      }
     }
 
     for (auto itr = begin; itr != end; ++itr) {
