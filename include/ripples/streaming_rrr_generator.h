@@ -173,10 +173,15 @@ class CPUWalkWorker : public WalkWorker<GraphTy, ItrTy> {
     auto start = std::chrono::high_resolution_clock::now();
 #endif
     auto size = std::distance(first, last);
+    thread_local auto local_rng = rng_;
+    thread_local auto local_u = u_;
     while(first != last) {
-      vertex_t root = u_(rng_);
-      AddRRRSet(this->G_, root, rng_, *first++, diff_model_tag{});
+      vertex_t root = local_u(local_rng);
+      AddRRRSet(this->G_, root, local_rng, *first++, diff_model_tag{});
     }
+
+    rng_ = local_rng;
+    u_ = local_u;
 #if CUDA_PROFILE
     auto &p(prof_bd.back());
     p.d_ += std::chrono::duration_cast<std::chrono::nanoseconds>(
