@@ -242,12 +242,16 @@ class Graph {
         reverseMap(O.reverseMap) {
     edges = new edge_type[numEdges];
     index = new edge_type *[numNodes + 1];
-    std::copy(O.edges, O.edges + numEdges, edges);
-    std::transform(O.index, O.index + numNodes + 1, index,
-                   [=](const edge_type *p) -> edge_type * {
-                     return edges + (reinterpret_cast<uint64_t>(p) -
-                                     reinterpret_cast<uint64_t>(O.index));
-                   });
+#pragma omp parallel for
+    for (size_t i = 0; i < numEdges; ++i) {
+      edges[i] = O.edges[i];
+    }
+
+#pragma omp parallel for
+    for (size_t i = 0; i < numNodes + 1; ++i) {
+      index[i] = edges + (reinterpret_cast<uint64_t>(O.index[i]) -
+                          reinterpret_cast<uint64_t>(O.index));
+    }
   }
 
   Graph &operator=(const Graph &O) {
@@ -258,12 +262,16 @@ class Graph {
 
     edges = new edge_type[numEdges];
     index = new edge_type *[numNodes + 1];
-    std::copy(O.edges, O.edges + numEdges, edges);
-    std::transform(O.index, O.index + numNodes + 1, index,
-                   [=](const edge_type *p) -> edge_type * {
-                     return edges + (reinterpret_cast<uint64_t>(p) -
-                                     reinterpret_cast<uint64_t>(O.index));
-                   });
+#pragma omp parallel for
+    for (size_t i = 0; i < numEdges; ++i) {
+      edges[i] = O.edges[i];
+    }
+
+#pragma omp parallel for
+    for (size_t i = 0; i < numNodes + 1; ++i) {
+      index[i] = edges + (reinterpret_cast<uint64_t>(O.index[i]) -
+                          reinterpret_cast<uint64_t>(O.index));
+    }
   }
 
   //! Move constructor.
@@ -505,7 +513,15 @@ class Graph {
     G.index = new out_dest_type *[numNodes + 1];
     G.edges = new out_dest_type[numEdges];
 
-    std::fill(G.index, G.index + numNodes + 1, nullptr);
+#pragma omp parallel for
+    for (auto itr = G.index; itr < G.index + numNodes + 1; ++itr) {
+      *itr = nullptr;
+    }
+
+#pragma omp parallel for
+    for (auto itr = G.edges; itr != G.edges + numEdges; ++itr) {
+      *itr = out_dest_type();
+    }
 
     std::for_each(edges, edges + numEdges,
                   [&](const edge_type &d) { ++G.index[d.vertex + 1]; });
@@ -556,6 +572,16 @@ class Graph {
 
     index = new edge_type *[numNodes + 1];
     edges = new edge_type[numEdges];
+
+    #pragma omp parallel for
+    for (size_t i = 0; i < numNodes + 1; ++i) {
+      index[i] = nullptr;
+    }
+
+    #pragma omp parallel for
+    for (size_t i = 0; i < numEdges; ++i) {
+      edges[i] = edge_type();
+    }
 
     FS.read(reinterpret_cast<char *>(index),
             (numNodes + 1) * sizeof(ptrdiff_t));
