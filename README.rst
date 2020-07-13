@@ -75,43 +75,6 @@ simple as:
    $ ./waf configure --openmp-root=/usr/local/opt/llvm build_release
 
 
-Quickstart with Docker
-======================
-
-.. code-block:: shell
-
-   $ git clone <url-to-github>
-   $ cd ripples
-   $ docker-compose -f docker/docker-compose.yml pull head worker
-   $ docker-compose -f docker/docker-compose.yml up -d --scale worker=2
-   $ docker exec -u mpi -it docker_head_1 /bin/bash
-   $ cd $HOME/ripples
-   $ ./waf configure --enable-mpi build_release
-
-To run the parallel IMM tool:
-
-.. code-block:: shell
-
-   $ build/release/tools/imm  \
-        -i test-data/karate.tsv \
-        -p \
-        -e 0.05 \
-        -k 3 \
-        -d IC \
-        -o output.json
-
-To run the MPI+OpenMP IMM tool on the docker cluster:
-
-.. code-block:: shell
-
-   $  mpiexec --hosts=docker_worker_1,docker_worker_2 -np 2 build/release/tools/mpi-imm \
-        -i test-data/karate.tsv \
-        -e 0.05 \
-        -k 3 \
-        -d IC \
-        -o output.json
-
-
 Build Instructions
 ==================
 

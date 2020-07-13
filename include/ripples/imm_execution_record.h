@@ -91,7 +91,7 @@ struct IMMExecutionRecord {
   ex_time_ms FindMostInfluentialSet;
   //! Total execution time.
   ex_time_ms Total;
-  size_t RRRSetSize;
+  size_t RRRSetSize{0};
   //! Iterations breakdown
   std::vector<walk_iteration_prof> WalkIterations;
 };
