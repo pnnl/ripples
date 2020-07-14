@@ -139,7 +139,7 @@ Ripples Team
 - `Marco Mintutoli <marco.minutoli@pnnl.gov>`_
 - `Mahantesh Halappanavar <mahantesh.halappanavar@pnnl.gov>`_
 - `Ananth Kalyanaraman <ananth@wsu.edu>`_
-
+- `Maurizio Drocco <maurizio.drocco@ibm.com>`_
 
 Disclamer Notice
 ================
