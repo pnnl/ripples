@@ -1,6 +1,9 @@
 Ripples
 *******
 
+.. image:: https://zenodo.org/badge/191654750.svg
+   :target: https://zenodo.org/badge/latestdoi/191654750
+
 Ripples is a software framework to study the Influence Maximization problem.
 The problem of Influence Maximization was introduced in 2001 by Domingos and
 Richardson [DR01]_ and later formulated as an optimization problem under the
@@ -27,14 +30,17 @@ problem.
            data mining (pp. 137-146). ACM.
 
 
-How to cite
-===========
+Publications
+============
 
 .. [Cluster19] Marco Minutoli, Mahantesh Halappanavar, Ananth Kalyanaraman, Arun
                Sathanur, Ryan Mcclure, Jason McDermott. 2019. Fast and Scalable
                Implementations of Influence Maximization Algorithms. In
                Proceedings of the IEEE Cluster 2019.
-
+.. [ICS2020] Minutoli, Marco, Maurizio Drocco, Mahantesh Halappanavar, Antonino
+               Tumeo, and Ananth Kalyanaraman. "cuRipples: influence
+               maximization on multi-CPU systems." In Proceedings of the 34th
+               ACM International Conference on Supercomputing.
 
 Quickstart with Conan
 =====================
