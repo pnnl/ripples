@@ -15,4 +15,4 @@ class RipplesConan(ConanFile):
         self.requires('WafGen/0.1@user/stable')
 
         if tools.os_info.is_linux and self.options.memkind:
-            self.requires('memkind/1.9.0@memkind/stable')
+            self.requires('memkind/1.10.1-rc1@memkind/stable')

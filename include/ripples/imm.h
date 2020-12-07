@@ -174,6 +174,11 @@ auto Sampling(const GraphTy &G, const ConfTy &CFG, double l,
   double epsilonPrime = 1.4142135623730951 * epsilon;
 
   double LB = 0;
+  #ifdef ENABLE_MEMKIND
+  RRRsetAllocator<vertex_type> allocator(libmemkind::kinds::DAX_KMEM_PREFERRED);
+  #else
+  RRRsetAllocator<vertex_type> allocator;
+  #endif
   std::vector<RRRset<GraphTy>> RR;
 
   auto start = std::chrono::high_resolution_clock::now();
@@ -187,7 +192,7 @@ auto Sampling(const GraphTy &G, const ConfTy &CFG, double l,
     record.ThetaPrimeDeltas.push_back(delta);
 
     auto timeRRRSets = measure<>::exec_time([&]() {
-      RR.insert(RR.end(), delta, RRRset<GraphTy>{});
+      RR.insert(RR.end(), delta, RRRset<GraphTy>(allocator));
 
       auto begin = RR.end() - delta;
 
@@ -226,7 +231,7 @@ auto Sampling(const GraphTy &G, const ConfTy &CFG, double l,
   record.GenerateRRRSets = measure<>::exec_time([&]() {
     if (theta > RR.size()) {
       size_t final_delta = theta - RR.size();
-      RR.insert(RR.end(), final_delta, RRRset<GraphTy>{});
+      RR.insert(RR.end(), final_delta, RRRset<GraphTy>(allocator));
 
       auto begin = RR.end() - final_delta;
 
@@ -252,6 +257,11 @@ auto Sampling(const GraphTy &G, const ConfTy &CFG, double l,
   double epsilonPrime = 1.4142135623730951 * epsilon;
 
   double LB = 0;
+  #ifdef ENABLE_MEMKIND
+  RRRsetAllocator<vertex_type> allocator(libmemkind::kinds::DAX_KMEM_PREFERRED);
+  #else
+  RRRsetAllocator<vertex_type> allocator;
+  #endif
   std::vector<RRRset<GraphTy>> RR;
 
   auto start = std::chrono::high_resolution_clock::now();
@@ -265,7 +275,7 @@ auto Sampling(const GraphTy &G, const ConfTy &CFG, double l,
     record.ThetaPrimeDeltas.push_back(delta);
 
     auto timeRRRSets = measure<>::exec_time([&]() {
-      RR.insert(RR.end(), delta, RRRset<GraphTy>{});
+      RR.insert(RR.end(), delta, RRRset<GraphTy>(allocator));
 
       auto begin = RR.end() - delta;
 
@@ -302,7 +312,7 @@ auto Sampling(const GraphTy &G, const ConfTy &CFG, double l,
   record.GenerateRRRSets = measure<>::exec_time([&]() {
     if (theta > RR.size()) {
       size_t final_delta = theta - RR.size();
-      RR.insert(RR.end(), final_delta, RRRset<GraphTy>{});
+      RR.insert(RR.end(), final_delta, RRRset<GraphTy>(allocator));
 
       auto begin = RR.end() - final_delta;
 
@@ -410,6 +420,16 @@ auto IMM(const GraphTy &G, const ConfTy &CFG, double l, GeneratorTy &gen,
   auto end = std::chrono::high_resolution_clock::now();
 
   record.FindMostInfluentialSet = end - start;
+
+  start = std::chrono::high_resolution_clock::now();
+  size_t total_size = 0;
+#pragma omp parallel for reduction(+:total_size)
+  for (size_t i = 0; i < R.size(); ++i) {
+    total_size += R[i].size() * sizeof(vertex_type);
+  }
+  record.RRRSetSize = total_size;
+  end = std::chrono::high_resolution_clock::now();
+  record.Total = end - start;
 
   return S.second;
 }

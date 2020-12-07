@@ -179,6 +179,7 @@ int main(int argc, char **argv) {
   if (CFG.parallel) {
     auto workers = CFG.streaming_workers;
     auto gpu_workers = CFG.streaming_gpu_workers;
+    decltype(R.Total) real_total;
     if (CFG.diffusionModel == "IC") {
       ripples::StreamingRRRGenerator<
           decltype(G), decltype(generator),
@@ -190,7 +191,8 @@ int main(int argc, char **argv) {
       seeds = IMM(G, CFG, 1, se, ripples::independent_cascade_tag{},
                   ripples::omp_parallel_tag{});
       auto end = std::chrono::high_resolution_clock::now();
-      R.Total = end - start;
+      R.Total = end - start - R.Total;
+      real_total = end - start;
     } else if (CFG.diffusionModel == "LT") {
       ripples::StreamingRRRGenerator<
           decltype(G), decltype(generator),
@@ -202,9 +204,12 @@ int main(int argc, char **argv) {
       seeds = IMM(G, CFG, 1, se, ripples::linear_threshold_tag{},
                   ripples::omp_parallel_tag{});
       auto end = std::chrono::high_resolution_clock::now();
-      R.Total = end - start;
+      R.Total = end - start - R.Total;
+      real_total = end - start;
     }
+
     console->info("IMM Parallel : {}ms", R.Total.count());
+    console->info("IMM Parallel Real Total : {}ms", real_total.count());
 
     size_t num_threads;
 #pragma omp single

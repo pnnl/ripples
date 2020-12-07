@@ -149,6 +149,11 @@ auto Sampling(const GraphTy &G, const ConfTy &CFG, double l,
   double epsilonPrime = 1.4142135623730951 * epsilon;
 
   double LB = 0;
+  #ifdef ENABLE_MEMKIND
+  RRRsetAllocator<vertex_type> allocator("/pmem1", 0);
+  #else
+  RRRsetAllocator<vertex_type> allocator;
+  #endif
   std::vector<RRRset<GraphTy>> RR;
 
   auto start = std::chrono::high_resolution_clock::now();
@@ -162,7 +167,7 @@ auto Sampling(const GraphTy &G, const ConfTy &CFG, double l,
     record.ThetaPrimeDeltas.push_back(thetaPrime - RR.size());
 
     auto timeRRRSets = measure<>::exec_time([&]() {
-      RR.insert(RR.end(), delta, RRRset<GraphTy>{});
+      RR.insert(RR.end(), delta, RRRset<GraphTy>(allocator));
 
       auto begin = RR.end() - delta;
 
@@ -202,7 +207,7 @@ auto Sampling(const GraphTy &G, const ConfTy &CFG, double l,
   start = std::chrono::high_resolution_clock::now();
   if (thetaLocal > RR.size()) {
     size_t final_delta = thetaLocal - RR.size();
-    RR.insert(RR.end(), final_delta, RRRset<GraphTy>{});
+    RR.insert(RR.end(), final_delta, RRRset<GraphTy>(allocator));
 
     auto begin = RR.end() - final_delta;
 

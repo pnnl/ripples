@@ -62,6 +62,7 @@ def options(opt):
 
     opt.load('mpi', tooldir='waftools')
     opt.load('cuda', tooldir='waftools')
+    opt.load('memkind', tooldir='waftools')
 
 
 def configure(conf):
@@ -95,6 +96,11 @@ def configure(conf):
         conf.load('cuda', tooldir='waftools')
         conf.env.ENABLE_CUDA = True
         conf.env.CUDAFLAGS = ['--expt-relaxed-constexpr']
+
+    conf.env.ENABLE_MEMKIND=False
+    if conf.options.enable_memkind:
+        conf.load('memkind', tooldir='waftools')
+        conf.env.ENABLE_MEMKIND=True
 
     env = conf.env
     conf.setenv('release', env)

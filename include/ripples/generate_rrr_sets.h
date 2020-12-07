@@ -59,11 +59,23 @@
 #include "trng/uniform01_dist.hpp"
 #include "trng/uniform_int_dist.hpp"
 
+#ifdef ENABLE_MEMKIND
+#include "memkind_allocator.h"
+#endif
+
 namespace ripples {
+
+#ifdef ENABLE_MEMKIND
+template<typename vertex_type>
+using RRRsetAllocator = libmemkind::static_kind::allocator<vertex_type>;
+#else
+template <typename vertex_type>
+using RRRsetAllocator = std::allocator<vertex_type>;
+#endif
 
 //! \brief The Random Reverse Reachability Sets type
 template <typename GraphTy>
-using RRRset = std::vector<typename GraphTy::vertex_type>;
+using RRRset = std::vector<typename GraphTy::vertex_type, RRRsetAllocator<typename GraphTy::vertex_type>>;
 template <typename GraphTy>
 using RRRsets = std::vector<RRRset<GraphTy>>;
 

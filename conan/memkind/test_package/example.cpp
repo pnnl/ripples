@@ -5,6 +5,8 @@
 #include "memkind.h"
 #include "pmem_allocator.h"
 
+using namespace libmemkind;
+
 int main() {
   auto allocator = pmem::allocator<int>(".", MEMKIND_PMEM_MIN_SIZE);
   std::vector<int, pmem::allocator<int>> v(allocator);
