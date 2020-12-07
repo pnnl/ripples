@@ -551,7 +551,7 @@ class SeedSelectionEngine {
 
       auto end_reduction = std::chrono::high_resolution_clock::now();
       record_.NetworkReductions.push_back(end_reduction - start_reduction);
-      logger_->trace("Adding vertex {}", maxelement.i);
+      logger_->trace("Adding vertex {} = {}", maxelement.i, maxelement.count);
       S_.insert(maxelement.i);
       result.push_back(maxelement.i);
     }

@@ -370,19 +370,18 @@ size_t BFS(GraphTy &G, GraphMaskTy &M, Itr b, Itr e, Bitmask<int> &visited) {
   std::queue<vertex_type> queue;
   for (; b != e; ++b) {
     queue.push(*b);
-    visited.set(*b);
   }
 
   while (!queue.empty()) {
     vertex_type u = queue.front();
     queue.pop();
+    visited.set(u);
 
     size_t edge_number =
         std::distance(G.neighbors(0).begin(), G.neighbors(u).begin());
 
     for (auto v : G.neighbors(u)) {
       if (M.get(edge_number) && !visited.get(v.vertex)) {
-        visited.set(u);
         queue.push(v.vertex);
       }
 
@@ -682,11 +681,11 @@ class SeedSelectionEngine {
         workers_[rank]->svc_loop(mpmc_head_, B, E, record[rank]);
       }
 
-      vertex_type v = std::distance(
-          count_.begin(), std::max_element(count_.begin(), count_.end()));
+      auto itr = std::max_element(count_.begin(), count_.end());
+      vertex_type v = std::distance(count_.begin(), itr);
       S_.insert(v);
       result.push_back(v);
-      logger_->trace("Seed {} : {}", i, v);
+      logger_->trace("Seed {} : {}[{}] = {}", i, v, G_.convertID(v), *itr);
     }
 
     logger_->trace("End Seed Selection");

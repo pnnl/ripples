@@ -241,7 +241,7 @@ GraphTy loadGraph_helper(ConfTy &CFG, PrngTy &PRNG) {
     using weight_type = typename GraphTy::edge_type::edge_weight;
     using edge_type = ripples::Edge<vertex_type, weight_type>;
     auto edgeList = ripples::loadEdgeList<edge_type>(CFG, PRNG);
-    GraphTy tmpG(edgeList.begin(), edgeList.end(), CFG.disable_renumbering);
+    GraphTy tmpG(edgeList.begin(), edgeList.end(), !CFG.disable_renumbering);
     G = std::move(tmpG);
   } else {
     std::ifstream binaryDump(CFG.IFileName, std::ios::binary);
