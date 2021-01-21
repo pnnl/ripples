@@ -78,6 +78,11 @@ template <typename GraphTy>
 struct cuda_ctx {
   size_t gpu_id;
   cuda_device_graph<GraphTy> * d_graph;
+
+  ~cuda_ctx() {
+    cuda_set_device(gpu_id);
+    destroy_cuda_graph(d_graph);
+  }
 };
 
 template<typename GraphTy>

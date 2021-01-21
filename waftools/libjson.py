@@ -44,12 +44,12 @@ def options(opt):
 
 
 def configure(conf):
-    if conf.env.INCLUDES_jsonformoderncpp:
+    if conf.env.INCLUDES_nlohmann_json:
         conf.start_msg('Checking for library nlohmann/json')
         conf.end_msg('yes (by conan)')
         return
     conf.check_cxx(
         includes=['{0}/include'.format(conf.options.nlohmann_json_root)],
         header_name='nlohmann/json.hpp',
-        uselib_store='jsonformoderncpp',
+        uselib_store='nlohmann_json',
         msg='Checking for library nlohmann/json')

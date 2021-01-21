@@ -181,7 +181,7 @@ auto FindMostInfluentialSet(const GraphTy &G, const ConfTy &CFG,
   }
 #ifdef RIPPLES_ENABLE_CUDA
   if (enableGPU) {
-    num_gpu = std::min(cuda_num_devices(), CFG.seed_select_max_gpus_workers);
+    num_gpu = std::min(cuda_num_devices(), CFG.seed_select_max_gpu_workers);
   }
 #endif
   StreamingFindMostInfluential<GraphTy> SE(G, RRRsets, num_max_cpu, num_gpu);

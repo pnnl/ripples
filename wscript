@@ -67,7 +67,8 @@ def options(opt):
 
 def configure(conf):
     try:
-        conf.load('waf_conan_libs_info', tooldir=['build', '.'])
+        build_dir = conf.options.out if conf.options.out != '' else 'build'
+        conf.load('waf_conan_libs_info', tooldir=[build_dir, '.'])
     except:
         pass
 
@@ -116,7 +117,7 @@ def configure(conf):
 def build(bld):
     if not bld.variant:
         bld.fatal('call "./waf build_release" or "./waf build_debug", and try "./waf --help"')
-    directories = ['3rd-party', 'include', 'tools', 'test']
+    directories = ['include', 'tools', 'test']
 
     bld.recurse(directories)
 

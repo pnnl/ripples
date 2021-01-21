@@ -43,11 +43,11 @@ def options(opt):
         help='root directory of the installation of Catch2')
 
 def configure(conf):
-    if conf.env.INCLUDES_Catch2:
+    if conf.env.INCLUDES_catch2:
         conf.start_msg('Checking for library Catch2')
         conf.end_msg('yes (by conan)')
         return
-    conf.check_cxx(uselib_store='Catch2',
+    conf.check_cxx(uselib_store='catch2',
                    header_name='catch2/catch.hpp',
                    includes=['{0}/include/'.format(conf.options.catch2_root)],
                    msg='Checking for library Catch2')

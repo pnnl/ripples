@@ -616,7 +616,7 @@ auto getCommunitiesSubgraphs(
       *std::max_element(communityVector.begin(), communityVector.end()) + 1;
   std::vector<BwdGraphTy> communities(num_communities);
 
-  using EdgeTy = typename FwdGraphTy::edge_type;
+  using EdgeTy = Edge<typename FwdGraphTy::vertex_type, typename FwdGraphTy::edge_type::edge_weight>;
   std::vector<std::vector<EdgeTy>> edge_lists(num_communities);
   for (typename FwdGraphTy::vertex_type src = 0; src < Gf.num_nodes(); ++src) {
     vertex_type original_src = Gf.convertID(src);
@@ -634,7 +634,7 @@ auto getCommunitiesSubgraphs(
   }
 
   for (size_t i = 0; i < num_communities; ++i) {
-    communities[i] = BwdGraphTy(edge_lists[i].begin(), edge_lists[i].end());
+    communities[i] = BwdGraphTy(edge_lists[i].begin(), edge_lists[i].end(), true);
   }
 
   return communities;

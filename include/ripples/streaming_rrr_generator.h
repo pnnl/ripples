@@ -44,14 +44,15 @@
 #include <atomic>
 #include <cassert>
 #include <cstdlib>
+#include <memory>
 #include <sstream>
 #include <unordered_map>
 #include <vector>
 
 #include "omp.h"
 
-#include "spdlog/spdlog.h"
 #include "spdlog/sinks/stdout_color_sinks.h"
+#include "spdlog/spdlog.h"
 
 #include "trng/uniform_int_dist.hpp"
 
@@ -73,8 +74,7 @@ int streaming_command_line(std::unordered_map<size_t, size_t> &worker_to_gpu,
                            size_t streaming_gpu_workers,
                            std::string gpu_mapping_string) {
   auto console = spdlog::get("console");
-  if (!(streaming_workers > 0 &&
-        streaming_gpu_workers <= streaming_workers)) {
+  if (!(streaming_workers > 0 && streaming_gpu_workers <= streaming_workers)) {
     console->error("invalid number of streaming workers");
     return -1;
   }
@@ -90,35 +90,34 @@ int streaming_command_line(std::unordered_map<size_t, size_t> &worker_to_gpu,
       std::stringstream omp_num_ss(token);
       size_t omp_num;
       omp_num_ss >> omp_num;
-      if(!(omp_num < streaming_workers)) {
+      if (!(omp_num < streaming_workers)) {
         console->error("invalid worker in worker-to-GPU mapping: {}", omp_num);
         return -1;
       }
-      if(worker_to_gpu.find(omp_num) != worker_to_gpu.end()) {
+      if (worker_to_gpu.find(omp_num) != worker_to_gpu.end()) {
         console->error("duplicated worker-to-GPU mapping: {}", omp_num);
         return -1;
       }
       worker_to_gpu[omp_num] = gpu_id++;
       if (gpu_id == num_gpus) gpu_id = 0;
     }
-    if(worker_to_gpu.size() < streaming_gpu_workers) {
+    if (worker_to_gpu.size() < streaming_gpu_workers) {
       console->error("GPU mapping string is too short");
       return -1;
     }
-  }
-  else {
+  } else {
     // by default, map GPU workers after CPU workers
     size_t gpu_id = 0;
     size_t omp_num = streaming_workers - streaming_gpu_workers;
-    for(; omp_num < streaming_workers; ++omp_num) {
+    for (; omp_num < streaming_workers; ++omp_num) {
       worker_to_gpu[omp_num] = gpu_id++;
       if (gpu_id == num_gpus) gpu_id = 0;
     }
   }
-#else // RIPPLES_ENABLE_CUDA
+#else   // RIPPLES_ENABLE_CUDA
 
   assert(streaming_gpu_workers == 0);
-#endif // RIPPLES_ENABLE_CUDA
+#endif  // RIPPLES_ENABLE_CUDA
   return 0;
 }
 
@@ -129,7 +128,8 @@ class WalkWorker {
  public:
   WalkWorker(const GraphTy &G) : G_(G) {}
   virtual ~WalkWorker() {}
-  virtual void svc_loop(std::atomic<size_t> &mpmc_head, ItrTy begin, ItrTy end) = 0;
+  virtual void svc_loop(std::atomic<size_t> &mpmc_head, ItrTy begin,
+                        ItrTy end) = 0;
 
  protected:
   const GraphTy &G_;
@@ -142,23 +142,24 @@ class WalkWorker {
 #endif
 };
 
-template <typename GraphTy, typename PRNGeneratorTy, typename ItrTy, typename diff_model_tag>
+template <typename GraphTy, typename PRNGeneratorTy, typename ItrTy,
+          typename diff_model_tag>
 class CPUWalkWorker : public WalkWorker<GraphTy, ItrTy> {
   using vertex_t = typename GraphTy::vertex_type;
 
  public:
   CPUWalkWorker(const GraphTy &G, const PRNGeneratorTy &rng)
       : WalkWorker<GraphTy, ItrTy>(G), rng_(rng), u_(0, G.num_nodes()) {}
-  
+
   void svc_loop(std::atomic<size_t> &mpmc_head, ItrTy begin, ItrTy end) {
     size_t offset = 0;
-    while((offset = mpmc_head.fetch_add(batch_size_)) < std::distance(begin, end)) {
+    while ((offset = mpmc_head.fetch_add(batch_size_)) <
+           std::distance(begin, end)) {
       auto first = begin;
       std::advance(first, offset);
       auto last = first;
       std::advance(last, batch_size_);
-      if(last > end)
-        last = end;
+      if (last > end) last = end;
       batch(first, last);
     }
   }
@@ -175,7 +176,7 @@ class CPUWalkWorker : public WalkWorker<GraphTy, ItrTy> {
     auto size = std::distance(first, last);
     thread_local auto local_rng = rng_;
     thread_local auto local_u = u_;
-    while(first != last) {
+    while (first != last) {
       vertex_t root = local_u(local_rng);
       AddRRRSet(this->G_, root, local_rng, *first++, diff_model_tag{});
     }
@@ -225,8 +226,8 @@ class CPUWalkWorker : public WalkWorker<GraphTy, ItrTy> {
 #endif
 };
 
-template <typename GraphTy, typename PRNGeneratorTy,
-          typename ItrTy, typename diff_model_tag>
+template <typename GraphTy, typename PRNGeneratorTy, typename ItrTy,
+          typename diff_model_tag>
 class GPUWalkWorker;
 
 #ifdef RIPPLES_ENABLE_CUDA
@@ -261,7 +262,8 @@ class GPUWalkWorker<GraphTy, PRNGeneratorTy, ItrTy, linear_threshold_tag>
   };
 
   GPUWalkWorker(const config_t &conf, const GraphTy &G,
-                const PRNGeneratorTy &rng, cuda_ctx<GraphTy> *ctx)
+                const PRNGeneratorTy &rng,
+                std::shared_ptr<cuda_ctx<GraphTy>> ctx)
       : WalkWorker<GraphTy, ItrTy>(G),
         conf_(conf),
         rng_(rng),
@@ -300,7 +302,8 @@ class GPUWalkWorker<GraphTy, PRNGeneratorTy, ItrTy, linear_threshold_tag>
     cuda_set_device(cuda_ctx_->gpu_id);
     size_t offset = 0;
     auto batch_size = conf_.num_gpu_threads();
-    while ((offset = mpmc_head.fetch_add(batch_size)) < std::distance(begin, end)) {
+    while ((offset = mpmc_head.fetch_add(batch_size)) <
+           std::distance(begin, end)) {
       auto first = begin;
       std::advance(first, offset);
       auto last = first;
@@ -315,7 +318,7 @@ class GPUWalkWorker<GraphTy, PRNGeneratorTy, ItrTy, linear_threshold_tag>
   PRNGeneratorTy rng_;
   trng::uniform_int_dist u_;
   cudaStream_t cuda_stream_;
-  cuda_ctx<GraphTy> *cuda_ctx_;
+  std::shared_ptr<cuda_ctx<GraphTy>> cuda_ctx_;
 
   // memory buffers
   mask_word_t *lt_res_mask_, *d_lt_res_mask_;
@@ -328,31 +331,30 @@ class GPUWalkWorker<GraphTy, PRNGeneratorTy, ItrTy, linear_threshold_tag>
 #endif
     auto size = std::distance(first, last);
 
-    cuda_lt_kernel(conf_.max_blocks_, conf_.block_size_,
-                   size, this->G_.num_nodes(),
-                   d_trng_state_, d_lt_res_mask_, conf_.mask_words_,
-                   cuda_ctx_, cuda_stream_);
+    cuda_lt_kernel(conf_.max_blocks_, conf_.block_size_, size,
+                   this->G_.num_nodes(), d_trng_state_, d_lt_res_mask_,
+                   conf_.mask_words_, cuda_ctx_.get(), cuda_stream_);
 #if CUDA_PROFILE
-  cuda_sync(cuda_stream_);
-  auto t1 = std::chrono::high_resolution_clock::now();
-  p.dwalk_ += std::chrono::duration_cast<std::chrono::nanoseconds>(t1 - start);
-  auto t0 = t1;
+    cuda_sync(cuda_stream_);
+    auto t1 = std::chrono::high_resolution_clock::now();
+    p.dwalk_ +=
+        std::chrono::duration_cast<std::chrono::nanoseconds>(t1 - start);
+    auto t0 = t1;
 #endif
 
     cuda_d2h(lt_res_mask_, d_lt_res_mask_,
-             size * conf_.mask_words_ * sizeof(mask_word_t),
-             cuda_stream_);
+             size * conf_.mask_words_ * sizeof(mask_word_t), cuda_stream_);
     cuda_sync(cuda_stream_);
 #if CUDA_PROFILE
-  t1 = std::chrono::high_resolution_clock::now();
-  p.dd2h_ += std::chrono::duration_cast<std::chrono::nanoseconds>(t1 - t0);
-  t0 = t1;
+    t1 = std::chrono::high_resolution_clock::now();
+    p.dd2h_ += std::chrono::duration_cast<std::chrono::nanoseconds>(t1 - t0);
+    t0 = t1;
 #endif
 
     batch_lt_build(first, size);
 #if CUDA_PROFILE
-  t1 = std::chrono::high_resolution_clock::now();
-  p.dbuild_ += std::chrono::duration_cast<std::chrono::nanoseconds>(t1 - t0);
+    t1 = std::chrono::high_resolution_clock::now();
+    p.dbuild_ += std::chrono::duration_cast<std::chrono::nanoseconds>(t1 - t0);
 #endif
 
 #if CUDA_PROFILE
@@ -460,7 +462,8 @@ class GPUWalkWorker<GraphTy, PRNGeneratorTy, ItrTy, independent_cascade_tag>
   };
 
   GPUWalkWorker(const config_t &conf, const GraphTy &G,
-                const PRNGeneratorTy &rng, cuda_ctx<GraphTy> *ctx)
+                const PRNGeneratorTy &rng,
+                std::shared_ptr<cuda_ctx<GraphTy>> ctx)
       : WalkWorker<GraphTy, ItrTy>(G),
         conf_(conf),
         rng_(rng),
@@ -472,8 +475,9 @@ class GPUWalkWorker<GraphTy, PRNGeneratorTy, ItrTy, independent_cascade_tag>
     // allocate host/device memory
     ic_predecessors_ = (int *)malloc(
         G.num_nodes() * sizeof(typename cuda_device_graph<GraphTy>::vertex_t));
-    cuda_malloc((void **)&d_ic_predecessors_,
-               G.num_nodes() * sizeof(typename cuda_device_graph<GraphTy>::vertex_t));
+    cuda_malloc(
+        (void **)&d_ic_predecessors_,
+        G.num_nodes() * sizeof(typename cuda_device_graph<GraphTy>::vertex_t));
 
     // allocate device-size RNGs
     cuda_malloc((void **)&d_trng_state_,
@@ -482,8 +486,8 @@ class GPUWalkWorker<GraphTy, PRNGeneratorTy, ItrTy, independent_cascade_tag>
     // create the solver
     solver_ = new bfs_solver_t(
         this->G_.num_nodes(), this->G_.num_edges(),
-        cuda_graph_index(cuda_ctx_), cuda_graph_edges(cuda_ctx_),
-        cuda_graph_weights(cuda_ctx_), true, TRAVERSAL_DEFAULT_ALPHA,
+        cuda_graph_index(cuda_ctx_.get()), cuda_graph_edges(cuda_ctx_.get()),
+        cuda_graph_weights(cuda_ctx_.get()), true, TRAVERSAL_DEFAULT_ALPHA,
         TRAVERSAL_DEFAULT_BETA, conf_.max_blocks_, cuda_stream_);
     solver_->configure(nullptr, d_ic_predecessors_, nullptr);
   }
@@ -513,7 +517,8 @@ class GPUWalkWorker<GraphTy, PRNGeneratorTy, ItrTy, independent_cascade_tag>
     cuda_set_device(cuda_ctx_->gpu_id);
 
     size_t offset = 0;
-    while ((offset = mpmc_head.fetch_add(batch_size_)) < std::distance(begin, end)) {
+    while ((offset = mpmc_head.fetch_add(batch_size_)) <
+           std::distance(begin, end)) {
       auto first = begin;
       std::advance(first, offset);
       auto last = first;
@@ -531,13 +536,14 @@ class GPUWalkWorker<GraphTy, PRNGeneratorTy, ItrTy, independent_cascade_tag>
 
   // CUDA context
   cudaStream_t cuda_stream_;
-  cuda_ctx<GraphTy> *cuda_ctx_;
+  std::shared_ptr<cuda_ctx<GraphTy>> cuda_ctx_;
 
   // nvgraph machinery
   bfs_solver_t *solver_;
 
   // memory buffers
-  typename cuda_device_graph<GraphTy>::vertex_t *ic_predecessors_, *d_ic_predecessors_;
+  typename cuda_device_graph<GraphTy>::vertex_t *ic_predecessors_,
+      *d_ic_predecessors_;
   PRNGeneratorTy *d_trng_state_;
 
   void batch(ItrTy first, ItrTy last) {
@@ -559,10 +565,10 @@ class GPUWalkWorker<GraphTy, PRNGeneratorTy, ItrTy, independent_cascade_tag>
       t0 = t1;
 #endif
 
-      cuda_d2h(
-          ic_predecessors_, d_ic_predecessors_,
-          this->G_.num_nodes() * sizeof(typename cuda_device_graph<GraphTy>::vertex_t),
-          cuda_stream_);
+      cuda_d2h(ic_predecessors_, d_ic_predecessors_,
+               this->G_.num_nodes() *
+                   sizeof(typename cuda_device_graph<GraphTy>::vertex_t),
+               cuda_stream_);
       cuda_sync(cuda_stream_);
 #if CUDA_PROFILE
       t1 = std::chrono::high_resolution_clock::now();
@@ -574,7 +580,8 @@ class GPUWalkWorker<GraphTy, PRNGeneratorTy, ItrTy, independent_cascade_tag>
       ic_build(first++);
 #if CUDA_PROFILE
       t1 = std::chrono::high_resolution_clock::now();
-      p.dbuild_ += std::chrono::duration_cast<std::chrono::nanoseconds>(t1 - t0);
+      p.dbuild_ +=
+          std::chrono::duration_cast<std::chrono::nanoseconds>(t1 - t0);
 #endif
     }
 #if CUDA_PROFILE
@@ -629,15 +636,18 @@ class GPUWalkWorker<GraphTy, PRNGeneratorTy, ItrTy, independent_cascade_tag>
   }
 #endif
 };
-#endif // RIPPLES_ENABLE_CUDA
+#endif  // RIPPLES_ENABLE_CUDA
 
-template <typename GraphTy, typename PRNGeneratorTy, typename ItrTy, typename diff_model_tag>
+template <typename GraphTy, typename PRNGeneratorTy, typename ItrTy,
+          typename diff_model_tag>
 class StreamingRRRGenerator {
   using vertex_t = typename GraphTy::vertex_type;
 
   using worker_t = WalkWorker<GraphTy, ItrTy>;
-  using gpu_worker_t = GPUWalkWorker<GraphTy, PRNGeneratorTy, ItrTy, diff_model_tag>;
-  using cpu_worker_t = CPUWalkWorker<GraphTy, PRNGeneratorTy, ItrTy, diff_model_tag>;
+  using gpu_worker_t =
+      GPUWalkWorker<GraphTy, PRNGeneratorTy, ItrTy, diff_model_tag>;
+  using cpu_worker_t =
+      CPUWalkWorker<GraphTy, PRNGeneratorTy, ItrTy, diff_model_tag>;
 
  public:
   StreamingRRRGenerator(const GraphTy &G, const PRNGeneratorTy &master_rng,
@@ -650,10 +660,11 @@ class StreamingRRRGenerator {
         console(spdlog::stdout_color_st("Streaming Generator")) {
 #ifdef RIPPLES_ENABLE_CUDA
     // init GPU contexts
-    for(auto &m : worker_to_gpu) {
+    for (auto &m : worker_to_gpu) {
       auto gpu_id = m.second;
-      if(cuda_contexts_.find(gpu_id) == cuda_contexts_.end()) {
-        cuda_contexts_[gpu_id] = cuda_make_ctx(G, gpu_id);
+      if (cuda_contexts_.find(gpu_id) == cuda_contexts_.end()) {
+        cuda_contexts_[gpu_id] =
+            std::shared_ptr<cuda_ctx<GraphTy>>(cuda_make_ctx(G, gpu_id));
       }
     }
 
@@ -672,44 +683,54 @@ class StreamingRRRGenerator {
     console->info("GPU Workers {}", num_gpu_workers);
 
     // translate user-mapping string into vector
+    size_t gpu_worker_id = 0;
+    size_t cpu_worker_id = 0;
     for (size_t omp_num = 0; omp_num < num_cpu_workers + num_gpu_workers;
          ++omp_num) {
 #ifdef RIPPLES_ENABLE_CUDA
       if (worker_to_gpu.find(omp_num) != worker_to_gpu.end()) {
-        assert(gpu_workers.size() < num_gpu_workers_);
         // create and add a GPU worker
         auto gpu_id = worker_to_gpu.at(omp_num);
         assert(cuda_contexts_.find(gpu_id) != cuda_contexts_.end());
         console->info("> mapping: omp={}\t->\tGPU-device={}", omp_num, gpu_id);
-        auto gpu_worker_id = gpu_workers.size();
         auto rng = master_rng;
         rng.split(num_rng_sequences, num_cpu_workers_ + gpu_worker_id);
         auto w = new gpu_worker_t(gpu_conf, G, rng, cuda_contexts_.at(gpu_id));
         w->rng_setup(
             master_rng, num_rng_sequences,
             gpu_seq_offset + gpu_worker_id * num_gpu_threads_per_worker);
-        gpu_workers.push_back(w);
         workers.push_back(w);
+        ++gpu_worker_id;
       } else
 #endif
       {
         // create and add a CPU worker
         console->info("> mapping: omp={}\t->\tCPU", omp_num);
-        auto cpu_worker_id = cpu_workers.size();
         console->info("cpu_worker_id = {}", cpu_worker_id);
         auto rng = master_rng;
         rng.split(num_rng_sequences, cpu_worker_id);
-        cpu_workers.push_back(new cpu_worker_t(G, rng));
-        workers.push_back(cpu_workers.back());
+        workers.push_back(new cpu_worker_t(G, rng));
+        ++cpu_worker_id;
       }
     }
 
     console->info("Configured");
-    // check
-    assert(cpu_workers.size() == num_cpu_workers_);
-#ifdef RIPPLES_ENABLE_CUDA
-    assert(gpu_workers.size() == num_gpu_workers_);
+  }
+
+  StreamingRRRGenerator(StreamingRRRGenerator &&O)
+      : num_cpu_workers_(O.num_cpu_workers_),
+        num_gpu_workers_(O.num_gpu_workers_),
+        max_batch_size_(O.max_batch_size_),
+        console(std::move(O.console)),
+#if RIPPLES_ENABLE_CUDA
+        cuda_contexts_(std::move(O.cuda_contexts_)),
 #endif
+        workers(std::move(O.workers)),
+        mpmc_head(O.mpmc_head.load()),
+#if CUDA_PROFILE
+        prof_bd(std::move(O.prof_bd)),
+#endif
+        record_(O.record_) {
   }
 
   ~StreamingRRRGenerator() {
@@ -719,12 +740,10 @@ class StreamingRRRGenerator {
     for (size_t i = 0; i < prof_bd.prof_bd.size(); ++i) {
       console->info("+++ BEGIN iter {}", i);
       console->info("--- CPU workers");
-      for (auto &wp : cpu_workers)
-        wp->print_prof_iter(i);
+      for (auto &wp : cpu_workers) wp->print_prof_iter(i);
 #ifdef RIPPLES_ENABLE_CUDA
       console->info("--- GPU workers");
-      for (auto &wp : gpu_workers)
-        wp->print_prof_iter(i);
+      for (auto &wp : gpu_workers) wp->print_prof_iter(i);
 #endif
       console->info("--- overall");
       auto &p(prof_bd.prof_bd[i]);
@@ -735,7 +754,7 @@ class StreamingRRRGenerator {
                     (float)p.n_ * 1e03 / ms.count());
       console->info("+++ END iter {}", i);
       // execution record
-      for(auto &wp : workers) {
+      for (auto &wp : workers) {
         wp->prof_record(record_.WalkIterations[i], i);
       }
     }
@@ -751,14 +770,11 @@ class StreamingRRRGenerator {
     for (auto &w : workers) delete w;
 
 #ifdef RIPPLES_ENABLE_CUDA
-    for(auto &m : cuda_contexts_)
-      cuda_destroy_ctx(m.second);
+      // for (auto &m : cuda_contexts_) cuda_destroy_ctx(m.second);
 #endif
   }
 
-  IMMExecutionRecord &execution_record() {
-    return record_;
-  }
+  IMMExecutionRecord &execution_record() { return record_; }
 
   void generate(ItrTy begin, ItrTy end) {
 #if CUDA_PROFILE
@@ -792,11 +808,9 @@ class StreamingRRRGenerator {
  private:
   size_t num_cpu_workers_, num_gpu_workers_;
   size_t max_batch_size_;
-  std::vector<cpu_worker_t *> cpu_workers;
   std::shared_ptr<spdlog::logger> console;
 #ifdef RIPPLES_ENABLE_CUDA
-  std::unordered_map<size_t, cuda_ctx<GraphTy> *> cuda_contexts_;
-  std::vector<gpu_worker_t *> gpu_workers;
+  std::unordered_map<size_t, std::shared_ptr<cuda_ctx<GraphTy>>> cuda_contexts_;
 #endif
   std::vector<worker_t *> workers;
   std::atomic<size_t> mpmc_head{0};

@@ -135,6 +135,8 @@ ssize_t ThetaPrime(ssize_t x, double epsilonPrime, double l, size_t k,
 //! \param num_nodes The number of nodes in the input graph.
 inline size_t Theta(double epsilon, double l, size_t k, double LB,
                     size_t num_nodes) {
+  if (LB == 0) return 0;
+
   double term1 = 0.6321205588285577;  // 1 - 1/e
   double alpha = sqrt(l * std::log(num_nodes) + std::log(2));
   double beta = sqrt(term1 * (logBinomial(num_nodes, k) +
@@ -227,6 +229,7 @@ auto Sampling(const GraphTy &G, const ConfTy &CFG, double l,
   record.ThetaEstimationTotal = end - start;
 
   record.Theta = theta;
+  spdlog::get("console")->info("Theta {}", theta);
 
   record.GenerateRRRSets = measure<>::exec_time([&]() {
     if (theta > RR.size()) {

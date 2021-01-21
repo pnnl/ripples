@@ -8,8 +8,8 @@ class RipplesConan(ConanFile):
 
     def requirements(self):
         self.requires('spdlog/1.3.1@bincrafters/stable')
-        self.requires('jsonformoderncpp/3.7.0@vthiery/stable')
-        self.requires('Catch2/2.9.2@catchorg/stable')
+        self.requires('nlohmann_json/3.9.1')
+        self.requires('catch2/2.13.3')
         self.requires('CLI11/1.8.0@cliutils/stable')
         self.requires('libtrng/4.21@user/stable')
         self.requires('WafGen/0.1@user/stable')
