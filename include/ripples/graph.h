@@ -519,7 +519,7 @@ class Graph {
     }
 
 #pragma omp parallel for
-    for (auto itr = G.edges; itr != G.edges + numEdges; ++itr) {
+    for (auto itr = G.edges; itr < G.edges + numEdges; ++itr) {
       *itr = out_dest_type();
     }
 
