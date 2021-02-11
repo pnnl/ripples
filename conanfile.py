@@ -11,7 +11,7 @@ class RipplesConan(ConanFile):
         self.requires('nlohmann_json/3.9.1')
         self.requires('catch2/2.13.3')
         self.requires('CLI11/1.8.0@cliutils/stable')
-        self.requires('libtrng/4.21@user/stable')
+        self.requires('libtrng/4.22@user/stable')
         self.requires('WafGen/0.1@user/stable')
 
         if tools.os_info.is_linux and self.options.memkind:

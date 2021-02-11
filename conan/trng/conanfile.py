@@ -1,10 +1,11 @@
-from conans import ConanFile, AutoToolsBuildEnvironment, tools
+#!/usr/bin/env python
 
+from conans import ConanFile, CMake, tools
 
 class LibtrngConan(ConanFile):
     name = "libtrng"
-    version = "4.21"
-    license = "<Put the package license here>"
+    version = "4.22"
+    license = "BSD"
     author = "Heiko Bauke"
     url = "https://www.numbercrunch.de/trng/"
     description = "Tina's Random Number Generator Library"
@@ -15,18 +16,16 @@ class LibtrngConan(ConanFile):
     generators = "cmake"
 
     def source(self):
-        tools.download('https://www.numbercrunch.de/trng/trng-4.21.tar.gz', 'trng-4.21.tar.gz')
-        tools.unzip('trng-4.21.tar.gz')
-        return 'trng-4.12'
-
+        tools.download('https://www.numbercrunch.de/trng/trng-4.22.tar.gz', 'trng-4.22.tar.gz')
+        tools.unzip('trng-4.22.tar.gz')
+        return 'trng4-4.22'
 
     def build(self):
-        autotools = AutoToolsBuildEnvironment(self)
-        autotools.configure(configure_dir='trng-4.21')
-        autotools.make()
-        autotools.install()
-
+        cmake = CMake(self)
+        cmake.configure(source_folder='trng4-4.22')
+        cmake.parallel = False
+        cmake.build()
+        cmake.install()
 
     def package_info(self):
         self.cpp_info.libs = ["trng4"]
-
