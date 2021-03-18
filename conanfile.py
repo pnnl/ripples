@@ -13,6 +13,7 @@ class RipplesConan(ConanFile):
         self.requires('CLI11/1.8.0@cliutils/stable')
         self.requires('libtrng/4.22@user/stable')
         self.requires('WafGen/0.1@user/stable')
+        self.requires('nvidia-cub/1.12.0@user/stable')
 
         if tools.os_info.is_linux and self.options.memkind:
             self.requires('memkind/1.10.1-rc1@memkind/stable')

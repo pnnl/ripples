@@ -47,13 +47,13 @@ def build(bld):
         bld(features='cxx cxxstlib',
             source=['cuda/from_nvgraph/imm/bfs.cu'],
             target='cuda_imm_bfs', cuda=True,
-            use=tools_deps + ['CUDA', 'CUDART'])
+            use=tools_deps + ['CUDA', 'CUDART', 'nvidia_cub'])
 
 
         bld(features='cxx cxxstlib',
             source=['cuda/from_nvgraph/hc/bfs.cu'],
             target='cuda_hc_bfs', cuda=True,
-            use=tools_deps + ['CUDA', 'CUDART'])
+            use=tools_deps + ['CUDA', 'CUDART', 'nvidia_cub'])
 
         bld(features='cxx cxxstlib',
             source=['cuda/cuda_utils.cu', 'cuda/cuda_generate_rrr_sets.cu',
@@ -61,7 +61,7 @@ def build(bld):
                     'cuda/cuda_lt_kernel.cu', 'cuda/cuda_graph.cu',
                     'cuda/cuda_hc_engine.cu'],
             target='cuda_ripples', cuda=True,
-            use=tools_deps + ['CUDA', 'CUDART'])
+            use=tools_deps + ['CUDA', 'CUDART', 'nvidia_cub'])
 
     if bld.env.ENABLE_MEMKIND:
         cuda_acc_tools_deps += ['memkind']

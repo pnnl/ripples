@@ -70,4 +70,9 @@ def find_cuda_libs(self):
         # this should not raise any error
         self.check_cxx(header='cuda.h', lib='cuda', libpath=_libpath, includes=_includes)
         self.check_cxx(header='cuda.h', lib='cudart', libpath=_libpath, includes=_includes)
+        if self.env.INCLUDES_nvidia_cub:
+            self.start_msg('Checking for library nvidia-cub')
+            self.end_msg('yes (by conan)') 
+        else:  
+            self.check_cxx(header='cub/cub.cuh', lib='nvidia_cub', libpath=_libpath, includes=_includes)
 
