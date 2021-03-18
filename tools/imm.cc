@@ -124,7 +124,7 @@ void parse_command_line(int argc, char **argv) {
 
   if (CFG.seed_select_max_workers == 0)
     CFG.seed_select_max_workers = CFG.streaming_workers;
-  if (CFG.seed_select_max_gpu_workers == 0)
+  if (CFG.seed_select_max_gpu_workers == std::numeric_limits<size_t>::max())
     CFG.seed_select_max_gpu_workers = CFG.streaming_gpu_workers;
 }
 

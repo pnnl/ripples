@@ -45,6 +45,7 @@
 
 #include <cmath>
 #include <cstddef>
+#include <limits>
 #include <unordered_map>
 #include <vector>
 
@@ -70,7 +71,7 @@ namespace ripples {
 struct IMMConfiguration : public TIMConfiguration {
   size_t streaming_workers{0};
   size_t streaming_gpu_workers{0};
-  size_t seed_select_max_workers{0};
+  size_t seed_select_max_workers{std::numeric_limits<size_t>::max()};
   size_t seed_select_max_gpu_workers{0};
   std::string gpu_mapping_string{""};
   std::unordered_map<size_t, size_t> worker_to_gpu;

@@ -47,7 +47,7 @@
 #include "ripples/streaming_find_most_influential.h"
 #include "ripples/utility.h"
 #if RIPPLES_ENABLE_CUDA
-#include "ripples/cuda/utility.h"
+#include "ripples/cuda/cuda_utils.h"
 #endif
 #include "spdlog/spdlog.h"
 
@@ -499,7 +499,7 @@ auto FindMostInfluentialSet(const GraphTy &G, const ConfTy &CFG,
   }
 #ifdef RIPPLES_ENABLE_CUDA
   if (enableGPU) {
-    num_gpu = std::min(cuda_num_devices(), CFG.seed_select_max_gpus_workers);
+    num_gpu = std::min(cuda_num_devices(), CFG.seed_select_max_gpu_workers);
   }
 #endif
   MPIStreamingFindMostInfluential<GraphTy> SE(G, RRRsets, num_max_cpu, num_gpu);

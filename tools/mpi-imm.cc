@@ -104,7 +104,7 @@ void parse_command_line(int argc, char **argv) {
 
   if (CFG.seed_select_max_workers == 0)
     CFG.seed_select_max_workers = CFG.streaming_workers;
-  if (CFG.seed_select_max_gpu_workers == 0)
+  if (CFG.seed_select_max_gpu_workers == std::numeric_limits<size_t>::max())
     CFG.seed_select_max_gpu_workers = CFG.streaming_gpu_workers;
 }
 
@@ -114,7 +114,7 @@ ToolConfiguration<ripples::IMMConfiguration> configuration() { return CFG; }
 
 int main(int argc, char *argv[]) {
   MPI_Init(NULL, NULL);
-
+  spdlog::set_level(spdlog::level::info);
   auto console = spdlog::stdout_color_st("console");
 
   // process command line
@@ -128,8 +128,6 @@ int main(int argc, char *argv[]) {
       return -1;
     }
   }
-
-  spdlog::set_level(spdlog::level::info);
 
   trng::lcg64 weightGen;
   weightGen.seed(0UL);
