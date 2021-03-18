@@ -89,9 +89,10 @@ void cuda_stream_destroy(cudaStream_t s) {
   cuda_check(e, __FILE__, __LINE__);
 }
 
-void cuda_malloc(void **dst, size_t size) {
+bool cuda_malloc(void **dst, size_t size) {
   cudaError_t e = cudaMalloc(dst, size);
   cuda_check(e, __FILE__, __LINE__);
+  return e == cudaSuccess;
 }
 
 void cuda_free(void *ptr) {

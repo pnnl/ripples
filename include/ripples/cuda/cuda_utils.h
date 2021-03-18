@@ -62,7 +62,7 @@ void cuda_stream_destroy(cudaStream_t);
 
 std::vector<std::pair<size_t, ssize_t>> cuda_get_reduction_tree();
 
-void cuda_malloc(void **dst, size_t size);
+bool cuda_malloc(void **dst, size_t size);
 void cuda_free(void *ptr);
 void cuda_d2h(void *dst, void *src, size_t size, cudaStream_t);
 void cuda_d2h(void *dst, void *src, size_t size);

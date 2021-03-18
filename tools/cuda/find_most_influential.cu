@@ -101,7 +101,7 @@ std::pair<uint32_t, size_t> CudaMaxElement(uint32_t * b, size_t N) {
 
 __global__ void count_uncovered_kernel(
     size_t batch_size, size_t num_nodes,
-    uint32_t *d_rrr_index, uint32_t * d_rrr_sets, char * d_mask,
+    uint32_t *d_rrr_index, uint32_t * d_rrr_sets, uint32_t * d_mask,
     uint32_t *d_counters) {
   int pos = threadIdx.x + blockDim.x * blockIdx.x;
 
@@ -117,7 +117,7 @@ __global__ void count_uncovered_kernel(
 
 void cuda_count_uncovered_kernel(size_t n_blocks, size_t block_size,
                                  size_t batch_size, size_t num_nodes,
-                                 uint32_t *d_rr_vertices, uint32_t * d_rr_edges, char * d_mask,
+                                 uint32_t *d_rr_vertices, uint32_t * d_rr_edges, uint32_t * d_mask,
                                  uint32_t *d_counters, cudaStream_t stream) {
   count_uncovered_kernel<<<n_blocks, block_size, 0, stream>>>(
       batch_size, num_nodes, d_rr_vertices, d_rr_edges, d_mask, d_counters);
@@ -126,7 +126,7 @@ void cuda_count_uncovered_kernel(size_t n_blocks, size_t block_size,
 __global__ void update_mask_kernel(
     size_t batch_size,
     uint32_t *d_rrr_index, uint32_t * d_rrr_sets,
-    char *d_mask, uint32_t last_seed) {
+    uint32_t *d_mask, uint32_t last_seed) {
   size_t pos = threadIdx.x + blockDim.x * blockIdx.x;
 
   if (pos < batch_size && d_rrr_sets[pos] == last_seed) {
@@ -138,7 +138,7 @@ __global__ void update_mask_kernel(
 
 void cuda_update_mask_kernel(size_t n_blocks, size_t block_size,
                              size_t batch_size, uint32_t *d_rrr_index,
-                             uint32_t * d_rrr_sets, char * d_mask,
+                             uint32_t * d_rrr_sets, uint32_t * d_mask,
                              uint32_t last_seed, cudaStream_t stream) {
   update_mask_kernel<<<n_blocks, block_size, 0, stream>>>(
       batch_size, d_rrr_index, d_rrr_sets, d_mask, last_seed);
@@ -147,7 +147,7 @@ void cuda_update_mask_kernel(size_t n_blocks, size_t block_size,
 
 void CudaUpdateCounters(cudaStream_t compute_stream,
                         size_t batch_size, uint32_t *d_rr_vertices,
-                        uint32_t * d_rr_edges, char * d_mask,
+                        uint32_t * d_rr_edges, uint32_t * d_mask,
                         uint32_t * d_Counters, size_t num_nodes,
                         uint32_t last_seed) {
   cudaStream_t data_stream;
@@ -171,7 +171,7 @@ void CudaUpdateCounters(cudaStream_t compute_stream,
 
 void
 CudaUpdateCounters(size_t batch_size, uint32_t *d_rr_vertices,
-                   uint32_t * d_rr_edges, char * d_mask,
+                   uint32_t * d_rr_edges, uint32_t * d_mask,
                    uint32_t * d_Counters, size_t num_nodes,
                    uint32_t last_seed) {
   cudaStream_t compute_stream;

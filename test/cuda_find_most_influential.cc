@@ -85,8 +85,8 @@ SCENARIO("Count vertex occurrencies on GPU", "[count]") {
         cuda_malloc(reinterpret_cast<void**>(&d_rrr_index), sizeof(uint32_t) * (2000 + 66 *2 + 33* 3));
         cuda_malloc(reinterpret_cast<void**>(&d_rrr_sets), sizeof(uint32_t) * (2000 + 66 *2 + 33 * 3));
 
-        char * d_rrr_mask;
-        cuda_malloc(reinterpret_cast<void**>(&d_rrr_mask), sizeof(char) * 1100);
+        uint32_t * d_rrr_mask;
+        cuda_malloc(reinterpret_cast<void**>(&d_rrr_mask), sizeof(uint32_t) * 1100);
 
 
         THEN("") {
@@ -113,10 +113,10 @@ SCENARIO("Count vertex occurrencies on GPU", "[count]") {
 
           CudaUpdateCounters(2000 + 66 * 2 + 33 * 3, d_rrr_index, d_rrr_sets, d_rrr_mask, d_Counters, 6, 2);
 
-          std::vector<char> mask(1100);
+          std::vector<uint32_t> mask(1100);
           cuda_d2h(reinterpret_cast<void *>(mask.data()),
                    reinterpret_cast<void *>(d_rrr_mask),
-                   sizeof(char) * mask.size());
+                   sizeof(uint32_t) * mask.size());
 
 
           for (size_t i = 0; i < 1100; ++i) {
@@ -138,7 +138,7 @@ SCENARIO("Count vertex occurrencies on GPU", "[count]") {
 
           cuda_d2h(reinterpret_cast<void *>(mask.data()),
                    reinterpret_cast<void *>(d_rrr_mask),
-                   sizeof(char) * mask.size());
+                   sizeof(uint32_t) * mask.size());
 
           for (size_t i = 0; i < 1000; ++i) {
               REQUIRE(mask[i] == 1);
