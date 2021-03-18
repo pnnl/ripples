@@ -2,8 +2,10 @@ from conans import ConanFile, tools
 
 
 class RipplesConan(ConanFile):
-    options = {'memkind' : [ True, False]}
-    default_options = {'memkind' : False}
+    options = {'memkind' : [ True, False],
+               'nvidia_cub' : [True, False]}
+    default_options = {'memkind' : False,
+                       'nvidia_cub' : False}
     generators = 'Waf'
 
     def requirements(self):
@@ -13,7 +15,8 @@ class RipplesConan(ConanFile):
         self.requires('CLI11/1.8.0@cliutils/stable')
         self.requires('libtrng/4.22@user/stable')
         self.requires('WafGen/0.1@user/stable')
-        self.requires('nvidia-cub/1.12.0@user/stable')
+        if self.options.nvidia_cub:
+            self.requires('nvidia-cub/1.12.0@user/stable')
 
         if tools.os_info.is_linux and self.options.memkind:
             self.requires('memkind/1.10.1-rc1@memkind/stable')
