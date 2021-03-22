@@ -255,27 +255,41 @@ class MPIStreamingFindMostInfluential {
                                             coveredAndSelected[0]);
     }
 #endif
+    if (mpi_rank == 0) {
 
-    while (!queue_.empty()) {
-      if (mpi_rank == 0) {
-        auto element = queue_.top();
-        queue_.pop();
+      uint32_t vertex = 0;
+      uint32_t coverage = 0;
+      // auto itr = std::max_element(reduced_vertex_coverage_.begin(), reduced_vertex_coverage_.end());
+      #pragma omp parallel
+      {
+        uint32_t vertex_local = 0;
+        uint32_t coverage_local = 0;
 
-        if (element.second > reduced_vertex_coverage_[element.first]) {
-          element.second = reduced_vertex_coverage_[element.first];
-          queue_.push(element);
-          continue;
+        #pragma omp for
+        for (uint32_t i = 0; i < reduced_vertex_coverage_.size(); ++i) {
+          if (coverage_local < reduced_vertex_coverage_[i]) {
+            coverage_local = reduced_vertex_coverage_[i];
+            vertex_local = i;
+          }
         }
-        coveredAndSelected[0] += element.second;
-        coveredAndSelected[1] = element.first;
+
+        #pragma omp critical
+        {
+          if (coverage < coverage_local) {
+            coverage = coverage_local;
+            vertex = vertex_local;
+          }
+        }
       }
 
-      MPI_Bcast(&coveredAndSelected, 2, MPI_UINT32_T, 0, MPI_COMM_WORLD);
+      coveredAndSelected[0] += coverage;
+      coveredAndSelected[1] = vertex;
 
-      return std::pair<vertex_type, size_t>(coveredAndSelected[1],
-                                            coveredAndSelected[0]);
     }
-    throw std::logic_error("Reached a mighty Unreachable State");
+    MPI_Bcast(&coveredAndSelected, 2, MPI_UINT32_T, 0, MPI_COMM_WORLD);
+
+    return std::pair<vertex_type, size_t>(coveredAndSelected[1],
+                                          coveredAndSelected[0]);
   }
 
   void LoadDataToDevice() {
@@ -312,7 +326,7 @@ class MPIStreamingFindMostInfluential {
   }
 
   auto find_most_influential_set(size_t k) {
-    omp_set_nested(true);
+    omp_set_max_active_levels(2);
 
     LoadDataToDevice();
 
@@ -337,8 +351,10 @@ class MPIStreamingFindMostInfluential {
       if (result.size() == k) break;
 
       // std::cout << "Update counters" << std::endl;
+      // std::cout << *std::max_element(vertex_coverage_.begin(), vertex_coverage_.end()) << std::endl;
       UpdateCounters(element.first);
       // std::cout << "Done update counters" << std::endl;
+      // std::cout << *std::max_element(vertex_coverage_.begin(), vertex_coverage_.end()) << std::endl;
     }
 
     int world_size = 0;
@@ -353,7 +369,7 @@ class MPIStreamingFindMostInfluential {
 
     // std::cout << "#### " << seedSelection.count() << std::endl;
 
-    omp_set_nested(false);
+    omp_set_max_active_levels(1);
 
     return std::make_pair(f, result);
   }
@@ -481,6 +497,8 @@ auto FindMostInfluentialSet(const GraphTy &G, size_t k,
   int world_size = 0;
   MPI_Comm_size(MPI_COMM_WORLD, &world_size);
   double f = double(coveredAndSelected[0]) / (world_size * RRRsets.size());
+
+  std::cout << "Fraction covered " << f << std::endl;
 
   return std::make_pair(f, result);
 }
