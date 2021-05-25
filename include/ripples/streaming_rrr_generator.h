@@ -657,7 +657,10 @@ class StreamingRRRGenerator {
       : num_cpu_workers_(num_cpu_workers),
         num_gpu_workers_(num_gpu_workers),
         record_(record),
-        console(spdlog::stdout_color_st("Streaming Generator")) {
+        console(spdlog::get("Streaming Generator")) {
+    if (!console) {
+      console = spdlog::stdout_color_st("Streaming Generator");
+    }
 #ifdef RIPPLES_ENABLE_CUDA
     // init GPU contexts
     for (auto &m : worker_to_gpu) {
