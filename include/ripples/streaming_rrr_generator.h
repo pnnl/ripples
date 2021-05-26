@@ -174,11 +174,12 @@ class CPUWalkWorker : public WalkWorker<GraphTy, ItrTy> {
     auto start = std::chrono::high_resolution_clock::now();
 #endif
     auto size = std::distance(first, last);
-    thread_local auto local_rng = rng_;
-    thread_local auto local_u = u_;
-    while (first != last) {
+    auto local_rng = rng_;
+    auto local_u = u_;
+    for (;first != last; ++first) {
       vertex_t root = local_u(local_rng);
-      AddRRRSet(this->G_, root, local_rng, *first++, diff_model_tag{});
+
+      AddRRRSet(this->G_, root, local_rng, *first, diff_model_tag{});
     }
 
     rng_ = local_rng;
