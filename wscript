@@ -63,6 +63,7 @@ def options(opt):
     opt.load('mpi', tooldir='waftools')
     opt.load('cuda', tooldir='waftools')
     opt.load('memkind', tooldir='waftools')
+    opt.load('metall', tooldir='waftools')
 
 
 def configure(conf):
@@ -77,7 +78,10 @@ def configure(conf):
     conf.load('waf_unit_test')
     conf.load('sphinx', tooldir='waftools')
 
-    conf.env.CXXFLAGS += ['-std=c++14', '-pipe']
+    if conf.options.enable_metall:
+        conf.env.CXXFLAGS += ['-std=c++17', '-pipe']
+    else:
+        conf.env.CXXFLAGS += ['-std=c++14', '-pipe']
 
     conf.load('spdlog', tooldir='waftools')
     conf.load('libjson', tooldir='waftools')
@@ -98,10 +102,18 @@ def configure(conf):
         conf.env.ENABLE_CUDA = True
         conf.env.CUDAFLAGS = ['--expt-relaxed-constexpr']
 
+    if conf.options.enable_memkind and conf.options.enable_metall:
+        conf.error('Metall and Memkind are mutually exclusive')
+
     conf.env.ENABLE_MEMKIND=False
     if conf.options.enable_memkind:
         conf.load('memkind', tooldir='waftools')
         conf.env.ENABLE_MEMKIND=True
+
+    conf.env.ENABLE_METALL=False
+    if conf.options.enable_metall:
+        conf.load('metall', tooldir='waftools')
+        conf.env.ENABLE_METALL=True
 
     env = conf.env
     conf.setenv('release', env)
