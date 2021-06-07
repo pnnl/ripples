@@ -63,11 +63,18 @@
 #include "memkind_allocator.h"
 #endif
 
+#ifdef ENABLE_METALL
+#include "metall/metall.hpp"
+#endif
+
 namespace ripples {
 
-#ifdef ENABLE_MEMKIND
+#if defined ENABLE_MEMKIND
 template<typename vertex_type>
 using RRRsetAllocator = libmemkind::static_kind::allocator<vertex_type>;
+#elif defined ENABLE_METALL
+template<typename vertex_type>
+using RRRsetAllocator = metall::manager::allocator_type<vertex_type>;
 #else
 template <typename vertex_type>
 using RRRsetAllocator = std::allocator<vertex_type>;

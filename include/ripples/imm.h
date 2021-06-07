@@ -179,8 +179,11 @@ auto Sampling(const GraphTy &G, const ConfTy &CFG, double l,
   double epsilonPrime = 1.4142135623730951 * epsilon;
 
   double LB = 0;
-  #ifdef ENABLE_MEMKIND
+  #if defined ENABLE_MEMKIND
   RRRsetAllocator<vertex_type> allocator(libmemkind::kinds::DAX_KMEM_PREFERRED);
+  #elif defined ENABLE_METALL
+  metall::manager manager(metall::open_only, "/tmp/ripples");
+  RRRsetAllocator<vertex_type> allocator = manager.get_allocator();
   #else
   RRRsetAllocator<vertex_type> allocator;
   #endif
@@ -263,8 +266,11 @@ auto Sampling(const GraphTy &G, const ConfTy &CFG, double l,
   double epsilonPrime = 1.4142135623730951 * epsilon;
 
   double LB = 0;
-  #ifdef ENABLE_MEMKIND
+  #if defined ENABLE_MEMKIND
   RRRsetAllocator<vertex_type> allocator(libmemkind::kinds::DAX_KMEM_PREFERRED);
+  #elif defined ENABLE_METALL
+  metall::manager manager(metall::open_only, "/tmp/ripples");
+  RRRsetAllocator<vertex_type> allocator = manager.get_allocator();
   #else
   RRRsetAllocator<vertex_type> allocator;
   #endif
@@ -353,6 +359,12 @@ auto IMM(const GraphTy &G, const ConfTy &CFG, double l, PRNG &gen,
   size_t k = CFG.k;
   double epsilon = CFG.epsilon;
 
+  #if defined ENABLE_METALL
+  {
+    metall::manager _(metall::create_only, "/tmp/ripples");
+  }
+  #endif
+
   std::vector<trng::lcg64> generator(1, gen);
 
   l = l * (1 + 1 / std::log2(G.num_nodes()));
@@ -400,6 +412,12 @@ auto IMM(const GraphTy &G, const ConfTy &CFG, double l, GeneratorTy &gen,
   size_t k = CFG.k;
   double epsilon = CFG.epsilon;
   auto &record(gen.execution_record());
+
+  #if defined ENABLE_METALL
+  {
+    metall::manager _(metall::create_only, "/tmp/ripples");
+  }
+  #endif
 
   l = l * (1 + 1 / std::log2(G.num_nodes()));
 
