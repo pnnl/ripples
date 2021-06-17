@@ -152,9 +152,8 @@ auto Sampling(const GraphTy &G, const ConfTy &CFG, double l,
   #if defined ENABLE_MEMKIND
   RRRsetAllocator<vertex_type> allocator("/pmem1", 0);
   #elif defined ENABLE_METALL
-  metall::manager manager(metall::open_only, "/tmp/ripples");
-  RRRsetAllocator<vertex_type> allocator = manager.get_allocator();
-  #else
+  RRRsetAllocator<vertex_type> allocator =  metall_manager_instance().get_allocator();
+#else
   RRRsetAllocator<vertex_type> allocator;
   #endif
   std::vector<RRRset<GraphTy>> RR;
@@ -246,12 +245,6 @@ auto IMM(const GraphTy &G, const ConfTy &CFG, double l, GeneratorTy &gen,
   using vertex_type = typename GraphTy::vertex_type;
 
   l = l * (1 + 1 / std::log2(G.num_nodes()));
-
-  #if defined ENABLE_METALL
-  {
-    metall::manager _(metall::create_only, "/tmp/ripples");
-  }
-  #endif
 
   auto R = mpi::Sampling(G, CFG, l, gen, record,
                          std::forward<diff_model_tag>(model_tag),
