@@ -20,10 +20,11 @@ class NvidaCubConan(ConanFile):
 
     def build(self):
         cmake = CMake(self)
-        cmake.definitions['CMAKE_CUDA_FLAGS'] = '-Xcompiler -mno-float128 -std=c++14'
-        cmake.definitions['CUB_DISABLE_ARCH_BY_DEFAULT'] = 'ON'
-        cmake.definitions['CUB_ENABLE_COMPUTE_75'] = 'ON'
+        cmake.definitions['CMAKE_CUDA_FLAGS'] = '-std=c++14'
+        cmake.definitions['CUB_ENABLE_HEADER_TESTING'] = 'OFF'
         cmake.definitions['CUB_ENABLE_TESTING'] = 'OFF'
+        cmake.definitions['CUB_ENABLE_THOROUGH_TESTING'] = 'OFF'
+        cmake.definitions['CUB_ENABLE_MINIMAL_TESTING'] = 'OFF'
         cmake.definitions['CUB_ENABLE_EXAMPLES'] = 'OFF'
         cmake.set_cmake_flags = True
         cmake.configure(source_folder='cub-1.12.0')
