@@ -4,7 +4,6 @@ from conans import ConanFile, CMake, tools
 
 class LibtrngConan(ConanFile):
     name = "libtrng"
-    version = "4.22"
     license = "BSD"
     author = "Heiko Bauke"
     url = "https://www.numbercrunch.de/trng/"
@@ -16,13 +15,13 @@ class LibtrngConan(ConanFile):
     generators = "cmake"
 
     def source(self):
-        tools.download('https://www.numbercrunch.de/trng/trng-4.22.tar.gz', 'trng-4.22.tar.gz')
-        tools.unzip('trng-4.22.tar.gz')
-        return 'trng4-4.22'
+        tools.download('https://github.com/rabauke/trng4/archive/refs/tags/v' + self.version + '.tar.gz', 'trng-' + self.version + '.tar.gz')
+        tools.unzip('trng-' + self.version + '.tar.gz')
+        return 'trng4-' + self.version
 
     def build(self):
         cmake = CMake(self)
-        cmake.configure(source_folder='trng4-4.22')
+        cmake.configure(source_folder='trng4-' + self.version)
         cmake.parallel = False
         cmake.build()
         cmake.install()

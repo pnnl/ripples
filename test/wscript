@@ -44,17 +44,17 @@ def build(bld):
     bld(features='cxx cxxprogram test',
         source=tests,
         target='run_tests',
-        use=['project-headers', 'libtrng', 'OpenMP', 'nlohmann_json', 'spdlog', 'catch2', 'test_main'])
+        use=['project-headers', 'libtrng', 'OpenMP', 'nlohmann_json', 'spdlog', 'fmt', 'catch2', 'test_main'])
 
     bld(features='cxx cxxprogram test',
         source='rrr_set_generation.cc',
         target='rrr_set_generation_tests',
-        use=['project-headers', 'libtrng', 'OpenMP', 'nlohmann_json', 'CLI11', 'spdlog', 'catch2', 'test_main'])
+        use=['project-headers', 'libtrng', 'OpenMP', 'nlohmann_json', 'cli11', 'spdlog', 'fmt', 'catch2', 'test_main'])
 
     if bld.env.ENABLE_CUDA:
         bld(features='cxx cxxprogram test',
             source='cuda_find_most_influential.cc',
             target='cuda_seed_select',
-            use=['project-headers', 'libtrng', 'OpenMP', 'nlohmann_json', 'CLI11', 'spdlog', 'catch2', 'test_main']
+            use=['project-headers', 'libtrng', 'OpenMP', 'nlohmann_json', 'cli11', 'spdlog', 'fmt', 'catch2', 'test_main']
             + ['cuda_ripples', 'CUDA', 'CUDART'],
             cxxflags='-DRIPPLES_ENABLE_CUDA')

@@ -8,11 +8,15 @@ class RipplesConan(ConanFile):
                        'nvidia_cub' : False}
     generators = 'Waf'
 
+    def configure(self):
+        self.options['fmt'].shared = True
+        self.options['spdlog'].shared = True
+
     def requirements(self):
-        self.requires('spdlog/1.3.1@bincrafters/stable')
+        self.requires('spdlog/1.9.2')
         self.requires('nlohmann_json/3.9.1')
         self.requires('catch2/2.13.3')
-        self.requires('CLI11/1.8.0@cliutils/stable')
+        self.requires('cli11/2.1.1')
         self.requires('libtrng/4.22@user/stable')
         self.requires('WafGen/0.1@user/stable')
         if self.options.nvidia_cub:

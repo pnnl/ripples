@@ -43,11 +43,11 @@ def options(opt):
         help='root directory of the installation of CLI11')
 
 def configure(conf):
-    if conf.env.INCLUDES_CLI11:
+    if conf.env.INCLUDES_cli11:
         conf.start_msg('Checking for library CLI11')
         conf.end_msg('yes (by conan)')
         return
-    conf.check_cxx(uselib_store='CLI11',
+    conf.check_cxx(uselib_store='cli11',
                    header_name='CLI/CLI.hpp',
                    includes=['{0}/include/'.format(conf.options.cli_root)],
-                   msg='Checking for library CLI11')
+                   msg='Checking for library cli11')
