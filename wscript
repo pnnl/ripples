@@ -60,6 +60,10 @@ def options(opt):
         '--enable-cuda', action='store_true', default=False,
         help='enable cuda implementation')
 
+    cfg_options.add_option(
+        '--enable-hip', action='store_true', default=False,
+        help='enable cuda implementation')
+
     opt.load('mpi', tooldir='waftools')
     opt.load('cuda', tooldir='waftools')
     opt.load('memkind', tooldir='waftools')
@@ -98,6 +102,13 @@ def configure(conf):
         conf.env.ENABLE_CUDA = True
         conf.env.CUDAFLAGS = ['--expt-relaxed-constexpr']
 
+    conf.env.ENABLE_HIP = False
+    if conf.options.enable_hip:
+        conf.env.ENABLE_HIP = True
+
+    if conf.env.ENABLE_HIP and conf.env.ENABLE_CUDA:
+        conf.fatal('We are not currently supporting HIP and CUDA at the same time.')
+
     conf.env.ENABLE_MEMKIND=False
     if conf.options.enable_memkind:
         conf.load('memkind', tooldir='waftools')
@@ -118,6 +129,9 @@ def build(bld):
     if not bld.variant:
         bld.fatal('call "./waf build_release" or "./waf build_debug", and try "./waf --help"')
     directories = ['include', 'tools', 'test']
+
+    if bld.env.ENABLE_HIP or bld.env.ENABLE_CUDA:
+        directories += ['src/gpu']
 
     bld.recurse(directories)
 
