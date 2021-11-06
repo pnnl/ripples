@@ -41,8 +41,8 @@ def build(bld):
         defines = ['RIPPLES_ENABLE_HIP']
 
     bld(features='cxx cxxstlib',
-        source=['gpu_graph.cc'],
-        target='gpu_graph',
+        source=['gpu_graph.cc', 'find_most_influential.cc', 'lt_kernel.cc', 'generate_rrr_sets.cc'],
+        target='gpu_ripples',
         cuda = bld.env.ENABLE_CUDA,
         defines = defines,
-        use = ['project-headers', 'nlohmann_json'])
+        use = ['project-headers', 'nlohmann_json', 'libtrng', 'fmt', 'spdlog'])

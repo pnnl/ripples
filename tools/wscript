@@ -38,11 +38,11 @@ def build(bld):
     tools_deps = ['project-headers', 'spdlog', 'fmt',
                   'libtrng', 'OpenMP', 'nlohmann_json', 'cli11']
 
-    cuda_acc_tools_deps = tools_deps
-    cuda_acc_cxx_flags = []
+    acc_tools_deps = tools_deps
+    acc_defines = []
     if bld.env.ENABLE_CUDA:
-        cuda_acc_tools_deps = tools_deps + ['cuda_ripples']
-        cuda_acc_cxx_flags = ['-DRIPPLES_ENABLE_CUDA']
+        acc_tools_deps = tools_deps + ['cuda_ripples', 'gpu_ripples']
+        acc_defines = ['RIPPLES_ENABLE_CUDA']
 
         bld(features='cxx cxxstlib',
             source=['cuda/from_nvgraph/imm/bfs.cu'],
@@ -63,13 +63,17 @@ def build(bld):
             target='cuda_ripples', cuda=True,
             use=tools_deps + ['CUDA', 'CUDART', 'nvidia_cub'])
 
+    if bld.env.ENABLE_HIP:
+        acc_tools_deps = tools_deps + ['gpu_ripples']
+        acc_defines = ['RIPPLES_ENABLE_HIP']
+
     if bld.env.ENABLE_MEMKIND:
-        cuda_acc_tools_deps += ['memkind']
-        cuda_acc_cxx_flags += ['-DENABLE_MEMKIND=1']
+        acc_tools_deps += ['memkind']
+        acc_defines += ['ENABLE_MEMKIND']
 
     bld(features='cxx cxxprogram', source='imm.cc', target='imm',
-        use=cuda_acc_tools_deps + ['cuda_imm_bfs'], cuda=bld.env.ENABLE_CUDA,
-        cxxflags=cuda_acc_cxx_flags)
+        use=acc_tools_deps + ['cuda_imm_bfs'], cuda=bld.env.ENABLE_CUDA,
+        defines=acc_defines)
 
     bld(features='cxx cxxprogram', source='louvain-imm.cc', target='louvain-imm',
         use=tools_deps)
@@ -81,16 +85,16 @@ def build(bld):
         use=tools_deps)
 
     bld(features='cxx cxxprogram', source='hill_climbing.cc', target='hill-climbing',
-        use=cuda_acc_tools_deps + ['cuda_hc_bfs'], cxxflags=cuda_acc_cxx_flags, cuda=bld.env.ENABLE_CUDA)
+        use=acc_tools_deps + ['cuda_hc_bfs'], defines=acc_defines, cuda=bld.env.ENABLE_CUDA)
 
     if not bld.env.HAVE_MPI:
         return
 
     tools_deps += ['MPI']
-    cuda_acc_tools_deps += ['MPI']
+    acc_tools_deps += ['MPI']
     bld(features='cxx cxxprogram', source='mpi-hill-climbing.cc', target='mpi-hill-climbing',
-        use=cuda_acc_tools_deps + ['cuda_hc_bfs'], cxxflags=cuda_acc_cxx_flags, cuda=bld.env.ENABLE_CUDA)
+        use=acc_tools_deps + ['cuda_hc_bfs'], defines=acc_defines, cuda=bld.env.ENABLE_CUDA)
 
     bld(features='cxx cxxprogram', source='mpi-imm.cc', target='mpi-imm',
-        use=cuda_acc_tools_deps + ['cuda_imm_bfs'], cuda=bld.env.ENABLE_CUDA,
-        cxxflags=cuda_acc_cxx_flags)
+        use=acc_tools_deps + ['cuda_imm_bfs'], cuda=bld.env.ENABLE_CUDA,
+        defines=acc_defines)

@@ -66,6 +66,7 @@ class GPURuntimeTrait {
 
   static void set_device(const device_id_type &);
   static device_id_type num_devices();
+  static size_type max_blocks();
 
   static stream_type create_stream();
   static void destroy_stream(stream_type &);
@@ -100,9 +101,10 @@ class GPURuntimeTrait<CUDA> {
 
   static void set_device(device_id_type ID) { cuda_set_device(ID); }
   static device_id_type num_devices() { return cuda_num_devices(); }
+  static size_type max_blocks() { return cuda_max_bolcks(); }
 
   static stream_type create_stream() {
-    cudaStream_t S;
+    stream_type S;
     cuda_stream_create(&S);
     return S;
   }
@@ -124,6 +126,13 @@ class GPURuntimeTrait<CUDA> {
   static void h2d(void *const D, void *const S, size_type size,
                   stream_type stream) {
     cuda_h2d(D, S, size, stream);
+  }
+
+  static void memset(void *const ptr, int value, size_type size) {
+    cuda_memset(ptr, value, size);
+  }
+  static void memset(void *const ptr, int value, size_type size, stream_type S) {
+    cuda_memset(ptr, value, size, S);
   }
 
   static bool p2p_atomics(device_id_type I, device_id_type J) {
@@ -152,6 +161,9 @@ class GPURuntimeTrait<HIP> {
     device_id_type res;
     hipGetDeviceCount(&res);
     return res;
+  }
+  static size_type max_blocks() {
+    return 1 << 16;
   }
 
   static stream_type create_stream() {
@@ -185,6 +197,13 @@ class GPURuntimeTrait<HIP> {
     hipDeviceGetP2PAttribute(&atomics, hipDevP2PAttrNativeAtomicSupported, I,
                              J);
     return atomics == 1;
+  }
+  static void memset(void *const ptr, int value, size_type size) {
+    hipMemset(ptr, value, size);
+  }
+  static void memset(void *const ptr, int value, size_type size,
+                     stream_type S) {
+    hipMemsetAsync(ptr, value, size, S);
   }
   static void enable_p2p(device_id_type D) { hipDeviceEnablePeerAccess(D, 0); }
   static void disable_p2p(device_id_type D) { hipDeviceDisablePeerAccess(D); }

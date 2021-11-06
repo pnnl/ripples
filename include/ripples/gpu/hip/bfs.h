@@ -37,62 +37,16 @@
 //
 //===----------------------------------------------------------------------===//
 
-#ifndef RIPPLES_GPU_GPU_GRAPH_H
-#define RIPPLES_GPU_GPU_GRAPH_H
+#ifndef RIPPLES_GPU_HIP_BFS_H
+#define RIPPLES_GPU_HIP_BFS_H
 
-#include "ripples/gpu/gpu_runtime_trait.h"
+#include <cstddef>
 
 namespace ripples {
-
-template <GPURuntime R, typename GraphTy>
-struct gpu_graph {
-  using vertex_t = int;  // TODO vertex type hard-coded in nvgraph
-  using edge_t = typename GraphTy::edge_type;
-  using weight_t = typename edge_t::edge_weight;
-
-  vertex_t *d_index_ = nullptr;
-  vertex_t *d_edges_ = nullptr;
-  weight_t *d_weights_ = nullptr;
+class hip_bfs_solver {
+ public:
+  static size_t traverse_block_size() { return 256; }
 };
-
-template <GPURuntime R, typename GraphTy>
-extern gpu_graph<R, GraphTy> * make_gpu_graph(const GraphTy &);
-
-template <GPURuntime R, typename GraphTy>
-void destroy_gpu_graph(gpu_graph<R, GraphTy> *g) {
-  assert(g);
-  assert(g->d_index_);
-  assert(g->d_edges_);
-  GPU<R>::device_free(g->d_index_);
-  GPU<R>::device_free(g->d_edges_);
-  if (g->d_weights_ != nullptr) GPU<R>::device_free(g->d_weights_);
-  delete g;
-}
-
-template <GPURuntime R, typename GraphTy>
-struct gpu_ctx {
-  using device_id_type = typename GPU<R>::device_id_type;
-  using device_graph_type = gpu_graph<R, GraphTy>;
-
-  device_id_type gpu_id;
-  device_graph_type *d_graph;
-};
-
-template <GPURuntime R, typename GraphTy>
-gpu_ctx<R, GraphTy> *make_gpu_context(const GraphTy &G,
-                                      typename GPU<R>::device_id_type gpu_id) {
-  auto res = new gpu_ctx<R, GraphTy>();
-  res->gpu_id = gpu_id;
-  res->d_graph = make_gpu_graph<R>(G);
-  return res;
-}
-
-template <GPURuntime R, typename GraphTy>
-void destroy_gpu_context(gpu_ctx<R, GraphTy> *ctx) {
-  GPU<R>::set_device(ctx->gpu_id);
-  destroy_gpu_graph(ctx->d_graph);
-}
-
 }  // namespace ripples
 
 #endif

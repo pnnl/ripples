@@ -40,20 +40,25 @@
 //
 //===----------------------------------------------------------------------===//
 
-
+#include "ripples/gpu/lt_kernel.h"
+#include "ripples/gpu/generate_rrr_sets.h"
+#include "ripples/gpu/gpu_supported_graphs.h"
 #include "ripples/graph.h"
-#include "ripples/cuda/cuda_lt_kernel.cuh"
-#include "ripples/cuda/cuda_generate_rrr_sets.h"
-#include "ripples/cuda/cuda_supported_graphs.h"
 
 #include "trng/lcg64.hpp"
 
-
 namespace ripples {
 
+#if defined(RIPPLES_ENABLE_CUDA)
+template void gpu_lt_kernel<CUDA, IMMGraphTy, trng::lcg64>(
+    size_t n_blocks, size_t block_size, size_t batch_size, size_t num_nodes,
+    trng::lcg64 *d_trng_states, mask_word_t *d_res_masks, size_t num_mask_words,
+    gpu_ctx<CUDA, IMMGraphTy> *ctx, typename GPU<CUDA>::stream_type stream);
+#elif defined(RIPPLES_ENABLE_HIP)
+template void gpu_lt_kernel<HIP, IMMGraphTy, trng::lcg64>(
+    size_t n_blocks, size_t block_size, size_t batch_size, size_t num_nodes,
+    trng::lcg64 *d_trng_states, mask_word_t *d_res_masks, size_t num_mask_words,
+    gpu_ctx<HIP, IMMGraphTy> *ctx, typename GPU<HIP>::stream_type stream);
+#endif
 
-template void cuda_lt_kernel<IMMGraphTy, trng::lcg64>(size_t n_blocks, size_t block_size, size_t batch_size,
-                                                      size_t num_nodes, trng::lcg64 *d_trng_states,
-                                                      mask_word_t *d_res_masks, size_t num_mask_words,
-                                                      cuda_ctx<IMMGraphTy> *ctx, cudaStream_t stream);
-}
+}  // namespace ripples

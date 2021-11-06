@@ -38,7 +38,7 @@
 //===----------------------------------------------------------------------===//
 
 #include "ripples/gpu/gpu_graph.h"
-#include "ripples/cuda/cuda_supported_graphs.h"
+#include "ripples/gpu/gpu_supported_graphs.h"
 #include "ripples/gpu/gpu_runtime_trait.h"
 
 namespace ripples {
@@ -72,24 +72,24 @@ gpu_graph<R, GraphTy> *make_gpu_graph(const GraphTy &hg) {
   // allocate
   auto res = new gpu_graph<R, GraphTy>();
   GPU<R>::device_malloc(
-      &res->d_edges_,
+      reinterpret_cast<void **>(&res->d_edges_),
       hg.num_edges() * sizeof(typename gpu_graph<R, GraphTy>::vertex_t));
   GPU<R>::device_malloc(
-      &res->d_weights_,
+      reinterpret_cast<void **>(&res->d_weights_),
       hg.num_edges() * sizeof(typename gpu_graph<R, GraphTy>::weight_t));
   GPU<R>::device_malloc(
-      &res->d_index_,
+      reinterpret_cast<void **>(&res->d_index_),
       (hg.num_nodes() + 1) * sizeof(typename gpu_graph<R, GraphTy>::vertex_t));
 
   // copy graph to device
   using destination_type = typename GraphTy::edge_type;
   destination_type *d_weighted_edges;
-  GPU<R>::device_malloc(&d_weighted_edges,
+  GPU<R>::device_malloc(reinterpret_cast<void **>(&d_weighted_edges),
                         hg.num_edges() * sizeof(destination_type));
   GPU<R>::h2d(d_weighted_edges, hg.csr_edges(),
               hg.num_edges() * sizeof(destination_type));
   destination_type **d_index;
-  GPU<R>::device_malloc(&d_index,
+  GPU<R>::device_malloc(reinterpret_cast<void **>(&d_index),
                         (hg.num_nodes() + 1) * sizeof(destination_type *));
   GPU<R>::h2d(d_index, hg.csr_index(),
               (hg.num_nodes() + 1) * sizeof(destination_type *));
@@ -118,13 +118,15 @@ gpu_graph<R, GraphTy> *make_gpu_graph(const GraphTy &hg) {
   return res;
 }
 
-template <>
-gpu_graph<CUDA, IMMGraphTy> *make_gpu_graph<CUDA, IMMGraphTy>(
+#if defined(RIPPLES_ENABLE_CUDA)
+template gpu_graph<CUDA, IMMGraphTy> *make_gpu_graph<CUDA, IMMGraphTy>(
     const IMMGraphTy &);
-template <>
-gpu_graph<CUDA, HCGraphTy> *make_gpu_graph<CUDA, HCGraphTy>(const HCGraphTy &);
-template <>
-gpu_graph<HIP, IMMGraphTy> *make_gpu_graph<HIP, IMMGraphTy>(const IMMGraphTy &);
-template <>
-gpu_graph<HIP, HCGraphTy> *make_gpu_graph<HIP, HCGraphTy>(const HCGraphTy &);
+template gpu_graph<CUDA, HCGraphTy> *make_gpu_graph<CUDA, HCGraphTy>(
+    const HCGraphTy &);
+#elif defined(RIPPLES_ENABLE_HIP)
+template gpu_graph<HIP, IMMGraphTy> *make_gpu_graph<HIP, IMMGraphTy>(
+    const IMMGraphTy &);
+template gpu_graph<HIP, HCGraphTy> *make_gpu_graph<HIP, HCGraphTy>(
+    const HCGraphTy &);
+#endif
 }  // namespace ripples
