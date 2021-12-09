@@ -128,10 +128,7 @@ def configure(conf):
 def build(bld):
     if not bld.variant:
         bld.fatal('call "./waf build_release" or "./waf build_debug", and try "./waf --help"')
-    directories = ['include', 'tools', 'test']
-
-    if bld.env.ENABLE_HIP or bld.env.ENABLE_CUDA:
-        directories += ['src/gpu']
+    directories = ['include', 'src', 'tools', 'test']
 
     bld.recurse(directories)
 

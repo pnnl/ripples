@@ -74,7 +74,7 @@ def build(bld):
         acc_defines += ['ENABLE_MEMKIND']
 
     bld(features='cuda cxx cxxprogram', source='imm.cc', target='imm',
-        use=acc_tools_deps + ['cuda_imm_bfs'], cuda=bld.env.ENABLE_CUDA,
+        use=acc_tools_deps + ['imm', 'cuda_imm_bfs'], cuda=bld.env.ENABLE_CUDA,
         defines=acc_defines)
 
     bld(features='cxx cxxprogram', source='louvain-imm.cc', target='louvain-imm',
