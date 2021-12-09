@@ -50,6 +50,10 @@
 #include "trng/uniform01_dist.hpp"
 #include "trng/uniform_int_dist.hpp"
 
+#if defined(RIPPLES_ENABLE_CUDA)
+#include "ripples/cuda/cuda_utils.h"
+#endif
+
 namespace ripples {
 
 template <GPURuntime R, typename GraphTy, typename gpu_PRNGeneratorTy>

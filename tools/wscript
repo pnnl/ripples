@@ -47,20 +47,22 @@ def build(bld):
         bld(features='cxx cxxstlib',
             source=['cuda/from_nvgraph/imm/bfs.cu'],
             target='cuda_imm_bfs', cuda=True,
+            defines=acc_defines,
             use=tools_deps + ['CUDA', 'CUDART', 'nvidia_cub'])
 
 
         bld(features='cxx cxxstlib',
             source=['cuda/from_nvgraph/hc/bfs.cu'],
             target='cuda_hc_bfs', cuda=True,
+            defines=acc_defines,
             use=tools_deps + ['CUDA', 'CUDART', 'nvidia_cub'])
 
         bld(features='cxx cxxstlib',
-            source=['cuda/cuda_utils.cu', 'cuda/cuda_generate_rrr_sets.cu',
-                    'cuda/find_most_influential.cu',
-                    'cuda/cuda_lt_kernel.cu', 'cuda/cuda_graph.cu',
+            source=['cuda/cuda_utils.cu', 
+                    'cuda/cuda_graph.cu',
                     'cuda/cuda_hc_engine.cu'],
             target='cuda_ripples', cuda=True,
+            defines=acc_defines,
             use=tools_deps + ['CUDA', 'CUDART', 'nvidia_cub'])
 
     if bld.env.ENABLE_HIP:
@@ -71,7 +73,7 @@ def build(bld):
         acc_tools_deps += ['memkind']
         acc_defines += ['ENABLE_MEMKIND']
 
-    bld(features='cxx cxxprogram', source='imm.cc', target='imm',
+    bld(features='cuda cxx cxxprogram', source='imm.cc', target='imm',
         use=acc_tools_deps + ['cuda_imm_bfs'], cuda=bld.env.ENABLE_CUDA,
         defines=acc_defines)
 

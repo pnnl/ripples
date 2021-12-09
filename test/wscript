@@ -51,10 +51,11 @@ def build(bld):
         target='rrr_set_generation_tests',
         use=['project-headers', 'libtrng', 'OpenMP', 'nlohmann_json', 'cli11', 'spdlog', 'fmt', 'catch2', 'test_main'])
 
-    if bld.env.ENABLE_CUDA:
+    if bld.env.ENABLE_CUDA and False:
         bld(features='cxx cxxprogram test',
             source='cuda_find_most_influential.cc',
             target='cuda_seed_select',
+            cuda=True,
             use=['project-headers', 'libtrng', 'OpenMP', 'nlohmann_json', 'cli11', 'spdlog', 'fmt', 'catch2', 'test_main']
             + ['cuda_ripples', 'CUDA', 'CUDART'],
-            cxxflags='-DRIPPLES_ENABLE_CUDA')
+            defines='RIPPLES_ENABLE_CUDA')

@@ -45,7 +45,7 @@
 #include <vector>
 
 #if defined(RIPPLES_ENABLE_CUDA)
-#include "ripplse/cuda/cuda_utils.h"
+#include "ripples/cuda/cuda_utils.h"
 #elif defined(RIPPLES_ENABLE_HIP)
 #include "hip/hip_runtime.h"
 #else
@@ -101,7 +101,7 @@ class GPURuntimeTrait<CUDA> {
 
   static void set_device(device_id_type ID) { cuda_set_device(ID); }
   static device_id_type num_devices() { return cuda_num_devices(); }
-  static size_type max_blocks() { return cuda_max_bolcks(); }
+  static size_type max_blocks() { return cuda_max_blocks(); }
 
   static stream_type create_stream() {
     stream_type S;

@@ -47,7 +47,6 @@
 #include "ripples/configuration.h"
 #include "ripples/diffusion_simulation.h"
 #include "ripples/graph.h"
-#include "ripples/imm.h"
 #include "ripples/loaders.h"
 #include "ripples/utility.h"
 

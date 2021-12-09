@@ -35,14 +35,18 @@
 
 def build(bld):
     defines = ['']
+    use_cuda = []
     if bld.env.ENABLE_CUDA:
         defines = ['RIPPLES_ENABLE_CUDA']
+        use_cuda = ['CUDA', 'CUDART', 'nvidia_cub']
     elif bld.env.ENABLE_HIP:
         defines = ['RIPPLES_ENABLE_HIP']
 
-    bld(features='cxx cxxstlib',
-        source=['gpu_graph.cc', 'find_most_influential.cc', 'lt_kernel.cc', 'generate_rrr_sets.cc'],
+    cuda = True if bld.env.ENABLE_CUDA else False
+
+    bld(features='cuda cxx cxxstlib',
+        source=['gpu_graph.cc', 'lt_kernel.cc', 'find_most_influential.cc', 'generate_rrr_sets.cc'],
         target='gpu_ripples',
-        cuda = bld.env.ENABLE_CUDA,
+        cuda = cuda,
         defines = defines,
-        use = ['project-headers', 'nlohmann_json', 'libtrng', 'fmt', 'spdlog'])
+        use = ['project-headers', 'nlohmann_json', 'libtrng', 'fmt', 'spdlog'] + use_cuda)

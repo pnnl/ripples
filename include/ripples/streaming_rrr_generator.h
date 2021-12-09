@@ -507,8 +507,8 @@ class GPUWalkWorker<GraphTy, PRNGeneratorTy, ItrTy, independent_cascade_tag>
     // create the solver
     solver_ = new bfs_solver_t(
         this->G_.num_nodes(), this->G_.num_edges(),
-        cuda_graph_index(cuda_ctx_.get()), cuda_graph_edges(cuda_ctx_.get()),
-        cuda_graph_weights(cuda_ctx_.get()), true, TRAVERSAL_DEFAULT_ALPHA,
+        gpu_ctx_.get()->d_graph->d_index_, gpu_ctx_.get()->d_graph->d_edges_,
+        gpu_ctx_.get()->d_graph->d_weights_, true, TRAVERSAL_DEFAULT_ALPHA,
         TRAVERSAL_DEFAULT_BETA, conf_.max_blocks_, cuda_stream_);
     solver_->configure(nullptr, d_ic_predecessors_, nullptr);
 #endif
