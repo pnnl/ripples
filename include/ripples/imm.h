@@ -310,7 +310,7 @@ auto Sampling(const GraphTy &G, const ConfTy &CFG, double l,
 //! \param ex_tag The execution policy tag.
 template <typename GraphTy, typename ConfTy, typename PRNG,
           typename diff_model_tag>
-auto IMM(const GraphTy &G, const ConfTy &CFG, double l, PRNG &gen,
+std::vector<typename GraphTy::vertex_type> IMM(const GraphTy &G, const ConfTy &CFG, double l, PRNG &gen,
          IMMExecutionRecord &record, diff_model_tag &&model_tag,
          sequential_tag &&ex_tag) {
   using vertex_type = typename GraphTy::vertex_type;
@@ -358,7 +358,7 @@ auto IMM(const GraphTy &G, const ConfTy &CFG, double l, PRNG &gen,
 //! \param ex_tag The execution policy tag.
 template <typename GraphTy, typename ConfTy, typename GeneratorTy,
           typename diff_model_tag>
-auto IMM(const GraphTy &G, const ConfTy &CFG, double l, GeneratorTy &gen,
+std::vector<typename GraphTy::vertex_type> IMM(const GraphTy &G, const ConfTy &CFG, double l, GeneratorTy &gen,
          diff_model_tag &&model_tag, omp_parallel_tag &&ex_tag) {
   using vertex_type = typename GraphTy::vertex_type;
   size_t k = CFG.k;

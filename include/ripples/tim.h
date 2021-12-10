@@ -57,6 +57,7 @@
 
 #include <omp.h>
 
+#include "ripples/configuration.h"
 #include "ripples/diffusion_simulation.h"
 #include "ripples/find_most_influential.h"
 #include "ripples/generate_rrr_sets.h"

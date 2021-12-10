@@ -155,8 +155,8 @@ int main(int argc, char **argv) {
   weightGen.split(2, 0);
 
   console->info("Loading...");
-  GraphFwd Gf = ripples::loadGraph<GraphFwd>(CFG, weightGen);
-  GraphBwd G = Gf.get_transpose();
+  ripples::GraphFwd Gf = ripples::loadGraph<ripples::GraphFwd>(CFG, weightGen);
+  ripples::GraphBwd G = Gf.get_transpose();
   console->info("Loading Done!");
   console->info("Number of Nodes : {}", G.num_nodes());
   console->info("Number of Edges : {}", G.num_edges());
@@ -177,11 +177,7 @@ int main(int argc, char **argv) {
     auto gpu_workers = CFG.streaming_gpu_workers;
     decltype(R.Total) real_total;
     if (CFG.diffusionModel == "IC") {
-      ripples::StreamingRRRGenerator<
-          decltype(G), decltype(generator),
-          typename ripples::RRRsets<decltype(G)>::iterator,
-          ripples::independent_cascade_tag>
-          se(G, generator, R, workers - gpu_workers, gpu_workers,
+      ripples::ICStreamingGenerator se(G, generator, R, workers - gpu_workers, gpu_workers,
              CFG.worker_to_gpu);
       auto start = std::chrono::high_resolution_clock::now();
       seeds = IMM(G, CFG, 1, se, ripples::independent_cascade_tag{},
@@ -190,11 +186,7 @@ int main(int argc, char **argv) {
       R.Total = end - start - R.Total;
       real_total = end - start;
     } else if (CFG.diffusionModel == "LT") {
-      ripples::StreamingRRRGenerator<
-          decltype(G), decltype(generator),
-          typename ripples::RRRsets<decltype(G)>::iterator,
-          ripples::linear_threshold_tag>
-          se(G, generator, R, workers - gpu_workers, gpu_workers,
+      ripples::LTStreamingGenerator se(G, generator, R, workers - gpu_workers, gpu_workers,
              CFG.worker_to_gpu);
       auto start = std::chrono::high_resolution_clock::now();
       seeds = IMM(G, CFG, 1, se, ripples::linear_threshold_tag{},

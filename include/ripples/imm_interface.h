@@ -43,6 +43,8 @@
 #ifndef RIPPLES_IMM_INTERFACE_H
 #define RIPPLES_IMM_INTERFACE_H
 
+#include "ripples/imm_execution_record.h"
+
 namespace ripples {
 
 using dest_type = ripples::WeightedDestination<uint32_t, float>;
@@ -51,11 +53,36 @@ using GraphFwd =
 using GraphBwd =
   ripples::Graph<uint32_t, dest_type, ripples::BackwardDirection<uint32_t>>;
 
+using LTStreamingGenerator =
+	  ripples::StreamingRRRGenerator<
+	    GraphBwd, trng::lcg64,
+	  typename ripples::RRRsets<GraphBwd>::iterator,
+	    ripples::linear_threshold_tag>;
+using ICStreamingGenerator =
+	  ripples::StreamingRRRGenerator<
+	    GraphBwd, trng::lcg64,
+	  typename ripples::RRRsets<GraphBwd>::iterator,
+	    ripples::independent_cascade_tag>;
+
 template <typename GraphTy, typename ConfTy, typename GeneratorTy,
           typename diff_model_tag>
-extern auto IMM(const GraphTy &G, const ConfTy &CFG, double l, GeneratorTy &gen,
+extern std::vector<typename GraphTy::vertex_type> IMM(const GraphTy &G, const ConfTy &CFG, double l, GeneratorTy &gen,
+                diff_model_tag &&model_tag, sequential_tag &&ex_tag);
+
+template <typename GraphTy, typename ConfTy, typename GeneratorTy,
+          typename diff_model_tag>
+extern std::vector<typename GraphTy::vertex_type> IMM(const GraphTy &G, const ConfTy &CFG, double l, GeneratorTy &gen,
                 diff_model_tag &&model_tag, omp_parallel_tag &&ex_tag);
 
+template <typename GraphTy, typename ConfTy, typename GeneratorTy,
+          typename diff_model_tag>
+extern std::vector<typename GraphTy::vertex_type> IMM(const GraphTy &G, const ConfTy &CFG, double l, GeneratorTy &gen,
+                IMMExecutionRecord&, diff_model_tag &&model_tag, sequential_tag &&ex_tag);
+
+template <typename GraphTy, typename ConfTy, typename GeneratorTy,
+          typename diff_model_tag>
+extern std::vector<typename GraphTy::vertex_type> IMM(const GraphTy &G, const ConfTy &CFG, double l, GeneratorTy &gen,
+                IMMExecutionRecord &, diff_model_tag &&model_tag, omp_parallel_tag &&ex_tag);
 }
 
 #endif

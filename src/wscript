@@ -37,7 +37,10 @@ def build(bld):
     if bld.env.ENABLE_HIP or bld.env.ENABLE_CUDA:
         bld.recurse('gpu')
 
-    bld(feature='cuda cxx cxxstlib',
+    deps = ['project-headers', 'cli11', 'libtrng', 'fmt', 'spdlog', 'nlohmann_json']
+
+    bld(features='cuda cxx cxxstlib',
         source=['imm.cc'],
-        target='imm',
-        cuda=bld.env.ENABLE_CUDA)
+        target='libimm',
+        cuda=bld.env.ENABLE_CUDA,
+        use=deps)

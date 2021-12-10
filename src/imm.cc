@@ -43,38 +43,29 @@
 #include <vector>
 
 #include "ripples/imm.h"
+#include "ripples/imm_interface.h"
 #include "ripples/graph.h"
 #include "ripples/imm_execution_record.h"
+#include "ripples/imm_configuration.h"
 
 namespace ripples {
 template
-std::vector<typename GraphFwd::vertex_type>
-IMM(const GraphBwd &, const IMMConfiguration &, double,
-    trng::lcg64 &, IMMExecutionRecord &, independent_cascade_tag &&, sequential_tag &&);
+std::vector<typename GraphBwd::vertex_type>
+IMM<GraphBwd, IMMConfiguration, trng::lcg64, independent_cascade_tag>(const GraphBwd &, const IMMConfiguration &, double,
+    trng::lcg64 &, IMMExecutionRecord&, independent_cascade_tag &&, sequential_tag &&);
 
 template
-std::vector<typename GraphFwd::vertex_type>
-IMM(const GraphBwd &, const IMMConfiguration &, double,
-    trng::lcg64 &, IMMExecutionRecord &, linear_threshold_tag &&, sequential_tag &&);
-
-using LTStreamingGenerator =
-  ripples::StreamingRRRGenerator<
-  GraphBwd, trng::lcg64,
-  typename ripples::RRRsets<GraphBwd>::iterator,
-  ripples::linear_threshold_tag>;
-using ICStreamingGenerator =
-  ripples::StreamingRRRGenerator<
-  GraphBwd, trng::lcg64,
-  typename ripples::RRRsets<GraphBwd>::iterator,
-  ripples::independent_cascade_tag>;
+std::vector<typename GraphBwd::vertex_type>
+IMM<GraphBwd, IMMConfiguration, trng::lcg64, linear_threshold_tag>(const GraphBwd &, const IMMConfiguration &, double,
+    trng::lcg64 &, IMMExecutionRecord&, linear_threshold_tag&&, sequential_tag &&);
 
 template
-std::vector<typename GraphFwd::vertex_type>
-IMM(const GraphBwd &, const IMMConfiguration &, double,
-    ICStreamingRRRGenerator &, IMMExecutionRecord &, independent_cascade_tag &&, omp_parallel_tag &&);
+std::vector<typename GraphBwd::vertex_type>
+IMM<GraphBwd, IMMConfiguration, ICStreamingGenerator, independent_cascade_tag>(const GraphBwd &, const IMMConfiguration &, double,
+    ICStreamingGenerator &, independent_cascade_tag &&, omp_parallel_tag &&);
 
 template
-std::vector<typename GraphFwd::vertex_type>
-IMM(const GraphBwd &, const IMMConfiguration &, double,
-    LTStreamingRRRGenerator &, IMMExecutionRecord &, linear_threshold_tag &&, omp_parallel_tag &&);
+std::vector<typename GraphBwd::vertex_type>
+IMM<GraphBwd, IMMConfiguration, LTStreamingGenerator, linear_threshold_tag>(const GraphBwd &, const IMMConfiguration &, double,
+    LTStreamingGenerator &, linear_threshold_tag &&, omp_parallel_tag &&);
 }

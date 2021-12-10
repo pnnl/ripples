@@ -509,7 +509,7 @@ class GPUWalkWorker<GraphTy, PRNGeneratorTy, ItrTy, independent_cascade_tag>
         this->G_.num_nodes(), this->G_.num_edges(),
         gpu_ctx_.get()->d_graph->d_index_, gpu_ctx_.get()->d_graph->d_edges_,
         gpu_ctx_.get()->d_graph->d_weights_, true, TRAVERSAL_DEFAULT_ALPHA,
-        TRAVERSAL_DEFAULT_BETA, conf_.max_blocks_, cuda_stream_);
+        TRAVERSAL_DEFAULT_BETA, conf_.max_blocks_, gpu_stream_);
     solver_->configure(nullptr, d_ic_predecessors_, nullptr);
 #endif
   }
