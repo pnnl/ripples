@@ -40,52 +40,27 @@
 //
 //===----------------------------------------------------------------------===//
 
-#ifndef RIPPLES_IMM_CONFIGURATION_H
-#define RIPPLES_IMM_CONDIGURATION_H
-
-#include <cstddef>
-#include <limits>
-#include <string>
-#include <unordered_map>
+#include RIPPLES_TIM_CONFIGURATION_H
+#define RIPPLES_TIM_CONFIGURATION_H
 
 #include "ripples/configuration.h"
-#include "ripples/tim_configuration.h"
 
 namespace ripples {
 
-//! The IMM algorithm configuration descriptor.
-struct IMMConfiguration : public TIMConfiguration {
-  size_t streaming_workers{0};
-  size_t streaming_gpu_workers{0};
-  size_t seed_select_max_workers{std::numeric_limits<size_t>::max()};
-  size_t seed_select_max_gpu_workers{0};
-  std::string gpu_mapping_string{""};
-  std::unordered_map<size_t, size_t> worker_to_gpu;
+//! \brief The configuration data structure for the TIM+ algorithm.
+struct TIMConfiguration : public AlgorithmConfiguration {
+  double epsilon{0.50};  //!< The epsilon of the IM algorithm
 
-  //! \brief Add command line options to configure IMM.
+  //! \brief Add command line options to configure TIM+.
   //!
   //! \param app The command-line parser object.
   void addCmdOptions(CLI::App &app) {
-    TIMConfiguration::addCmdOptions(app);
-    app.add_option(
-           "--streaming-gpu-workers", streaming_gpu_workers,
-           "The number of GPU workers for the CPU+GPU streaming engine.")
-        ->group("Streaming-Engine Options");
-    app.add_option("--streaming-gpu-mapping", gpu_mapping_string,
-                   "A comma-separated set of OpenMP numbers for GPU workers.")
-        ->group("Streaming-Engine Options");
-    app.add_option("--seed-select-max-workers", seed_select_max_workers,
-                   "The max number of workers for seed selection.")
-        ->group("Streaming-Engine Options");
-    app.add_option("--seed-select-max-gpu-workers", seed_select_max_gpu_workers,
-                   "The max number of GPU workers for seed selection.")
-        ->group("Streaming-Engine Options");
+    AlgorithmConfiguration::addCmdOptions(app);
+    app.add_option("-e,--epsilon", epsilon, "The size of the seed set.")
+      ->required()
+      ->group("Algorithm Options");
   }
 };
-
-//! Retrieve the configuration parsed from command line.
-//! \return the configuration parsed from command line.
-ToolConfiguration<ripples::IMMConfiguration> configuration();
 
 }
 
