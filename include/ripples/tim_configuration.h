@@ -40,7 +40,7 @@
 //
 //===----------------------------------------------------------------------===//
 
-#include RIPPLES_TIM_CONFIGURATION_H
+#ifndef RIPPLES_TIM_CONFIGURATION_H
 #define RIPPLES_TIM_CONFIGURATION_H
 
 #include "ripples/configuration.h"

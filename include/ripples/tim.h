@@ -61,7 +61,7 @@
 #include "ripples/find_most_influential.h"
 #include "ripples/generate_rrr_sets.h"
 #include "ripples/utility.h"
-#include "ripples/tim_configutaion.h"
+#include "ripples/tim_configuration.h"
 
 #include "CLI/CLI.hpp"
 #include "trng/lcg64.hpp"
