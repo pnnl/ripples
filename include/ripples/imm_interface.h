@@ -53,6 +53,10 @@ using GraphFwd =
 using GraphBwd =
   ripples::Graph<uint32_t, dest_type, ripples::BackwardDirection<uint32_t>>;
 
+template <typename GraphTy, typename PRNGeneratorTy, typename ItrTy,
+          typename diff_model_tag>
+class StreamingRRRGenerator;
+
 using LTStreamingGenerator =
 	  ripples::StreamingRRRGenerator<
 	    GraphBwd, trng::lcg64,

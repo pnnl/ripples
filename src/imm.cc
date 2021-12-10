@@ -49,6 +49,7 @@
 #include "ripples/imm_configuration.h"
 
 namespace ripples {
+
 template
 std::vector<typename GraphBwd::vertex_type>
 IMM<GraphBwd, IMMConfiguration, trng::lcg64, independent_cascade_tag>(const GraphBwd &, const IMMConfiguration &, double,
