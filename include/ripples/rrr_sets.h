@@ -40,50 +40,29 @@
 //
 //===----------------------------------------------------------------------===//
 
+#ifndef RIPPLES_RRR_SETS_H
+#define RIPPLES_RRR_SETS_H
+
 #include <vector>
 
-#include "ripples/imm.h"
-#include "ripples/graph.h"
-#include "ripples/imm_execution_record.h"
-#include "ripples/imm_configuration.h"
-#include "ripples/streaming_rrr_generator.h"
+#ifdef ENABLE_MEMKIND
+#include "memkind_allocator.h"
+#endif
 
 namespace ripples {
+#ifdef ENABLE_MEMKIND
+  template<typename vertex_type>
+  using RRRsetAllocator = libmemkind::static_kind::allocator<vertex_type>;
+#else
+  template <typename vertex_type>
+  using RRRsetAllocator = std::allocator<vertex_type>;
+#endif
 
-using dest_type = ripples::WeightedDestination<uint32_t, float>;
-using GraphFwd =
-  ripples::Graph<uint32_t, dest_type, ripples::ForwardDirection<uint32_t>>;
-using GraphBwd =
-  ripples::Graph<uint32_t, dest_type, ripples::BackwardDirection<uint32_t>>;
-
-using LTStreamingGenerator =
-  ripples::StreamingRRRGenerator<
-  GraphBwd, trng::lcg64,
-  typename ripples::RRRsets<GraphBwd>::iterator,
-  ripples::linear_threshold_tag>;
-using ICStreamingGenerator =
-  ripples::StreamingRRRGenerator<
-  GraphBwd, trng::lcg64,
-  typename ripples::RRRsets<GraphBwd>::iterator,
-  ripples::independent_cascade_tag>;
-
-template
-std::vector<typename GraphBwd::vertex_type>
-IMM(const GraphBwd &, const ToolConfiguration<IMMConfiguration> &, double,
-    trng::lcg64 &, IMMExecutionRecord&, independent_cascade_tag &&, sequential_tag &&);
-
-template
-std::vector<typename GraphBwd::vertex_type>
-IMM(const GraphBwd &, const ToolConfiguration<IMMConfiguration> &, double,
-    trng::lcg64 &, IMMExecutionRecord&, linear_threshold_tag&&, sequential_tag &&);
-
-template
-std::vector<typename GraphBwd::vertex_type>
-IMM(const GraphBwd &, const ToolConfiguration<IMMConfiguration> &, double,
-    ICStreamingGenerator &, independent_cascade_tag &&, omp_parallel_tag &&);
-
-template
-std::vector<typename GraphBwd::vertex_type>
-IMM(const GraphBwd &, const ToolConfiguration<IMMConfiguration> &, double,
-    LTStreamingGenerator &, linear_threshold_tag &&, omp_parallel_tag &&);
+  //! \brief The Random Reverse Reachability Sets type
+  template <typename GraphTy>
+  using RRRset = std::vector<typename GraphTy::vertex_type, RRRsetAllocator<typename GraphTy::vertex_type>>;
+  template <typename GraphTy>
+  using RRRsets = std::vector<RRRset<GraphTy>>;
 }
+
+#endif

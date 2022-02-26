@@ -34,13 +34,14 @@
 # SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 def build(bld):
+    deps = ['project-headers', 'cli11', 'libtrng', 'fmt', 'spdlog', 'nlohmann_json']
     if bld.env.ENABLE_HIP or bld.env.ENABLE_CUDA:
         bld.recurse('gpu')
+        deps += ['gpu_ripples']
 
-    deps = ['project-headers', 'cli11', 'libtrng', 'fmt', 'spdlog', 'nlohmann_json']
 
     bld(features='cuda cxx cxxstlib',
         source=['imm.cc'],
-        target='libimm',
+        target='infmax',
         cuda=bld.env.ENABLE_CUDA,
         use=deps)

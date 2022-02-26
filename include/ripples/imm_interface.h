@@ -44,6 +44,8 @@
 #define RIPPLES_IMM_INTERFACE_H
 
 #include "ripples/imm_execution_record.h"
+#include "ripples/rrr_sets.h"
+#include "ripples/streaming_rrr_generator.h"
 
 namespace ripples {
 

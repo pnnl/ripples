@@ -42,6 +42,7 @@
 
 #include "catch2/catch.hpp"
 
+#include "ripples/imm_configuration.h"
 #include "ripples/generate_rrr_sets.h"
 #include "ripples/graph.h"
 #include "ripples/imm.h"

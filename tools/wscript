@@ -74,7 +74,7 @@ def build(bld):
         acc_defines += ['ENABLE_MEMKIND']
 
     bld(features='cxx cxxprogram', source='imm.cc', target='imm',
-        use=acc_tools_deps + ['libimm', 'cuda_imm_bfs'], 
+        use=acc_tools_deps + ['infmax', 'cuda_imm_bfs'], 
         defines=acc_defines)
 
     bld(features='cxx cxxprogram', source='louvain-imm.cc', target='louvain-imm',

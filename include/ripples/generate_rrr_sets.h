@@ -54,91 +54,14 @@
 #include "ripples/graph.h"
 #include "ripples/imm_execution_record.h"
 #include "ripples/utility.h"
+#include "ripples/rrr_sets.h"
+#include "ripples/add_rrrset.h"
 #include "ripples/streaming_rrr_generator.h"
 
 #include "trng/uniform01_dist.hpp"
 #include "trng/uniform_int_dist.hpp"
 
-#ifdef ENABLE_MEMKIND
-#include "memkind_allocator.h"
-#endif
-
 namespace ripples {
-
-#ifdef ENABLE_MEMKIND
-template<typename vertex_type>
-using RRRsetAllocator = libmemkind::static_kind::allocator<vertex_type>;
-#else
-template <typename vertex_type>
-using RRRsetAllocator = std::allocator<vertex_type>;
-#endif
-
-//! \brief The Random Reverse Reachability Sets type
-template <typename GraphTy>
-using RRRset = std::vector<typename GraphTy::vertex_type, RRRsetAllocator<typename GraphTy::vertex_type>>;
-template <typename GraphTy>
-using RRRsets = std::vector<RRRset<GraphTy>>;
-
-//! \brief Execute a randomize BFS to generate a Random RR Set.
-//!
-//! \tparam GraphTy The type of the graph.
-//! \tparam PRNGGeneratorTy The type of pseudo the random number generator.
-//! \tparam diff_model_tag The policy for the diffusion model.
-//!
-//! \param G The graph instance.
-//! \param r The starting point for the exploration.
-//! \param generator The pseudo random number generator.
-//! \param result The RRR set
-//! \param tag The diffusion model tag.
-template <typename GraphTy, typename PRNGeneratorTy, typename diff_model_tag>
-void AddRRRSet(const GraphTy &G, typename GraphTy::vertex_type r,
-               PRNGeneratorTy &generator, RRRset<GraphTy> &result,
-               diff_model_tag &&tag) {
-  using vertex_type = typename GraphTy::vertex_type;
-
-  trng::uniform01_dist<float> value;
-
-  std::queue<vertex_type> queue;
-  std::vector<bool> visited(G.num_nodes(), false);
-
-  queue.push(r);
-  visited[r] = true;
-  result.push_back(r);
-
-  while (!queue.empty()) {
-    vertex_type v = queue.front();
-    queue.pop();
-
-    if (std::is_same<diff_model_tag, ripples::independent_cascade_tag>::value) {
-      for (auto u : G.neighbors(v)) {
-        if (!visited[u.vertex] && value(generator) <= u.weight) {
-          queue.push(u.vertex);
-          visited[u.vertex] = true;
-          result.push_back(u.vertex);
-        }
-      }
-    } else if (std::is_same<diff_model_tag,
-                            ripples::linear_threshold_tag>::value) {
-      float threshold = value(generator);
-      for (auto u : G.neighbors(v)) {
-        threshold -= u.weight;
-
-        if (threshold > 0) continue;
-
-        if (!visited[u.vertex]) {
-          queue.push(u.vertex);
-          visited[u.vertex] = true;
-          result.push_back(u.vertex);
-        }
-        break;
-      }
-    } else {
-      throw;
-    }
-  }
-
-  std::stable_sort(result.begin(), result.end());
-}
 
 //! \brief Generate Random Reverse Reachability Sets - sequential.
 //!

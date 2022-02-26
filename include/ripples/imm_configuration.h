@@ -41,15 +41,26 @@
 //===----------------------------------------------------------------------===//
 
 #ifndef RIPPLES_IMM_CONFIGURATION_H
-#define RIPPLES_IMM_CONDIGURATION_H
+#define RIPPLES_IMM_CONFIGURATION_H
 
 #include <cstddef>
 #include <limits>
 #include <string>
 #include <unordered_map>
 
+#include "spdlog/spdlog.h"
+
 #include "ripples/configuration.h"
 #include "ripples/tim_configuration.h"
+
+#if defined(RIPPLES_ENABLE_CUDA) || defined(RIPPLES_ENABLE_HIP)
+#include "ripples/gpu/gpu_runtime_trait.h"
+#endif
+#if defined(RIPPLES_ENABLE_CUDA)
+#define RUNTIME CUDA
+#elif defined(RIPPLES_ENABLE_HIP)
+#define RUNTIME HIP
+#endif
 
 namespace ripples {
 
@@ -87,6 +98,57 @@ struct IMMConfiguration : public TIMConfiguration {
 //! \return the configuration parsed from command line.
 ToolConfiguration<ripples::IMMConfiguration> configuration();
 
+inline int streaming_command_line(std::unordered_map<size_t, size_t> &worker_to_gpu,
+                           size_t streaming_workers,
+                           size_t streaming_gpu_workers,
+                           std::string gpu_mapping_string) {
+  auto console = spdlog::get("console");
+  if (!(streaming_workers > 0 && streaming_gpu_workers <= streaming_workers)) {
+    console->error("invalid number of streaming workers");
+    return -1;
+  }
+
+#if defined(RIPPLES_ENABLE_CUDA) || defined(RIPPLES_ENABLE_HIP)
+  auto num_gpus = GPU<RUNTIME>::num_devices();
+  if (!gpu_mapping_string.empty()) {
+    size_t gpu_id = 0;
+    std::istringstream iss(gpu_mapping_string);
+    std::string token;
+    while (worker_to_gpu.size() < streaming_gpu_workers &&
+           std::getline(iss, token, ',')) {
+      std::stringstream omp_num_ss(token);
+      size_t omp_num;
+      omp_num_ss >> omp_num;
+      if (!(omp_num < streaming_workers)) {
+        console->error("invalid worker in worker-to-GPU mapping: {}", omp_num);
+        return -1;
+      }
+      if (worker_to_gpu.find(omp_num) != worker_to_gpu.end()) {
+        console->error("duplicated worker-to-GPU mapping: {}", omp_num);
+        return -1;
+      }
+      worker_to_gpu[omp_num] = gpu_id++;
+      if (gpu_id == num_gpus) gpu_id = 0;
+    }
+    if (worker_to_gpu.size() < streaming_gpu_workers) {
+      console->error("GPU mapping string is too short");
+      return -1;
+    }
+  } else {
+    // by default, map GPU workers after CPU workers
+    size_t gpu_id = 0;
+    size_t omp_num = streaming_workers - streaming_gpu_workers;
+    for (; omp_num < streaming_workers; ++omp_num) {
+      worker_to_gpu[omp_num] = gpu_id++;
+      if (gpu_id == num_gpus) gpu_id = 0;
+    }
+  }
+#else   // RIPPLES_ENABLE_CUDA
+
+  assert(streaming_gpu_workers == 0);
+#endif  // RIPPLES_ENABLE_CUDA
+  return 0;
+}
 }
 
 #endif

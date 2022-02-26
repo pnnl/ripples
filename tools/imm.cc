@@ -52,14 +52,11 @@
 #include "ripples/imm_configuration.h"
 #include "ripples/imm_interface.h"
 
-#include "omp.h"
-
-#include "CLI/CLI.hpp"
-#include "nlohmann/json.hpp"
-
 #include "spdlog/fmt/ostr.h"
 #include "spdlog/sinks/stdout_color_sinks.h"
 #include "spdlog/spdlog.h"
+
+#include "omp.h"
 
 namespace ripples {
 
@@ -163,7 +160,7 @@ int main(int argc, char **argv) {
 
   nlohmann::json executionLog;
 
-  std::vector<typename GraphBwd::vertex_type> seeds;
+  std::vector<typename ripples::GraphBwd::vertex_type> seeds;
   ripples::IMMExecutionRecord R;
 
   trng::lcg64 generator;
@@ -173,6 +170,7 @@ int main(int argc, char **argv) {
   std::ofstream perf(CFG.OutputFile);
 
   if (CFG.parallel) {
+#if 0
     auto workers = CFG.streaming_workers;
     auto gpu_workers = CFG.streaming_gpu_workers;
     decltype(R.Total) real_total;
@@ -208,16 +206,17 @@ int main(int argc, char **argv) {
     auto experiment = GetExperimentRecord(CFG, R, seeds);
     executionLog.push_back(experiment);
     perf << executionLog.dump(2);
+#endif
   } else {
     if (CFG.diffusionModel == "IC") {
       auto start = std::chrono::high_resolution_clock::now();
-      seeds = IMM(G, CFG, 1, generator, R, ripples::independent_cascade_tag{},
+      seeds = IMM(G, CFG, 1.0, generator, R, ripples::independent_cascade_tag{},
                   ripples::sequential_tag{});
       auto end = std::chrono::high_resolution_clock::now();
       R.Total = end - start;
     } else if (CFG.diffusionModel == "LT") {
       auto start = std::chrono::high_resolution_clock::now();
-      seeds = IMM(G, CFG, 1, generator, R, ripples::linear_threshold_tag{},
+      seeds = IMM(G, CFG, 1.0, generator, R, ripples::linear_threshold_tag{},
                   ripples::sequential_tag{});
       auto end = std::chrono::high_resolution_clock::now();
       R.Total = end - start;

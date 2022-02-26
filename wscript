@@ -128,7 +128,7 @@ def configure(conf):
 def build(bld):
     if not bld.variant:
         bld.fatal('call "./waf build_release" or "./waf build_debug", and try "./waf --help"')
-    directories = ['include', 'src', 'tools']
+    directories = ['include', 'src', 'tools', 'test']
 
     bld.recurse(directories)
 

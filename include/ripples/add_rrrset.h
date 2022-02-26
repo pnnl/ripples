@@ -40,50 +40,81 @@
 //
 //===----------------------------------------------------------------------===//
 
-#include <vector>
+#ifndef RIPPLES_ADD_RRRSET_H
+#define RIPPLES_ADD_RRRSET_H
 
-#include "ripples/imm.h"
-#include "ripples/graph.h"
-#include "ripples/imm_execution_record.h"
-#include "ripples/imm_configuration.h"
-#include "ripples/streaming_rrr_generator.h"
+#include <queue>
+#include <vector>
+#include <utility>
+
+#include "ripples/diffusion_simulation.h"
+
+#include "trng/uniform01_dist.hpp"
+#include "trng/uniform_int_dist.hpp"
 
 namespace ripples {
 
-using dest_type = ripples::WeightedDestination<uint32_t, float>;
-using GraphFwd =
-  ripples::Graph<uint32_t, dest_type, ripples::ForwardDirection<uint32_t>>;
-using GraphBwd =
-  ripples::Graph<uint32_t, dest_type, ripples::BackwardDirection<uint32_t>>;
+//! \brief Execute a randomize BFS to generate a Random RR Set.
+//!
+//! \tparam GraphTy The type of the graph.
+//! \tparam PRNGGeneratorTy The type of pseudo the random number generator.
+//! \tparam diff_model_tag The policy for the diffusion model.
+//!
+//! \param G The graph instance.
+//! \param r The starting point for the exploration.
+//! \param generator The pseudo random number generator.
+//! \param result The RRR set
+//! \param tag The diffusion model tag.
+template <typename GraphTy, typename PRNGeneratorTy, typename diff_model_tag>
+void AddRRRSet(const GraphTy &G, typename GraphTy::vertex_type r,
+               PRNGeneratorTy &generator, RRRset<GraphTy> &result,
+               diff_model_tag &&tag) {
+  using vertex_type = typename GraphTy::vertex_type;
 
-using LTStreamingGenerator =
-  ripples::StreamingRRRGenerator<
-  GraphBwd, trng::lcg64,
-  typename ripples::RRRsets<GraphBwd>::iterator,
-  ripples::linear_threshold_tag>;
-using ICStreamingGenerator =
-  ripples::StreamingRRRGenerator<
-  GraphBwd, trng::lcg64,
-  typename ripples::RRRsets<GraphBwd>::iterator,
-  ripples::independent_cascade_tag>;
+  trng::uniform01_dist<float> value;
 
-template
-std::vector<typename GraphBwd::vertex_type>
-IMM(const GraphBwd &, const ToolConfiguration<IMMConfiguration> &, double,
-    trng::lcg64 &, IMMExecutionRecord&, independent_cascade_tag &&, sequential_tag &&);
+  std::queue<vertex_type> queue;
+  std::vector<bool> visited(G.num_nodes(), false);
 
-template
-std::vector<typename GraphBwd::vertex_type>
-IMM(const GraphBwd &, const ToolConfiguration<IMMConfiguration> &, double,
-    trng::lcg64 &, IMMExecutionRecord&, linear_threshold_tag&&, sequential_tag &&);
+  queue.push(r);
+  visited[r] = true;
+  result.push_back(r);
 
-template
-std::vector<typename GraphBwd::vertex_type>
-IMM(const GraphBwd &, const ToolConfiguration<IMMConfiguration> &, double,
-    ICStreamingGenerator &, independent_cascade_tag &&, omp_parallel_tag &&);
+  while (!queue.empty()) {
+    vertex_type v = queue.front();
+    queue.pop();
 
-template
-std::vector<typename GraphBwd::vertex_type>
-IMM(const GraphBwd &, const ToolConfiguration<IMMConfiguration> &, double,
-    LTStreamingGenerator &, linear_threshold_tag &&, omp_parallel_tag &&);
+    if (std::is_same<diff_model_tag, ripples::independent_cascade_tag>::value) {
+      for (auto u : G.neighbors(v)) {
+        if (!visited[u.vertex] && value(generator) <= u.weight) {
+          queue.push(u.vertex);
+          visited[u.vertex] = true;
+          result.push_back(u.vertex);
+        }
+      }
+    } else if (std::is_same<diff_model_tag,
+                            ripples::linear_threshold_tag>::value) {
+      float threshold = value(generator);
+      for (auto u : G.neighbors(v)) {
+        threshold -= u.weight;
+
+        if (threshold > 0) continue;
+
+        if (!visited[u.vertex]) {
+          queue.push(u.vertex);
+          visited[u.vertex] = true;
+          result.push_back(u.vertex);
+        }
+        break;
+      }
+    } else {
+      throw;
+    }
+  }
+
+  std::stable_sort(result.begin(), result.end());
 }
+
+}
+
+#endif
