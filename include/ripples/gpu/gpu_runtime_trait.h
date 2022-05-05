@@ -205,7 +205,7 @@ class GPURuntimeTrait<HIP> {
                      stream_type S) {
     hipMemsetAsync(ptr, value, size, S);
   }
-  static void enable_p2p(device_id_type D) { hipDeviceEnablePeerAccess(D, 0); }
+  static void enable_p2p(device_id_type D) { hipDeviceEnablePeerAccess(D, USE_PEER_NON_UNIFIED); }
   static void disable_p2p(device_id_type D) { hipDeviceDisablePeerAccess(D); }
 };
 #endif

@@ -65,6 +65,7 @@ def build(bld):
             defines=acc_defines,
             use=tools_deps + ['CUDA', 'CUDART', 'nvidia_cub'])
 
+
     if bld.env.ENABLE_HIP:
         acc_tools_deps = tools_deps + ['gpu_ripples']
         acc_defines = ['RIPPLES_ENABLE_HIP']
@@ -74,11 +75,11 @@ def build(bld):
         acc_defines += ['ENABLE_MEMKIND']
 
     bld(features='cxx cxxprogram', source='imm.cc', target='imm',
-        use=acc_tools_deps + ['infmax', 'cuda_imm_bfs'], 
+        use=acc_tools_deps,
         defines=acc_defines)
 
-    bld(features='cxx cxxprogram', source='louvain-imm.cc', target='louvain-imm',
-        use=tools_deps)
+    #bld(features='cxx cxxprogram', source='louvain-imm.cc', target='louvain-imm',
+    #    use=tools_deps)
 
     bld(features='cxx cxxprogram', source='simulator.cc', target='simulator',
         use=tools_deps)

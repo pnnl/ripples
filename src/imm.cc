@@ -47,25 +47,9 @@
 #include "ripples/imm_execution_record.h"
 #include "ripples/imm_configuration.h"
 #include "ripples/streaming_rrr_generator.h"
+#include "ripples/imm_interface.h"
 
 namespace ripples {
-
-using dest_type = ripples::WeightedDestination<uint32_t, float>;
-using GraphFwd =
-  ripples::Graph<uint32_t, dest_type, ripples::ForwardDirection<uint32_t>>;
-using GraphBwd =
-  ripples::Graph<uint32_t, dest_type, ripples::BackwardDirection<uint32_t>>;
-
-using LTStreamingGenerator =
-  ripples::StreamingRRRGenerator<
-  GraphBwd, trng::lcg64,
-  typename ripples::RRRsets<GraphBwd>::iterator,
-  ripples::linear_threshold_tag>;
-using ICStreamingGenerator =
-  ripples::StreamingRRRGenerator<
-  GraphBwd, trng::lcg64,
-  typename ripples::RRRsets<GraphBwd>::iterator,
-  ripples::independent_cascade_tag>;
 
 template
 std::vector<typename GraphBwd::vertex_type>
@@ -80,10 +64,10 @@ IMM(const GraphBwd &, const ToolConfiguration<IMMConfiguration> &, double,
 template
 std::vector<typename GraphBwd::vertex_type>
 IMM(const GraphBwd &, const ToolConfiguration<IMMConfiguration> &, double,
-    ICStreamingGenerator &, independent_cascade_tag &&, omp_parallel_tag &&);
+    ICStreamingGenerator &, IMMExecutionRecord&, independent_cascade_tag &&, omp_parallel_tag &&);
 
 template
 std::vector<typename GraphBwd::vertex_type>
 IMM(const GraphBwd &, const ToolConfiguration<IMMConfiguration> &, double,
-    LTStreamingGenerator &, linear_threshold_tag &&, omp_parallel_tag &&);
+    LTStreamingGenerator &, IMMExecutionRecord&, linear_threshold_tag &&, omp_parallel_tag &&);
 }

@@ -83,6 +83,7 @@ gpu_ctx<R, GraphTy> *make_gpu_context(const GraphTy &G,
                                       typename GPU<R>::device_id_type gpu_id) {
   auto res = new gpu_ctx<R, GraphTy>();
   res->gpu_id = gpu_id;
+  GPU<R>::set_device(gpu_id);
   res->d_graph = make_gpu_graph<R>(G);
   return res;
 }

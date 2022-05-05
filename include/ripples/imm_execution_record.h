@@ -56,20 +56,46 @@ struct IMMExecutionRecord {
   struct cpu_walk_prof {
     size_t NumSets;
     ex_time_ms Total;
+
+    cpu_walk_prof()
+      : NumSets()
+      , Total() {}
   };
 
   struct gpu_walk_prof {
     size_t NumSets;
     ex_time_ms Total;
     ex_time_ns Kernel, D2H, Post;
+
+    gpu_walk_prof()
+      : NumSets()
+      , Total(), Kernel(), D2H(), Post()
+    {}
   };
 
   struct walk_iteration_prof {
-    std::vector<cpu_walk_prof> CPUWalks;
-    std::vector<gpu_walk_prof> GPUWalks;
+    std::vector<cpu_walk_prof> CPUWalks{};
+    std::vector<gpu_walk_prof> GPUWalks{};
     size_t NumSets{0};
     ex_time_ms Total{0};
+
+    walk_iteration_prof()
+      : CPUWalks(), GPUWalks(), NumSets(), Total() {}
   };
+
+  IMMExecutionRecord()
+    : NumThreads()
+    , Theta()
+    , ThetaPrimeDeltas()
+    , ThetaEstimationTotal()
+    , ThetaEstimationMostInfluential()
+    , Counting()
+    , Pivoting()
+    , GenerateRRRSets()
+    , FindMostInfluentialSet()
+    , Total()
+    , RRRSetSize()
+    , WalkIterations() {}
 
   //! Number of threads used during the execution.
   size_t NumThreads;
@@ -91,7 +117,7 @@ struct IMMExecutionRecord {
   ex_time_ms FindMostInfluentialSet;
   //! Total execution time.
   ex_time_ms Total;
-  size_t RRRSetSize{0};
+  size_t RRRSetSize;
   //! Iterations breakdown
   std::vector<walk_iteration_prof> WalkIterations;
 };

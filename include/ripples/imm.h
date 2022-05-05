@@ -359,11 +359,10 @@ std::vector<typename GraphTy::vertex_type> IMM(const GraphTy &G, const ConfTy &C
 template <typename GraphTy, typename ConfTy, typename GeneratorTy,
           typename diff_model_tag>
 std::vector<typename GraphTy::vertex_type> IMM(const GraphTy &G, const ConfTy &CFG, double l, GeneratorTy &gen,
-         diff_model_tag &&model_tag, omp_parallel_tag &&ex_tag) {
+                                               IMMExecutionRecord& record, diff_model_tag &&model_tag, omp_parallel_tag &&ex_tag) {
   using vertex_type = typename GraphTy::vertex_type;
   size_t k = CFG.k;
   double epsilon = CFG.epsilon;
-  auto &record(gen.execution_record());
 
   l = l * (1 + 1 / std::log2(G.num_nodes()));
 

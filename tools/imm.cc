@@ -51,6 +51,7 @@
 #include "ripples/utility.h"
 #include "ripples/imm_configuration.h"
 #include "ripples/imm_interface.h"
+#include "ripples/imm.h"
 
 #include "spdlog/fmt/ostr.h"
 #include "spdlog/sinks/stdout_color_sinks.h"
@@ -170,24 +171,23 @@ int main(int argc, char **argv) {
   std::ofstream perf(CFG.OutputFile);
 
   if (CFG.parallel) {
-#if 0
     auto workers = CFG.streaming_workers;
     auto gpu_workers = CFG.streaming_gpu_workers;
     decltype(R.Total) real_total;
     if (CFG.diffusionModel == "IC") {
-      ripples::ICStreamingGenerator se(G, generator, R, workers - gpu_workers, gpu_workers,
+      ripples::ICStreamingGenerator se(G, generator, workers - gpu_workers, gpu_workers,
              CFG.worker_to_gpu);
       auto start = std::chrono::high_resolution_clock::now();
-      seeds = IMM(G, CFG, 1, se, ripples::independent_cascade_tag{},
+      seeds = IMM(G, CFG, 1, se, R, ripples::independent_cascade_tag{},
                   ripples::omp_parallel_tag{});
       auto end = std::chrono::high_resolution_clock::now();
       R.Total = end - start - R.Total;
       real_total = end - start;
     } else if (CFG.diffusionModel == "LT") {
-      ripples::LTStreamingGenerator se(G, generator, R, workers - gpu_workers, gpu_workers,
+      ripples::LTStreamingGenerator se(G, generator, workers - gpu_workers, gpu_workers,
              CFG.worker_to_gpu);
       auto start = std::chrono::high_resolution_clock::now();
-      seeds = IMM(G, CFG, 1, se, ripples::linear_threshold_tag{},
+      seeds = IMM(G, CFG, 1, se, R, ripples::linear_threshold_tag{},
                   ripples::omp_parallel_tag{});
       auto end = std::chrono::high_resolution_clock::now();
       R.Total = end - start - R.Total;
@@ -206,7 +206,6 @@ int main(int argc, char **argv) {
     auto experiment = GetExperimentRecord(CFG, R, seeds);
     executionLog.push_back(experiment);
     perf << executionLog.dump(2);
-#endif
   } else {
     if (CFG.diffusionModel == "IC") {
       auto start = std::chrono::high_resolution_clock::now();

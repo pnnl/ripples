@@ -114,10 +114,10 @@ template <typename GraphTy, typename PRNGeneratorTy,
 void GenerateRRRSets(const GraphTy &G,
                      StreamingRRRGenerator<GraphTy, PRNGeneratorTy, ItrTy, diff_model_tag> &se,
                      ItrTy begin, ItrTy end,
-                     ExecRecordTy &,
+                     ExecRecordTy & record,
                      diff_model_tag &&,
                      omp_parallel_tag &&) {
-  se.generate(begin, end);
+  se.generate(begin, end, record);
 }
 
 }  // namespace ripples

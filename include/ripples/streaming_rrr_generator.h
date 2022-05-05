@@ -633,12 +633,11 @@ class StreamingRRRGenerator {
 
  public:
   StreamingRRRGenerator(const GraphTy &G, const PRNGeneratorTy &master_rng,
-                        IMMExecutionRecord &record, size_t num_cpu_workers,
+                        size_t num_cpu_workers,
                         size_t num_gpu_workers,
                         const std::unordered_map<size_t, size_t> &worker_to_gpu)
       : num_cpu_workers_(num_cpu_workers),
         num_gpu_workers_(num_gpu_workers),
-        record_(record),
         console(spdlog::get("Streaming Generator")) {
     if (!console) {
       console = spdlog::stdout_color_st("Streaming Generator");
@@ -711,12 +710,11 @@ class StreamingRRRGenerator {
         gpu_contexts_(std::move(O.gpu_contexts_)),
 #endif
         workers(std::move(O.workers)),
-        mpmc_head(O.mpmc_head.load()),
+        mpmc_head(O.mpmc_head.load())
 #if GPU_PROFILE
-        prof_bd(std::move(O.prof_bd)),
+      , prof_bd(std::move(O.prof_bd))
 #endif
-        record_(O.record_) {
-  }
+  {}
 
   ~StreamingRRRGenerator() {
 #if GPU_PROFILE
@@ -738,10 +736,6 @@ class StreamingRRRGenerator {
       console->info("throughput (sets/sec) = {}",
                     (float)p.n_ * 1e03 / ms.count());
       console->info("+++ END iter {}", i);
-      // execution record
-      for (auto &wp : workers) {
-        wp->prof_record(record_.WalkIterations[i], i);
-      }
     }
     console->info("--- overall");
     console->info("n. sets               = {}", prof_bd.n);
@@ -759,13 +753,11 @@ class StreamingRRRGenerator {
 #endif
   }
 
-  IMMExecutionRecord &execution_record() { return record_; }
-
-  void generate(ItrTy begin, ItrTy end) {
+  void generate(ItrTy begin, ItrTy end, IMMExecutionRecord &record) {
 #if GPU_PROFILE
     auto start = std::chrono::high_resolution_clock::now();
     for (auto &w : workers) w->begin_prof_iter();
-    record_.WalkIterations.emplace_back();
+    record.WalkIterations.emplace_back();
 #endif
 
     mpmc_head.store(0);
@@ -782,7 +774,7 @@ class StreamingRRRGenerator {
     prof_bd.prof_bd.emplace_back(std::distance(begin, end), d);
     prof_bd.n += std::distance(begin, end);
     prof_bd.d += std::chrono::duration_cast<std::chrono::microseconds>(d);
-    auto &ri(record_.WalkIterations.back());
+    auto &ri(record.WalkIterations.back());
     ri.NumSets = std::distance(begin, end);
     ri.Total = std::chrono::duration_cast<decltype(ri.Total)>(d);
 #endif
@@ -815,7 +807,6 @@ class StreamingRRRGenerator {
   };
   profile_t prof_bd;
 #endif
-  IMMExecutionRecord &record_;
 };
 }  // namespace ripples
 
