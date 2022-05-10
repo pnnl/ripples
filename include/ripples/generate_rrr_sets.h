@@ -7,7 +7,7 @@
 //===----------------------------------------------------------------------===//
 //
 // Copyright (c) 2019, Battelle Memorial Institute
-// 
+//
 // Battelle Memorial Institute (hereinafter Battelle) hereby grants permission
 // to any person or entity lawfully obtaining a copy of this software and
 // associated documentation files (hereinafter “the Software”) to redistribute
@@ -15,18 +15,18 @@
 // modification.  Such person or entity may use, copy, modify, merge, publish,
 // distribute, sublicense, and/or sell copies of the Software, and may permit
 // others to do so, subject to the following conditions:
-// 
+//
 // 1. Redistributions of source code must retain the above copyright notice,
 //    this list of conditions and the following disclaimers.
-// 
+//
 // 2. Redistributions in binary form must reproduce the above copyright notice,
 //    this list of conditions and the following disclaimer in the documentation
 //    and/or other materials provided with the distribution.
-// 
+//
 // 3. Other than as used herein, neither the name Battelle Memorial Institute or
 //    Battelle may be used in any form whatsoever without the express written
 //    consent of Battelle.
-// 
+//
 // THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
 // AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
 // IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
@@ -63,11 +63,25 @@
 #include "memkind_allocator.h"
 #endif
 
+#ifdef ENABLE_METALL
+#include "metall/metall.hpp"
+#include "metall/container/vector.hpp"
+#endif
+
 namespace ripples {
 
-#ifdef ENABLE_MEMKIND
+#if defined ENABLE_MEMKIND
 template<typename vertex_type>
 using RRRsetAllocator = libmemkind::static_kind::allocator<vertex_type>;
+#elif defined ENABLE_METALL
+template<typename vertex_type>
+using RRRsetAllocator = metall::manager::allocator_type<vertex_type>;
+
+metall::manager &metall_manager_instance() {
+  static metall::manager manager(metall::create_only, "/tmp/ripples");
+  return manager;
+}
+
 #else
 template <typename vertex_type>
 using RRRsetAllocator = std::allocator<vertex_type>;
@@ -75,7 +89,14 @@ using RRRsetAllocator = std::allocator<vertex_type>;
 
 //! \brief The Random Reverse Reachability Sets type
 template <typename GraphTy>
-using RRRset = std::vector<typename GraphTy::vertex_type, RRRsetAllocator<typename GraphTy::vertex_type>>;
+using RRRset =
+#ifdef  ENABLE_METALL
+    metall::container::vector<typename GraphTy::vertex_type,
+                              RRRsetAllocator<typename GraphTy::vertex_type>>;
+#else
+    std::vector<typename GraphTy::vertex_type,
+                              RRRsetAllocator<typename GraphTy::vertex_type>>;
+#endif
 template <typename GraphTy>
 using RRRsets = std::vector<RRRset<GraphTy>>;
 

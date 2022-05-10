@@ -3,8 +3,10 @@ from conans import ConanFile, tools
 
 class RipplesConan(ConanFile):
     options = {'memkind' : [ True, False],
+               'metal' : [True, False],
                'nvidia_cub' : [True, False]}
     default_options = {'memkind' : False,
+                       'metal' : False,
                        'nvidia_cub' : False}
     generators = 'Waf'
 
@@ -22,5 +24,13 @@ class RipplesConan(ConanFile):
         if self.options.nvidia_cub:
             self.requires('nvidia-cub/1.12.0@user/stable')
 
-        if tools.os_info.is_linux and self.options.memkind:
-            self.requires('memkind/1.10.1-rc1@memkind/stable')
+        if self.options.memkind and self.options.metal:
+            self.output.error("Metal and Memkind are mutually exclusive")
+
+        if tools.os_info.is_linux:
+            if self.options.memkind:
+                self.requires('memkind/1.10.1-rc1@memkind/stable')
+
+        if self.options.metal:
+            self.requires('metall/master@user/stable')
+

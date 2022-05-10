@@ -60,7 +60,17 @@ Then we need to install dependencies:
 
    $ conan create conan/waf-generator user/stable
    $ conan create conan/trng user/stable
-   $ conan install .
+   $ conan create conan/metall user/stable
+   $ conan create conan/memkind user/stable
+   $ conan install --install-folder build .
+
+To enable Memkind or Metall please replace the conan install command with one of:
+
+.. code-block:: shell
+
+   $ conan install --install-folder build . -o memkind=True
+   $ conan install --install-folder build . -o metall=True
+
 
 Now we are ready to configure and build ripples:
 
@@ -69,6 +79,16 @@ Now we are ready to configure and build ripples:
    $ ./waf configure --enable-mpi build_release
    # or without MPI support
    $ ./waf configure build_release
+
+To enable Memkind or Metal configure and build ripples with:
+
+.. code-block:: shell
+
+   $ ./waf configure --enable-mpi --enable-metall build_release
+   # or without MPI support
+   $ ./waf configure --enable-metall build_release
+
+For Memkind just replace :code:`--enable-metall` with :code:`--enable-memkind`.
 
 In the case you are a Mac OS user, you will need to install the LLVM toolchain
 through brew that comes with OpenMP support.  Compiling Ripples than is as
