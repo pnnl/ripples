@@ -57,6 +57,7 @@
 #include "trng/uniform_int_dist.hpp"
 
 #include "ripples/imm_execution_record.h"
+#include "ripples/batched_add_rrrset.h"
 #include "ripples/add_rrrset.h"
 
 #if defined(RIPPLES_ENABLE_CUDA) || defined(RIPPLES_ENABLE_HIP)
@@ -113,7 +114,7 @@ class CPUWalkWorker : public WalkWorker<GraphTy, ItrTy> {
 
  public:
   CPUWalkWorker(const GraphTy &G, const PRNGeneratorTy &rng)
-      : WalkWorker<GraphTy, ItrTy>(G), rng_(rng), u_(0, G.num_nodes()) {}
+    : WalkWorker<GraphTy, ItrTy>(G), rng_(rng), u_(0, G.num_nodes()), roots_(batch_size_) {}
 
   void svc_loop(std::atomic<size_t> &mpmc_head, ItrTy begin, ItrTy end) {
     size_t offset = 0;
@@ -129,7 +130,8 @@ class CPUWalkWorker : public WalkWorker<GraphTy, ItrTy> {
   }
 
  private:
-  static constexpr size_t batch_size_ = 32;
+  static constexpr size_t batch_size_ = 128;
+  std::vector<vertex_t> roots_;
   PRNGeneratorTy rng_;
   trng::uniform_int_dist u_;
 
@@ -140,11 +142,24 @@ class CPUWalkWorker : public WalkWorker<GraphTy, ItrTy> {
     auto size = std::distance(first, last);
     auto local_rng = rng_;
     auto local_u = u_;
+    #if 0
     for (; first != last; ++first) {
       vertex_t root = local_u(local_rng);
 
       AddRRRSet(this->G_, root, local_rng, *first, diff_model_tag{});
     }
+    #else
+    std::generate(roots_.begin(), roots_.begin() + size, [&]() { return local_u(local_rng); } );
+    auto v_start = roots_.begin();
+    auto v_end = std::min(v_start + 64, roots_.begin() + size);
+    while (v_start < (roots_.begin() + size)) {
+      BatchedBFS(this->G_, v_start, v_end, first, local_rng, diff_model_tag{});
+
+      first += std::distance(v_start, v_end);
+      v_start += 64;
+      v_end = std::min(v_start + 64, roots_.begin() + size);
+    }
+    #endif
 
     rng_ = local_rng;
     u_ = local_u;
