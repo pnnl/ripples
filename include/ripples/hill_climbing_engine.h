@@ -191,6 +191,7 @@ class HCGPUSamplingWorker : public HCWorker<GraphTy, ItrTy> {
   void svc_loop(std::atomic<size_t> &mpmc_head, ItrTy B, ItrTy E,
                 std::vector<ex_time_ms> &record) {
     size_t offset = 0;
+    cuda_set_device(ctx_->gpu_id);   //Bug fix to prevent cuda device not ready
     while ((offset = mpmc_head.fetch_add(batch_size_)) < std::distance(B, E)) {
       auto first = B;
       std::advance(first, offset);
@@ -539,6 +540,7 @@ class HCGPUCountingWorker : public HCWorker<GraphTy, ItrTy> {
   void svc_loop(std::atomic<size_t> &mpmc_head, ItrTy B, ItrTy E,
                 std::vector<ex_time_ms> &record) {
     size_t offset = 0;
+    cuda_set_device(ctx_->gpu_id);  //Bug fix to prevent cuda device not ready
     while ((offset = mpmc_head.fetch_add(batch_size_)) < std::distance(B, E)) {
       auto first = B;
       std::advance(first, offset);
@@ -639,7 +641,7 @@ class SeedSelectionEngine {
         logger_->trace("Building Cuda Context");
         cuda_contexts_[rank - cpu_workers] = cuda_make_ctx(G, device_id);
         typename gpu_worker_type::config_t gpu_conf(gpu_workers);
-        auto w = new gpu_worker_type(gpu_conf, G_, cuda_contexts_.back(),
+        auto w = new gpu_worker_type(gpu_conf, G_, cuda_contexts_[rank - cpu_workers],  //changed from .back()
                                      count_, S_);
         workers_[rank] = w;
         gpu_workers_[rank - cpu_workers] = w;
