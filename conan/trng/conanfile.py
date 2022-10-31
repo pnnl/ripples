@@ -5,6 +5,7 @@ from conans import ConanFile, CMake, tools
 class LibtrngConan(ConanFile):
     name = "libtrng"
     license = "BSD"
+    version = "4.22"
     author = "Heiko Bauke"
     url = "https://www.numbercrunch.de/trng/"
     description = "Tina's Random Number Generator Library"
@@ -13,15 +14,18 @@ class LibtrngConan(ConanFile):
     options = {"shared": [True, False]}
     default_options = "shared=True"
     generators = "cmake"
-
-    def source(self):
-        tools.download('https://github.com/rabauke/trng4/archive/refs/tags/v' + self.version + '.tar.gz', 'trng-' + self.version + '.tar.gz')
-        tools.unzip('trng-' + self.version + '.tar.gz')
-        return 'trng4-' + self.version
+    scm = {
+        "type" : "git",
+        "url" : "https://github.com/mminutoli/trng4.git",
+        "subfolder" : "trng",
+        "revision" : "basic_hip_support"
+    }
 
     def build(self):
         cmake = CMake(self)
-        cmake.configure(source_folder='trng4-' + self.version)
+        cmake.definitions['TRNG_ENABLE_EXAMPLES'] = False
+        cmake.definitions['TRNG_ENABLE_TESTS'] = False
+        cmake.configure(source_folder='trng')
         cmake.parallel = False
         cmake.build()
         cmake.install()

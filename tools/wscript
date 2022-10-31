@@ -68,7 +68,7 @@ def build(bld):
         cuda_acc_cxx_flags += ['-DENABLE_MEMKIND=1']
 
     if bld.env.ENABLE_METALL:
-        cuda_acc_tools_deps += ['metall', 'boost']
+        cuda_acc_tools_deps += ['metall', 'boost', 'libstdc++fs']
         cuda_acc_cxx_flags += ['-DENABLE_METALL=1']
 
     bld(features='cxx cxxprogram', source='imm.cc', target='imm',

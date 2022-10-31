@@ -180,8 +180,8 @@ auto Sampling(const GraphTy &G, const ConfTy &CFG, double l,
 
   double LB = 0;
   #if defined ENABLE_MEMKIND
-  RRRsetAllocator<vertex_type> allocator(libmemkind::kinds::DAX_KMEM_PREFERRED);
-  #elif defined ENABLE_METALL
+  RRRsetAllocator<vertex_type> allocator("/mnt/bb/reeceneff/memkind_tmp", 0);
+  #elif defined ENABLE_METALL_RRRSETS
   RRRsetAllocator<vertex_type> allocator =  metall_manager_instance().get_allocator();
   #else
   RRRsetAllocator<vertex_type> allocator;
@@ -266,10 +266,10 @@ auto Sampling(const GraphTy &G, const ConfTy &CFG, double l,
 
   double LB = 0;
   #if defined ENABLE_MEMKIND
-  RRRsetAllocator<vertex_type> allocator(libmemkind::kinds::DAX_KMEM_PREFERRED);
-  #elif defined ENABLE_METALL
+  RRRsetAllocator<vertex_type> allocator("/mnt/bb/reeceneff/memkind_tmp", 0);
+  #elif defined ENABLE_METALL_RRRSETS
   RRRsetAllocator<vertex_type> allocator =  metall_manager_instance().get_allocator();
-#else
+  #else
   RRRsetAllocator<vertex_type> allocator;
   #endif
   std::vector<RRRset<GraphTy>> RR;
@@ -410,7 +410,6 @@ auto IMM(const GraphTy &G, const ConfTy &CFG, double l, GeneratorTy &gen,
   auto R =
       Sampling(G, CFG, l, gen, record, std::forward<diff_model_tag>(model_tag),
                std::forward<omp_parallel_tag>(ex_tag));
-
 #if CUDA_PROFILE
   auto logst = spdlog::stdout_color_st("IMM-profile");
   std::vector<size_t> rrr_sizes;
@@ -428,7 +427,6 @@ auto IMM(const GraphTy &G, const ConfTy &CFG, double l, GeneratorTy &gen,
       FindMostInfluentialSet(G, CFG, R, record, gen.isGpuEnabled(),
                              std::forward<omp_parallel_tag>(ex_tag));
   auto end = std::chrono::high_resolution_clock::now();
-
   record.FindMostInfluentialSet = end - start;
 
   start = std::chrono::high_resolution_clock::now();

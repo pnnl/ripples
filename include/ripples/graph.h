@@ -51,6 +51,12 @@
 
 #include <ripples/utility.h>
 
+#if defined ENABLE_METALL
+#include <boost/container/vector.hpp>
+#include <boost/container/map.hpp>
+#include "metall/metall.hpp"
+#endif
+
 namespace ripples {
 
 //! \brief Forward Direction Graph loading policy.
@@ -195,7 +201,8 @@ struct WeightedDestination : public Destination<VertexTy> {
 //!    of the original data.
 template <typename VertexTy,
           typename DestinationTy = WeightedDestination<VertexTy, float>,
-          typename DirectionPolicy = ForwardDirection<VertexTy>>
+          typename DirectionPolicy = ForwardDirection<VertexTy>,
+          typename allocator_t = std::allocator<char>>
 class Graph {
  public:
   //! The size type.
@@ -226,22 +233,26 @@ class Graph {
     edge_type *end_;
   };
 
-  //! Empty Graph Constructor.
-  Graph()
+ //! Allocator Graph Constructor.
+  Graph(allocator_t allocator = allocator_t())
       : numNodes(0),
         numEdges(0),
         index(nullptr),
         edges(nullptr),
-        idMap(),
-        reverseMap() {}
+        graph_allocator(allocator),
+        idMap(allocator),
+        reverseMap(allocator) {}
 
   Graph(const Graph &O)
       : numNodes(O.numNodes),
         numEdges(O.numEdges),
         idMap(O.idMap),
-        reverseMap(O.reverseMap) {
-    edges = new edge_type[numEdges];
-    index = new edge_type *[numNodes + 1];
+        reverseMap(O.reverseMap),
+        graph_allocator(O.graph_allocator) {
+    auto edge_allocator = edge_allocator_t(graph_allocator);
+    edges = edge_allocator.allocate(numEdges);
+    auto index_allocator = index_allocator_t(graph_allocator);
+    index = index_allocator.allocate(numNodes + 1);
 #pragma omp parallel for
     for (size_t i = 0; i < numEdges; ++i) {
       edges[i] = O.edges[i];
@@ -249,8 +260,8 @@ class Graph {
 
 #pragma omp parallel for
     for (size_t i = 0; i < numNodes + 1; ++i) {
-      index[i] = edges + (reinterpret_cast<uint64_t>(O.index[i]) -
-                          reinterpret_cast<uint64_t>(O.index));
+      index[i] = std::addressof(edges[0]) + (O.index[i] -
+                          O.index[0]);
     }
   }
 
@@ -260,8 +271,10 @@ class Graph {
     idMap = O.idMap;
     reverseMap = O.reverseMap;
 
-    edges = new edge_type[numEdges];
-    index = new edge_type *[numNodes + 1];
+    auto edge_allocator = edge_allocator_t(graph_allocator);
+    edges = edge_allocator.allocate(numEdges);
+    auto index_allocator = index_allocator_t(graph_allocator);
+    index = index_allocator.allocate(numNodes + 1);
 #pragma omp parallel for
     for (size_t i = 0; i < numEdges; ++i) {
       edges[i] = O.edges[i];
@@ -269,8 +282,8 @@ class Graph {
 
 #pragma omp parallel for
     for (size_t i = 0; i < numNodes + 1; ++i) {
-      index[i] = edges + (reinterpret_cast<uint64_t>(O.index[i]) -
-                          reinterpret_cast<uint64_t>(O.index));
+      index[i] = std::addressof(edges[0]) + (O.index[i] -
+                          O.index[0]);
     }
   }
 
@@ -281,6 +294,7 @@ class Graph {
         numEdges(O.numEdges),
         index(O.index),
         edges(O.edges),
+        graph_allocator(O.graph_allocator),
         idMap(std::move(O.idMap)),
         reverseMap(std::move(O.reverseMap)) {
     O.numNodes = 0;
@@ -295,8 +309,17 @@ class Graph {
   Graph &operator=(Graph &&O) {
     if (this == &O) return *this;
 
-    delete[] index;
-    delete[] edges;
+    // delete[] index;
+    // delete[] edges;
+
+    if(index){
+        auto index_allocator = index_allocator_t(graph_allocator);
+        index_allocator.deallocate(index, numNodes + 1);
+    }
+    if(edges){
+        auto edge_allocator = edge_allocator_t(graph_allocator);
+        edge_allocator.deallocate(edges, numEdges);
+    }
 
     numNodes = O.numNodes;
     numEdges = O.numEdges;
@@ -313,16 +336,6 @@ class Graph {
     return *this;
   }
 
-  //! Reload from binary constructor.
-  //!
-  //! \tparam FStream The type of the input stream.
-  //!
-  //! \param FS The binary stream containing the graph dump.
-  template <typename FStream>
-  Graph(FStream &FS) {
-    load_binary(FS);
-  }
-
   //! \brief Constructor.
   //!
   //! Build a Graph from a sequence of edges.  The vertex identifiers are
@@ -335,7 +348,10 @@ class Graph {
   //! \param begin The start of the edge list.
   //! \param end The end of the edge list.
   template <typename EdgeIterator>
-  Graph(EdgeIterator begin, EdgeIterator end, bool renumbering) {
+  Graph(EdgeIterator begin, EdgeIterator end, bool renumbering, allocator_t allocator = allocator_t())
+  : graph_allocator(allocator),
+    idMap(allocator),
+    reverseMap(allocator){
     for (auto itr = begin; itr != end; ++itr) {
       idMap[itr->source];
       idMap[itr->destination];
@@ -344,12 +360,14 @@ class Graph {
     size_t num_nodes = renumbering ? idMap.size() : idMap.rbegin()->first + 1;
     size_t num_edges = std::distance(begin, end);
 
-    index = new edge_type *[num_nodes + 1];
-    edges = new edge_type[num_edges];
+    auto index_allocator = index_allocator_t(graph_allocator);
+    index = index_allocator.allocate(num_nodes + 1);
+    auto edge_allocator = edge_allocator_t(graph_allocator);
+    edges = edge_allocator.allocate(num_edges);
 
 #pragma omp parallel for
     for (size_t i = 0; i < num_nodes + 1; ++i) {
-      index[i] = edges;
+      index[i] = std::addressof(edges[0]);
     }
 
 #pragma omp parallel for
@@ -379,10 +397,10 @@ class Graph {
     }
 
     for (size_t i = 1; i <= num_nodes; ++i) {
-      index[i] += index[i - 1] - edges;
+      index[i] += index[i - 1] - std::addressof(edges[0]);
     }
 
-    std::vector<edge_type *> ptrEdge(index, index + num_nodes);
+    std::vector<edge_type *> ptrEdge(std::addressof(index[0]), std::addressof(index[0]) + num_nodes);
     for (auto itr = begin; itr != end; ++itr) {
       *ptrEdge[DirectionPolicy::Source(itr, idMap)] =
           edge_type::template Create<DirectionPolicy>(itr, idMap);
@@ -392,8 +410,26 @@ class Graph {
 
   //! \brief Destuctor.
   ~Graph() {
-    if (index) delete[] index;
-    if (edges) delete[] edges;
+    if(index){
+        auto index_allocator = index_allocator_t(graph_allocator);
+        index_allocator.deallocate(index, numNodes + 1);
+    }
+    if(edges){
+        auto edge_allocator = edge_allocator_t(graph_allocator);
+        edge_allocator.deallocate(edges, numEdges);
+    }
+    // if (index) delete[] index;
+    // if (edges) delete[] edges;
+  }
+
+  void recalculate_addresses() const {
+    if(index){
+        #pragma omp parallel for
+        for (size_t i = 0; i < numNodes + 1; ++i) {
+            index[i] = std::addressof(edges[0]) + (index[i] -
+                                index[0]);
+        }
+    }
   }
 
   //! Returns the out-degree of a vertex.
@@ -496,45 +532,49 @@ class Graph {
   using transposed_direction =
       typename std::conditional<isForward, BackwardDirection<VertexTy>,
                                 ForwardDirection<VertexTy>>::type;
-  using transposed_type = Graph<vertex_type, edge_type, transposed_direction>;
+  using transposed_type = Graph<vertex_type, edge_type, transposed_direction, allocator_t>;
 
   friend transposed_type;
 
  public:
   //! Get the transposed graph.
   //! \return the transposed graph.
-  transposed_type get_transpose() const {
+  transposed_type get_transpose(allocator_t allocator = allocator_t()) const {
     using out_dest_type = typename transposed_type::edge_type;
-    transposed_type G;
+    transposed_type G(allocator);
     G.numEdges = numEdges;
     G.numNodes = numNodes;
     G.reverseMap = reverseMap;
     G.idMap = idMap;
-    G.index = new out_dest_type *[numNodes + 1];
-    G.edges = new out_dest_type[numEdges];
+    using index_transposed_allocator_t = typename std::allocator_traits<allocator_t>::template rebind_alloc<out_dest_type *>;
+    auto index_allocator = index_transposed_allocator_t(G.graph_allocator);
+    G.index = index_allocator.allocate(numNodes + 1);
+    using edge_transposed_allocator_t = typename std::allocator_traits<allocator_t>::template rebind_alloc<out_dest_type>;
+    auto edge_allocator = edge_transposed_allocator_t(G.graph_allocator);
+    G.edges = edge_allocator.allocate(numEdges);
 
 #pragma omp parallel for
-    for (auto itr = G.index; itr < G.index + numNodes + 1; ++itr) {
+    for (auto itr = std::addressof(G.index[0]); itr < std::addressof(G.index[0]) + numNodes + 1; ++itr) {
       *itr = nullptr;
     }
 
 #pragma omp parallel for
-    for (auto itr = G.edges; itr < G.edges + numEdges; ++itr) {
+    for (auto itr = std::addressof(G.edges[0]); itr < std::addressof(G.edges[0]) + numEdges; ++itr) {
       *itr = out_dest_type();
     }
 
-    std::for_each(edges, edges + numEdges,
+    std::for_each(std::addressof(edges[0]), std::addressof(edges[0]) + numEdges,
                   [&](const edge_type &d) { ++G.index[d.vertex + 1]; });
 
-    G.index[0] = G.edges;
-    std::partial_sum(G.index, G.index + numNodes + 1, G.index,
+    G.index[0] = std::addressof(G.edges[0]);
+    std::partial_sum(std::addressof(G.index[0]), std::addressof(G.index[0]) + numNodes + 1, std::addressof(G.index[0]),
                      [](out_dest_type *a, out_dest_type *b) -> out_dest_type * {
                        size_t sum = reinterpret_cast<size_t>(a) +
                                     reinterpret_cast<size_t>(b);
                        return reinterpret_cast<out_dest_type *>(sum);
                      });
 
-    std::vector<out_dest_type *> destPointers(G.index, G.index + numNodes);
+    std::vector<out_dest_type *> destPointers(std::addressof(G.index[0]), std::addressof(G.index[0]) + numNodes);
 
     for (vertex_type v = 0; v < numNodes; ++v) {
       for (auto u : neighbors(v)) {
@@ -546,11 +586,14 @@ class Graph {
     return G;
   }
 
-  edge_type **csr_index() const { return index; }
+  edge_type **csr_index() const {
+    return std::addressof(index[0]);
+    }
 
-  edge_type *csr_edges() const { return edges; }
+  edge_type *csr_edges() const {
+    return std::addressof(edges[0]);
+    }
 
- private:
   template <typename FStream>
   void load_binary(FStream &FS) {
     if (!FS.is_open()) throw "Bad things happened!!!";
@@ -570,8 +613,10 @@ class Graph {
 
     for (VertexTy i = 0; i < numNodes; ++i) idMap[reverseMap[i]] = i;
 
-    index = new edge_type *[numNodes + 1];
-    edges = new edge_type[numEdges];
+    auto index_allocator = index_allocator_t(graph_allocator);
+    index = index_allocator.allocate(numNodes + 1);
+    auto edge_allocator = edge_allocator_t(graph_allocator);
+    edges = edge_allocator.allocate(numEdges);
 
     #pragma omp parallel for
     for (size_t i = 0; i < numNodes + 1; ++i) {
@@ -583,25 +628,51 @@ class Graph {
       edges[i] = edge_type();
     }
 
-    FS.read(reinterpret_cast<char *>(index),
+    FS.read(reinterpret_cast<char *>(std::addressof(index[0])),
             (numNodes + 1) * sizeof(ptrdiff_t));
 
     sequence_of<edge_type *>::load(index, index + numNodes + 1, index);
 
     std::transform(index, index + numNodes + 1, index,
                    [=](edge_type *v) -> edge_type * {
-                     return reinterpret_cast<ptrdiff_t>(v) + edges;
+                     return reinterpret_cast<ptrdiff_t>(v) + std::addressof(edges[0]);
                    });
 
-    FS.read(reinterpret_cast<char *>(edges), numEdges * sizeof(edge_type));
+    FS.read(reinterpret_cast<char *>(std::addressof(edges[0])), numEdges * sizeof(edge_type));
     sequence_of<edge_type>::load(edges, edges + numEdges, edges);
   }
 
-  edge_type **index;
-  edge_type *edges;
+  private:
+    // Allocator and pointer types for the indices array
+  using index_allocator_t = typename std::allocator_traits<allocator_t>::template rebind_alloc<edge_type *>;
+  using index_pointer_t = typename std::allocator_traits<index_allocator_t>::pointer;
+  index_pointer_t index;
 
-  std::map<VertexTy, VertexTy> idMap;
-  std::vector<VertexTy> reverseMap;
+
+  // Allocator and pointer types for the edges array
+  using edge_allocator_t = typename std::allocator_traits<allocator_t>::template rebind_alloc<edge_type>;
+  using edge_pointer_t = typename std::allocator_traits<edge_allocator_t>::pointer;
+  edge_pointer_t edges;
+
+  allocator_t graph_allocator;
+
+    // Allocator and vector types for the indices array
+  using reverse_map_allocator_t = typename std::allocator_traits<allocator_t>::template rebind_alloc<VertexTy>;
+  #if defined ENABLE_METALL
+  using reverse_map_vector_t = boost::container::vector<VertexTy, reverse_map_allocator_t>;
+  #else
+  using reverse_map_vector_t = std::vector<VertexTy, reverse_map_allocator_t>;
+  #endif
+
+ using idmap_allocator_t = typename std::allocator_traits<allocator_t>::template rebind_alloc<std::pair<const VertexTy, VertexTy>>;
+ #if defined ENABLE_METALL
+ using idmap_t = boost::container::map<VertexTy, VertexTy, std::less<VertexTy>, idmap_allocator_t>;
+ #else
+ using idmap_t = std::map<VertexTy, VertexTy, std::less<VertexTy>, idmap_allocator_t>;
+ #endif
+
+  idmap_t idMap;
+  reverse_map_vector_t reverseMap;
 
   size_t numNodes;
   size_t numEdges;
