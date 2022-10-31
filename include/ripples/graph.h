@@ -45,15 +45,16 @@
 
 #include <algorithm>
 #include <cstddef>
-#include <map>
+#include <unordered_map>
 #include <numeric>
 #include <vector>
+#include <execution>
 
 #include <ripples/utility.h>
 
 #if defined ENABLE_METALL
-#include <boost/container/vector.hpp>
-#include <boost/container/map.hpp>
+#include <metall/container/vector.hpp>
+#include <metall/container/unordered_map.hpp>
 #include "metall/metall.hpp"
 #endif
 
@@ -352,12 +353,44 @@ class Graph {
   : graph_allocator(allocator),
     idMap(allocator),
     reverseMap(allocator){
+
+    VertexTy currentID{0};
+    VertexTy maxVertexID = 0;
     for (auto itr = begin; itr != end; ++itr) {
-      idMap[itr->source];
-      idMap[itr->destination];
+      if (idMap.count(itr->source) == 0) {
+        idMap[itr->source];
+        if (renumbering) {
+          reverseMap.push_back(itr->source);
+        }
+      }
+
+      if (idMap.count(itr->destination) == 0) {
+        idMap[itr->destination];
+        if (renumbering) {
+          reverseMap.push_back(itr->destination);
+        }
+      }
+
+      maxVertexID = std::max(std::max(itr->source, itr->destination), maxVertexID);
     }
 
-    size_t num_nodes = renumbering ? idMap.size() : idMap.rbegin()->first + 1;
+    if (renumbering) {
+      // TODO: enable the C++ 17 parallel sort
+      std::sort(reverseMap.begin(), reverseMap.end());
+      #pragma omp parallel for
+      for (size_t i = 0; i < reverseMap.size(); ++i) {
+        idMap.at(reverseMap.at(i)) = i;
+      }
+    } else {
+      reverseMap.resize(maxVertexID + 1);
+      #pragma omp parallel for
+      for (VertexTy id = 0; id <= maxVertexID; ++id) {
+        reverseMap.at(id) = id;
+        idMap.at(id) = id;
+      }
+    }
+
+    size_t num_nodes = renumbering ? idMap.size() : maxVertexID + 1;
     size_t num_edges = std::distance(begin, end);
 
     auto index_allocator = index_allocator_t(graph_allocator);
@@ -377,20 +410,6 @@ class Graph {
 
     numNodes = num_nodes;
     numEdges = num_edges;
-
-    VertexTy currentID{0};
-    reverseMap.resize(numNodes);
-    for (auto itr = std::begin(idMap), end = std::end(idMap); itr != end;
-         ++itr) {
-      if (!renumbering) {
-        reverseMap.at(itr->first) = itr->first;
-        itr->second = itr->first;
-      } else {
-        reverseMap[currentID] = itr->first;
-        itr->second = currentID;
-        currentID++;
-      }
-    }
 
     for (auto itr = begin; itr != end; ++itr) {
       index[DirectionPolicy::Source(itr, idMap) + 1] += 1;
@@ -659,16 +678,16 @@ class Graph {
     // Allocator and vector types for the indices array
   using reverse_map_allocator_t = typename std::allocator_traits<allocator_t>::template rebind_alloc<VertexTy>;
   #if defined ENABLE_METALL
-  using reverse_map_vector_t = boost::container::vector<VertexTy, reverse_map_allocator_t>;
+  using reverse_map_vector_t = metall::container::vector<VertexTy, reverse_map_allocator_t>;
   #else
   using reverse_map_vector_t = std::vector<VertexTy, reverse_map_allocator_t>;
   #endif
 
  using idmap_allocator_t = typename std::allocator_traits<allocator_t>::template rebind_alloc<std::pair<const VertexTy, VertexTy>>;
  #if defined ENABLE_METALL
- using idmap_t = boost::container::map<VertexTy, VertexTy, std::less<VertexTy>, idmap_allocator_t>;
+ using idmap_t = metall::container::unordered_map<VertexTy, VertexTy, std::hash<VertexTy>, std::equal_to<VertexTy>, idmap_allocator_t>;
  #else
- using idmap_t = std::map<VertexTy, VertexTy, std::less<VertexTy>, idmap_allocator_t>;
+ using idmap_t = std::unordered_map<VertexTy, VertexTy, std::hash<VertexTy>, std::equal_to<VertexTy>, idmap_allocator_t>;
  #endif
 
   idmap_t idMap;
