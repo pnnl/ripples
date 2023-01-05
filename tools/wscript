@@ -67,7 +67,7 @@ def build(bld):
 
 
     if bld.env.ENABLE_HIP:
-        acc_tools_deps = tools_deps + ['gpu_ripples']
+        acc_tools_deps = tools_deps + ['gpu_ripples', 'rocThrust']
         acc_defines = ['RIPPLES_ENABLE_HIP']
 
     if bld.env.ENABLE_MEMKIND:

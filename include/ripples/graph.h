@@ -149,6 +149,7 @@ struct Edge<VertexTy, void> {
 template <typename VertexTy>
 struct Destination {
   using vertex_type = VertexTy;
+  using weight_type = void;
   //! The destination vertex of the edge.
   VertexTy vertex;
 
@@ -204,6 +205,7 @@ class Graph {
   using edge_type = DestinationTy;
   //! The integer type representing vertices in the graph.
   using vertex_type = VertexTy;
+  using weight_type = typename DestinationTy::edge_weight;
 
   //! \brief The neighborhood of a vertex.
   class Neighborhood {

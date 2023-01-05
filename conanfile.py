@@ -3,9 +3,11 @@ from conans import ConanFile, tools
 
 class RipplesConan(ConanFile):
     options = {'memkind' : [ True, False],
+               'gpu' : [None, 'amd', 'nvidia'],
                'nvidia_cub' : [True, False]}
     default_options = {'memkind' : False,
-                       'nvidia_cub' : False}
+                       'nvidia_cub' : False,
+                       'gpu' : None}
     generators = 'Waf'
 
     def configure(self):
@@ -19,8 +21,11 @@ class RipplesConan(ConanFile):
         self.requires('cli11/2.1.1')
         self.requires('libtrng/basic_hip_support@user/stable')
         self.requires('WafGen/0.1@user/stable')
-        if self.options.nvidia_cub:
+        if self.options.gpu == 'nvidia' and self.options.nvidia_cub:
             self.requires('nvidia-cub/1.12.0@user/stable')
+
+        if self.options.gpu == 'amd':
+            self.requires('rocThrust/5.1.0@user/stable')
 
         if tools.os_info.is_linux and self.options.memkind:
             self.requires('memkind/1.10.1-rc1@memkind/stable')

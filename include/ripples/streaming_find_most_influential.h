@@ -128,9 +128,6 @@ class GPUFindMostInfluentialWorker : public FindMostInfluentialWorker<GraphTy> {
     GPU<RUNTIME>::destroy_stream(stream_);
 
     GPU<RUNTIME>::device_free(d_pool_);
-    // cuda_free(d_rr_vertices_);
-    // cuda_free(d_rr_edges_);
-    // cuda_free(d_mask_);
   }
 
   void set_first_rrr_set(rrr_set_iterator I) {}
@@ -163,19 +160,13 @@ class GPUFindMostInfluentialWorker : public FindMostInfluentialWorker<GraphTy> {
       space += pivot->size() * sizeof(uint32_t) + sizeof(uint32_t);
     }
 
-    // cuda_malloc(reinterpret_cast<void **>(&d_mask_), std::distance(B,
-    // pivot));
     d_mask_ = d_pool_;
-    // cuda_memset(reinterpret_cast<void *>(d_mask_), 0, std::distance(B,
-    // pivot)); cuda_check(__FILE__, __LINE__);
     space -= sizeof(uint32_t) * std::distance(B, pivot);
 
     size_t BufferSize = 1 << 24;
 
-    // cuda_malloc(reinterpret_cast<void **>(&d_rr_edges_), space >> 1);
     d_rr_edges_ = d_mask_ + std::distance(B, pivot);
     d_rr_vertices_ = d_rr_edges_ + num_elements;
-    // cuda_malloc(reinterpret_cast<void **>(&d_rr_vertices_), space >> 1);
 
     std::vector<uint32_t> rr_edges_buffer_to_load;
     std::vector<uint32_t> rr_edges_buffer_to_send;
