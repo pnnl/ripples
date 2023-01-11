@@ -87,6 +87,15 @@ def build(bld):
     bld(features='cxx cxxprogram', source='hill_climbing.cc', target='hill-climbing',
         use=cuda_acc_tools_deps + ['cuda_hc_bfs'], cxxflags=cuda_acc_cxx_flags, cuda=bld.env.ENABLE_CUDA)
 
+    bld(
+        features='cxx cxxprogram',
+        source='dump-rrr-sets.cc',
+        target='dump-rrr-sets',
+        use=cuda_acc_tools_deps + ['cuda_imm_bfs'],
+        cuda=bld.env.ENABLE_CUDA,
+        cxxflags=cuda_acc_cxx_flags
+    )
+
     if not bld.env.HAVE_MPI:
         return
 

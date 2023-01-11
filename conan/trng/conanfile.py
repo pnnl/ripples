@@ -17,6 +17,11 @@ class LibtrngConan(ConanFile):
     def source(self):
         tools.download('https://github.com/rabauke/trng4/archive/refs/tags/v' + self.version + '.tar.gz', 'trng-' + self.version + '.tar.gz')
         tools.unzip('trng-' + self.version + '.tar.gz')
+        tools.replace_in_file(
+            'trng4-' + self.version + '/CMakeLists.txt',
+            'add_subdirectory(examples)',
+            ''
+        )
         return 'trng4-' + self.version
 
     def build(self):

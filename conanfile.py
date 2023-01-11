@@ -15,7 +15,7 @@ class RipplesConan(ConanFile):
         self.options['spdlog'].shared = True
 
     def requirements(self):
-        self.requires('spdlog/1.9.2')
+        self.requires('spdlog/1.11.0')
         self.requires('nlohmann_json/3.9.1')
         self.requires('catch2/2.13.3')
         self.requires('cli11/2.1.1')
