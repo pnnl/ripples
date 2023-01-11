@@ -97,7 +97,7 @@ cuda_ctx<GraphTy> *cuda_make_ctx(const GraphTy &G, size_t gpu_id) {
 template<typename GraphTy>
 void cuda_destroy_ctx(cuda_ctx<GraphTy> *ctx) {
   cuda_set_device(ctx->gpu_id);
-  destroy_cuda_graph(ctx->d_graph);
+  //destroy_cuda_graph(ctx->d_graph); //Bug Fix: calling this will lead to double-free or corruption since device_graph will get deletd twice
 }
 
 
