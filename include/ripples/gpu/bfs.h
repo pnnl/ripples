@@ -57,6 +57,9 @@
 #define RUNTIME HIP
 #endif
 
+#define EXPERIMENTAL_SCAN_BFS
+
+
 #endif
 
 namespace ripples {
@@ -100,6 +103,37 @@ __host__ __device__ T clearColor(T colors, T color) {
   return colors & (~getMaskFromColor(color));
 }
 
+template <typename VertexTy, typename WeightTy, typename GraphTy>
+struct GPUEdgeScatter{
+  VertexTy d_index;
+  VertexTy d_edge;
+  WeightTy d_weight;
+  template <typename Tuple>
+  __device__ void operator()(Tuple &T) {
+    auto vertex = thrust::get<0>(T);
+    auto color = thrust::get<1>(T);
+    auto startO = thrust::get<2>(T);
+    auto O = thrust::get<3>(T);
+
+    // std::cout << "Compute + Zip" << std::endl;
+
+    auto startJ = d_edge + d_index[vertex];
+    auto endJ = d_edge + d_index[vertex + 1];
+
+    auto startW = d_weight + d_index[vertex];
+    auto endW = d_weight + d_index[vertex + 1];
+
+    auto adjB = thrust::make_zip_iterator(thrust::make_tuple(
+        startJ, thrust::constant_iterator<typename GraphTy::vertex_type>(color), startW));
+    auto adjE = thrust::make_zip_iterator(thrust::make_tuple(
+        endJ, thrust::constant_iterator<typename GraphTy::vertex_type>(color), endW));
+
+    // std::cout << "Copy" << std::endl;
+
+    thrust::copy(thrust::device, adjB, adjE, O + startO);
+  }
+};
+
 template <typename VertexTy>
 struct GPUIndependentCascade {
   template <typename Tuple>
@@ -137,6 +171,7 @@ void GPUBatchedBFS(GraphTy &G, const DeviceContextTy &Context, SItrTy B,
                    SItrTy E, OItrTy O, diff_model_tag &&tag) {
   using DeviceGraphTy = typename DeviceContextTy::device_graph_type;
   using vertex_type = typename GraphTy::vertex_type;
+  using weight_type = typename GraphTy::weight_type;
 
   constexpr unsigned int NumColors = 8 * sizeof(vertex_type);
 
@@ -148,14 +183,18 @@ void GPUBatchedBFS(GraphTy &G, const DeviceContextTy &Context, SItrTy B,
   thrust::device_vector<vertex_type> visited_matrix(G.num_nodes());
   thrust::host_vector<vertex_type> host_visited_matrix(G.num_nodes(), 0);
 
+  // std::cout << "Setup Step" << std::endl;
+
   Frontier<GraphTy> frontier, new_frontier;
   uint32_t color = 1 << (NumColors - 1);
   for (auto itr = B; itr < E; ++itr, color >>= 1) {
     frontier.v.push_back(*itr);
     frontier.color.push_back(color);
-    host_visited_matrix[*itr] = color;
+    host_visited_matrix[*itr] |= color;
   }
   visited_matrix = host_visited_matrix;
+
+  // std::cout << "Reduce Frontier" << std::endl;
 
   // Reduce frontier:
   // -1 sort the frontier by vertex
@@ -178,9 +217,15 @@ void GPUBatchedBFS(GraphTy &G, const DeviceContextTy &Context, SItrTy B,
   GPUIndependentCascade<vertex_type> simStep;
   simStep.visited_matrix = visited_matrix.data().get();
 
+  // std::cout << "Process Frontier" << std::endl;
+
   while (frontier.v.size() != 0) {
+    // std::cout << "Size = " << frontier.v.size() << std::endl;
     auto d_graph = Context.d_graph;
     auto d_index = d_graph->d_index_;
+    auto d_edge = d_graph->d_edges_;
+    auto d_weight = d_graph->d_weights_;
+    // std::cout << "Inclusive Scan" << std::endl;
     thrust::transform_inclusive_scan(
         thrust::device, std::begin(frontier.v), std::end(frontier.v),
         std::begin(numNeighbors) + 1,
@@ -193,9 +238,15 @@ void GPUBatchedBFS(GraphTy &G, const DeviceContextTy &Context, SItrTy B,
     new_frontier.color.resize(numNeighbors.back() + 1);
     new_frontier.weight.resize(numNeighbors.back() + 1);
 
+    #if 0
+    Frontier<GraphTy> test_frontier;
+    test_frontier.v.resize(numNeighbors.back());
+    test_frontier.color.resize(numNeighbors.back() + 1);
+    test_frontier.weight.resize(numNeighbors.back() + 1);
+    {
     auto O = thrust::make_zip_iterator(
-        thrust::make_tuple(new_frontier.v.begin(), new_frontier.color.begin(),
-                           new_frontier.weight.begin()));
+        thrust::make_tuple(test_frontier.v.begin(), test_frontier.color.begin(),
+                           test_frontier.weight.begin()));
     auto B = thrust::make_zip_iterator(thrust::make_tuple(
         frontier.v.begin(), frontier.color.begin(), numNeighbors.begin(),
         thrust::constant_iterator<decltype(O)>(O),
@@ -204,11 +255,14 @@ void GPUBatchedBFS(GraphTy &G, const DeviceContextTy &Context, SItrTy B,
         frontier.v.end(), frontier.color.end(), numNeighbors.end() - 1,
         thrust::constant_iterator<decltype(O)>(O),
         thrust::constant_iterator<decltype(d_graph)>(d_graph)));
+    // std::cout << "Process Each Edge" << std::endl;
     for (auto itr = B; itr < E; ++itr) {
       const auto &T = *itr;
       auto vertex = thrust::get<0>(T);
       auto color = thrust::get<1>(T);
       auto startO = thrust::get<2>(T);
+
+      // std::cout << "Compute + Zip" << std::endl;
 
       auto startJ = d_graph->d_edges_ + d_graph->d_index_[vertex];
       auto endJ = d_graph->d_edges_ + d_graph->d_index_[vertex + 1];
@@ -221,8 +275,35 @@ void GPUBatchedBFS(GraphTy &G, const DeviceContextTy &Context, SItrTy B,
       auto adjE = thrust::make_zip_iterator(thrust::make_tuple(
           endJ, thrust::constant_iterator<vertex_type>(color), endW));
 
+      // std::cout << "Copy" << std::endl;
+
       thrust::copy(thrust::device, adjB, adjE, O + startO);
     }
+    }
+    #else
+    auto O = thrust::make_zip_iterator(
+        thrust::make_tuple(new_frontier.v.begin(), new_frontier.color.begin(),
+                           new_frontier.weight.begin()));
+    auto B = thrust::make_zip_iterator(thrust::make_tuple(
+        frontier.v.begin(), frontier.color.begin(), numNeighbors.begin(),
+        thrust::constant_iterator<decltype(O)>(O)));
+    auto E = thrust::make_zip_iterator(thrust::make_tuple(
+        frontier.v.end(), frontier.color.end(), numNeighbors.end() - 1,
+        thrust::constant_iterator<decltype(O)>(O)));
+    GPUEdgeScatter<decltype(d_index), decltype(d_weight), GraphTy> scatEdge{d_index, d_edge, d_weight};
+    thrust::for_each(thrust::device, B, E, scatEdge);
+    #endif
+
+    #if 0
+    auto OE = thrust::make_zip_iterator(
+        thrust::make_tuple(new_frontier.v.end(), new_frontier.color.end(),
+                           new_frontier.weight.end()));
+    auto compare = thrust::make_zip_iterator(
+        thrust::make_tuple(test_frontier.v.begin(), test_frontier.color.begin(),
+                           test_frontier.weight.begin()));
+    assert(thrust::equal(new_frontier.v.begin(), new_frontier.v.end(), test_frontier.v.begin()));
+    std::cout << "Equal!" << std::endl;
+    #endif
 
     auto seedItrB = thrust::counting_iterator<uint64_t>(clock());
     auto seedItrE = seedItrB + thrust::distance(new_frontier.v.begin(),
@@ -233,10 +314,12 @@ void GPUBatchedBFS(GraphTy &G, const DeviceContextTy &Context, SItrTy B,
     auto edgeE = thrust::make_zip_iterator(
         thrust::make_tuple(new_frontier.v.end(), new_frontier.color.end(),
                            new_frontier.weight.end(), seedItrE));
-
+    // std::cout << "Sim Step" << std::endl;
     thrust::for_each(thrust::device, edgeB, edgeE, simStep);
 
     if (new_frontier.v.size() == 0) break;
+
+    // std::cout << "Recombine" << std::endl;
 
     // - Recombine vertices that might be appearing multiple times.
     thrust::sort_by_key(thrust::device, std::begin(new_frontier.v),
@@ -253,6 +336,7 @@ void GPUBatchedBFS(GraphTy &G, const DeviceContextTy &Context, SItrTy B,
                           new_frontier.color.begin(), frontier.v.begin(),
                           frontier.color.begin());
 
+    // std::cout << "Remove Empty" << std::endl;
     // - Remove vertices that might have empty label.
     auto cleanUpB = thrust::make_zip_iterator(
         thrust::make_tuple(frontier.v.begin(), frontier.color.begin()));
@@ -267,6 +351,8 @@ void GPUBatchedBFS(GraphTy &G, const DeviceContextTy &Context, SItrTy B,
 
     numNeighbors.resize(frontier.v.size() + 1);
   }
+
+  // std::cout << "Clean Frontier" << std::endl;
 
   host_visited_matrix = visited_matrix;
 

@@ -146,7 +146,9 @@ class CPUWalkWorker : public WalkWorker<GraphTy, ItrTy> {
     auto v_start = roots_.begin();
     auto v_end = std::min(v_start + 64, roots_.begin() + size);
     while (v_start < (roots_.begin() + size)) {
+      // std::cout << "CPU Processing " << size << std::endl;
       BatchedBFS(this->G_, v_start, v_end, first, local_rng, diff_model_tag{});
+      // std::cout << "CPU Processed " << size << std::endl;
 
       first += std::distance(v_start, v_end);
       v_start += 64;
@@ -464,8 +466,10 @@ class GPUWalkWorker<GraphTy, PRNGeneratorTy, ItrTy, independent_cascade_tag>
     trng::uniform_int_dist u(0, this->G_.num_nodes());
     std::generate(roots.begin(), roots.end(), [&]() { return u_(rng_); });
 
+    // std::cout << "-----GPU Processing " << size << std::endl;
     GPUBatchedBFS(this->G_, *gpu_ctx_, std::begin(roots), std::end(roots),
                   first, ripples::independent_cascade_tag{});
+    // std::cout << "-----GPU Processed " << size << std::endl;
   }
 };
 #endif  // RIPPLES_ENABLE_CUDA

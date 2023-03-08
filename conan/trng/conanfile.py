@@ -6,6 +6,7 @@ class LibtrngConan(ConanFile):
     name = "libtrng"
     license = "BSD"
     author = "Heiko Bauke"
+    version= "basic_hip_support"
     description = "Tina's Random Number Generator Library"
     topics = ("Pseudo-Random Number Generator")
     settings = "os", "compiler", "build_type", "arch"
