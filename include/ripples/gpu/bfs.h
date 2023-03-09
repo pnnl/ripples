@@ -59,6 +59,15 @@
 
 #define EXPERIMENTAL_SCAN_BFS
 
+#define FRONTIER_PROFILE
+
+#ifdef FRONTIER_PROFILE
+#include <chrono>
+#include <iostream>
+#include <fstream>
+std::vector<std::pair<size_t, uint64_t>> profile_vector;
+#endif
+
 
 #endif
 
@@ -152,12 +161,14 @@ struct GPUIndependentCascade {
       decltype(colors) mask = getMaskFromColor(color);
 
       if (!(visited_matrix[vertex] & mask) && value(generator) <= weight) {
-        VertexTy *addr = visited_matrix + vertex;
-        atomicOr(addr, mask);
         newColors |= mask;
       }
 
       colors = clearColor(colors, color);
+    }
+    if(newColors != 0){
+      VertexTy *addr = visited_matrix + vertex;
+      atomicOr(addr, newColors);
     }
     thrust::get<1>(T) = newColors;
   }
@@ -209,7 +220,8 @@ void GPUBatchedBFS(GraphTy &G, const DeviceContextTy &Context, SItrTy B,
   new_frontier.color.resize(FrontierSize);
   thrust::reduce_by_key(frontier.v.begin(), frontier.v.end(),
                         frontier.color.begin(), new_frontier.v.begin(),
-                        new_frontier.color.begin());
+                        new_frontier.color.begin(), thrust::equal_to<vertex_type>(),
+                        thrust::bit_or<vertex_type>());
 
   thrust::swap(frontier, new_frontier);
 
@@ -305,7 +317,13 @@ void GPUBatchedBFS(GraphTy &G, const DeviceContextTy &Context, SItrTy B,
     std::cout << "Equal!" << std::endl;
     #endif
 
-    auto seedItrB = thrust::counting_iterator<uint64_t>(clock());
+    #ifdef FRONTIER_PROFILE
+    auto start = std::chrono::high_resolution_clock::now();
+    auto edge_size = new_frontier.v.size();
+    #endif
+
+    // auto seedItrB = thrust::counting_iterator<uint64_t>(clock());
+    auto seedItrB = thrust::counting_iterator<uint64_t>(0);
     auto seedItrE = seedItrB + thrust::distance(new_frontier.v.begin(),
                                                 new_frontier.v.end());
     auto edgeB = thrust::make_zip_iterator(
@@ -334,7 +352,8 @@ void GPUBatchedBFS(GraphTy &G, const DeviceContextTy &Context, SItrTy B,
     frontier.color.resize(FrontierSize);
     thrust::reduce_by_key(new_frontier.v.begin(), new_frontier.v.end(),
                           new_frontier.color.begin(), frontier.v.begin(),
-                          frontier.color.begin());
+                          frontier.color.begin(), thrust::equal_to<vertex_type>(),
+                          thrust::bit_or<vertex_type>());
 
     // std::cout << "Remove Empty" << std::endl;
     // - Remove vertices that might have empty label.
@@ -348,6 +367,216 @@ void GPUBatchedBFS(GraphTy &G, const DeviceContextTy &Context, SItrTy B,
     frontier.v.resize(thrust::distance(cleanUpB, itr));
     frontier.color.resize(thrust::distance(cleanUpB, itr));
     frontier.weight.resize(thrust::distance(cleanUpB, itr));
+
+    #ifdef FRONTIER_PROFILE
+    auto end = std::chrono::high_resolution_clock::now();
+     auto time =
+        std::chrono::duration_cast<std::chrono::nanoseconds>(end - start);
+    profile_vector.push_back({edge_size, time.count()});
+    #endif
+
+    numNeighbors.resize(frontier.v.size() + 1);
+  }
+
+  // std::cout << "Clean Frontier" << std::endl;
+
+  host_visited_matrix = visited_matrix;
+
+  for (vertex_type v = 0; v < host_visited_matrix.size(); ++v) {
+    if (host_visited_matrix[v] == 0) continue;
+
+    vertex_type colors = host_visited_matrix[v];
+
+    while (colors != 0) {
+      vertex_type color = getNextColor(colors);
+
+      (O + color)->push_back(v);
+
+      colors = clearColor(colors, color);
+    }
+  }
+}
+
+template <typename VertexTy>
+struct GPUIndependentCascadeScan {
+  template <typename Tuple>
+  __device__ void operator()(Tuple &T) {
+    auto vertex = thrust::get<0>(T);
+    auto colors = thrust::get<1>(T);
+    auto weight = thrust::get<2>(T);
+    auto seed = thrust::get<3>(T);
+
+    thrust::minstd_rand generator(seed);
+    thrust::uniform_real_distribution<float> value;
+    decltype(colors) newColors = 0;
+
+    while (colors != 0) {
+      decltype(colors) color = getNextColor(colors);
+      decltype(colors) mask = getMaskFromColor(color);
+
+      if (!(visited_matrix[vertex] & mask) && value(generator) <= weight) {
+        newColors |= mask;
+      }
+      colors = clearColor(colors, color);
+    }
+    if(newColors != 0){
+      VertexTy *addr = visited_matrix + vertex;
+      atomicOr(addr, newColors);
+      VertexTy *frontier_addr = frontier_matrix + vertex;
+      atomicOr(frontier_addr, newColors);
+    }
+  }
+
+  VertexTy *visited_matrix;
+  VertexTy *frontier_matrix;
+};
+
+template<typename VertexTy>
+struct notZero
+{
+	__host__ __device__
+    bool operator()(thrust::tuple<VertexTy, VertexTy> T)
+	{
+		VertexTy v = thrust::get<1>(T);
+		return (v != 0);
+	}
+	
+};
+
+template <typename GraphTy, typename DeviceContextTy, typename SItrTy,
+          typename OItrTy, typename diff_model_tag>
+void GPUBatchedScanBFS(GraphTy &G, const DeviceContextTy &Context, SItrTy B,
+                   SItrTy E, OItrTy O, diff_model_tag &&tag) {
+  using DeviceGraphTy = typename DeviceContextTy::device_graph_type;
+  using vertex_type = typename GraphTy::vertex_type;
+  using weight_type = typename GraphTy::weight_type;
+
+  constexpr unsigned int NumColors = 8 * sizeof(vertex_type);
+
+  assert(std::distance(B, E) <= NumColors &&
+         "Only up to sizeof(vertex_type) BFS are supported.");
+
+  GPU<RUNTIME>::set_device(Context.gpu_id);
+
+  thrust::device_vector<vertex_type> frontier_matrix(G.num_nodes(), 0);
+  thrust::device_vector<vertex_type> visited_matrix(G.num_nodes());
+  thrust::host_vector<vertex_type> host_visited_matrix(G.num_nodes(), 0);
+
+  // std::cout << "Setup Step" << std::endl;
+
+  // Perform setup, initialize first set of visited vertices
+  Frontier<GraphTy> frontier, new_frontier;
+  uint32_t color = 1 << (NumColors - 1);
+  for (auto itr = B; itr < E; ++itr, color >>= 1) {
+    frontier.v.push_back(*itr);
+    frontier.color.push_back(color);
+    host_visited_matrix[*itr] |= color;
+  }
+  visited_matrix = host_visited_matrix;
+
+  // Reduce frontier:
+  // -1 sort the frontier by vertex
+  // -2 count the unique vertices
+  // -2 reduce the frontier by fusing colors
+  thrust::sort_by_key(std::begin(frontier.v), std::end(frontier.v),
+                      std::begin(frontier.color));
+  size_t FrontierSize = thrust::inner_product(
+      frontier.v.begin(), frontier.v.end() - 1, frontier.v.begin() + 1, 1,
+      thrust::plus<int>(), thrust::not_equal_to<vertex_type>());
+  new_frontier.v.resize(FrontierSize);
+  new_frontier.color.resize(FrontierSize);
+  thrust::reduce_by_key(frontier.v.begin(), frontier.v.end(),
+                        frontier.color.begin(), new_frontier.v.begin(),
+                        new_frontier.color.begin(), thrust::equal_to<vertex_type>(),
+                        thrust::bit_or<vertex_type>());
+
+  thrust::swap(frontier, new_frontier);
+
+  thrust::device_vector<vertex_type> numNeighbors(frontier.v.size() + 1, 0);
+  GPUIndependentCascadeScan<vertex_type> simStep;
+  simStep.visited_matrix = visited_matrix.data().get();
+  simStep.frontier_matrix = frontier_matrix.data().get();
+
+  // std::cout << "Process Frontier" << std::endl;
+
+  while (frontier.v.size() != 0) {
+    // std::cout << "Size = " << frontier.v.size() << std::endl;
+    auto d_graph = Context.d_graph;
+    auto d_index = d_graph->d_index_;
+    auto d_edge = d_graph->d_edges_;
+    auto d_weight = d_graph->d_weights_;
+    // std::cout << "Inclusive Scan" << std::endl;
+    thrust::transform_inclusive_scan(
+        thrust::device, std::begin(frontier.v), std::end(frontier.v),
+        std::begin(numNeighbors) + 1,
+        [d_index](const vertex_type &FE) {
+          return d_index[FE + 1] - d_index[FE];
+        },
+        thrust::plus<vertex_type>{});
+
+    new_frontier.v.resize(numNeighbors.back());
+    new_frontier.color.resize(numNeighbors.back() + 1);
+    new_frontier.weight.resize(numNeighbors.back() + 1);
+
+    auto O = thrust::make_zip_iterator(
+        thrust::make_tuple(new_frontier.v.begin(), new_frontier.color.begin(),
+                           new_frontier.weight.begin()));
+    auto B = thrust::make_zip_iterator(thrust::make_tuple(
+        frontier.v.begin(), frontier.color.begin(), numNeighbors.begin(),
+        thrust::constant_iterator<decltype(O)>(O)));
+    auto E = thrust::make_zip_iterator(thrust::make_tuple(
+        frontier.v.end(), frontier.color.end(), numNeighbors.end() - 1,
+        thrust::constant_iterator<decltype(O)>(O)));
+    GPUEdgeScatter<decltype(d_index), decltype(d_weight), GraphTy> scatEdge{d_index, d_edge, d_weight};
+    thrust::for_each(thrust::device, B, E, scatEdge);
+
+    #ifdef FRONTIER_PROFILE
+    auto start = std::chrono::high_resolution_clock::now();
+    auto edge_size = new_frontier.v.size();
+    #endif
+
+    // auto seedItrB = thrust::counting_iterator<uint64_t>(clock());
+    auto seedItrB = thrust::counting_iterator<uint64_t>(0);
+    auto seedItrE = seedItrB + thrust::distance(new_frontier.v.begin(),
+                                                new_frontier.v.end());
+    auto edgeB = thrust::make_zip_iterator(
+        thrust::make_tuple(new_frontier.v.begin(), new_frontier.color.begin(),
+                           new_frontier.weight.begin(), seedItrB));
+    auto edgeE = thrust::make_zip_iterator(
+        thrust::make_tuple(new_frontier.v.end(), new_frontier.color.end(),
+                           new_frontier.weight.end(), seedItrE));
+    // std::cout << "Sim Step" << std::endl;
+    thrust::for_each(thrust::device, edgeB, edgeE, simStep);
+
+    if (new_frontier.v.size() == 0) break;
+
+    // std::cout << "Rebuild" << std::endl;
+
+    frontier.v.resize(frontier_matrix.size());
+    frontier.color.resize(frontier_matrix.size());
+
+    // Rebuild new frontier queue
+    auto vertexBegin = thrust::counting_iterator<vertex_type>(0);
+    auto vertexEnd = vertexBegin + frontier_matrix.size();
+    auto frontierB = thrust::make_zip_iterator(
+      thrust::make_tuple(frontier.v.begin(), frontier.color.begin()));
+    auto copyB = thrust::make_zip_iterator(
+      thrust::make_tuple(vertexBegin, frontier_matrix.begin()));
+    auto copyE = thrust::make_zip_iterator(
+      thrust::make_tuple(vertexEnd, frontier_matrix.end()));
+    
+    auto frontierE = thrust::copy_if(copyB, copyE, frontierB, notZero<vertex_type>());
+
+    frontier.v.resize(thrust::distance(frontierB, frontierE));
+    frontier.color.resize(thrust::distance(frontierB, frontierE));
+    thrust::fill(frontier_matrix.begin(), frontier_matrix.end(),  0);
+
+    #ifdef FRONTIER_PROFILE
+    auto end = std::chrono::high_resolution_clock::now();
+    auto time =
+        std::chrono::duration_cast<std::chrono::nanoseconds>(end - start);
+    profile_vector.push_back({edge_size, time.count()});
+    #endif
 
     numNeighbors.resize(frontier.v.size() + 1);
   }

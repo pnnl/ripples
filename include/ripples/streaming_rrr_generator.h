@@ -467,8 +467,13 @@ class GPUWalkWorker<GraphTy, PRNGeneratorTy, ItrTy, independent_cascade_tag>
     std::generate(roots.begin(), roots.end(), [&]() { return u_(rng_); });
 
     // std::cout << "-----GPU Processing " << size << std::endl;
+    #ifdef EXPERIMENTAL_SCAN_BFS
+    GPUBatchedScanBFS(this->G_, *gpu_ctx_, std::begin(roots), std::end(roots),
+                  first, ripples::independent_cascade_tag{});
+    #else
     GPUBatchedBFS(this->G_, *gpu_ctx_, std::begin(roots), std::end(roots),
                   first, ripples::independent_cascade_tag{});
+    #endif
     // std::cout << "-----GPU Processed " << size << std::endl;
   }
 };
@@ -597,6 +602,18 @@ class StreamingRRRGenerator {
     console->info("throughput (sets/sec) = {}",
                   (float)prof_bd.n * 1e03 / ms.count());
     console->info("*** END Streaming Engine profiling");
+#endif
+#ifdef FRONTIER_PROFILE
+  std::ofstream profileoutput;
+  #ifdef EXPERIMENTAL_SCAN_BFS
+  profileoutput.open("scan_bfs_prof.csv", std::ios::out);
+  #else
+  profileoutput.open("sort_bfs_prof.csv", std::ios::out);
+  #endif
+  for(auto pair : profile_vector){
+    profileoutput << pair.first << "," << pair.second << '\n';
+  }
+  profileoutput.close();
 #endif
 
     for (auto &w : workers) delete w;
