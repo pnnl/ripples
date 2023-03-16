@@ -610,8 +610,12 @@ class StreamingRRRGenerator {
   #else
   profileoutput.open("sort_bfs_prof.csv", std::ios::out);
   #endif
-  for(auto pair : profile_vector){
-    profileoutput << pair.first << "," << pair.second << '\n';
+  for(auto entry : profile_vector){
+    // Output contents of entry to csv
+    profileoutput <<
+      entry.frontier_size << "," <<
+      entry.frontier_time << "," <<
+      entry.frontier_colors << "\n";
   }
   profileoutput.close();
 #endif

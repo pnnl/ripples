@@ -72,6 +72,7 @@ void cuda_h2d(void *dst, void *src, size_t size);
 void cuda_memset(void *dst, int val, size_t size, cudaStream_t s);
 void cuda_memset(void *dst, int val, size_t size);
 void cuda_sync(cudaStream_t);
+void cuda_device_sync();
 
 void cuda_enable_p2p(size_t dev_number);
 void cuda_disable_p2p(size_t dev_number);

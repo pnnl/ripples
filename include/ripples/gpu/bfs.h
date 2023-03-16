@@ -65,7 +65,13 @@
 #include <chrono>
 #include <iostream>
 #include <fstream>
-std::vector<std::pair<size_t, uint64_t>> profile_vector;
+// Create struct storing the frontier size, time, and number of colors
+struct FrontierProfile {
+  size_t frontier_size;
+  long frontier_time;
+  size_t frontier_colors;
+};
+std::vector<FrontierProfile> profile_vector;
 #endif
 
 
@@ -318,8 +324,14 @@ void GPUBatchedBFS(GraphTy &G, const DeviceContextTy &Context, SItrTy B,
     #endif
 
     #ifdef FRONTIER_PROFILE
+    size_t edge_size = new_frontier.v.size();
+    // Determine number of 1 bits in color
+    size_t num_colors = thrust::transform_reduce(
+        thrust::device, new_frontier.color.begin(), new_frontier.color.end(),
+        [](const vertex_type &c) { return __popc(c); }, 0,
+        thrust::plus<vertex_type>());
+    GPU<RUNTIME>::device_sync();
     auto start = std::chrono::high_resolution_clock::now();
-    auto edge_size = new_frontier.v.size();
     #endif
 
     // auto seedItrB = thrust::counting_iterator<uint64_t>(clock());
@@ -369,10 +381,11 @@ void GPUBatchedBFS(GraphTy &G, const DeviceContextTy &Context, SItrTy B,
     frontier.weight.resize(thrust::distance(cleanUpB, itr));
 
     #ifdef FRONTIER_PROFILE
+    GPU<RUNTIME>::device_sync();
     auto end = std::chrono::high_resolution_clock::now();
-     auto time =
+    auto time =
         std::chrono::duration_cast<std::chrono::nanoseconds>(end - start);
-    profile_vector.push_back({edge_size, time.count()});
+    profile_vector.push_back({edge_size, time.count(), num_colors});
     #endif
 
     numNeighbors.resize(frontier.v.size() + 1);
@@ -531,8 +544,14 @@ void GPUBatchedScanBFS(GraphTy &G, const DeviceContextTy &Context, SItrTy B,
     thrust::for_each(thrust::device, B, E, scatEdge);
 
     #ifdef FRONTIER_PROFILE
+    size_t edge_size = new_frontier.v.size();
+    // Determine number of 1 bits in color
+    size_t num_colors = thrust::transform_reduce(
+        thrust::device, new_frontier.color.begin(), new_frontier.color.end(),
+        [](const vertex_type &c) { return __popc(c); }, 0,
+        thrust::plus<vertex_type>());
+    GPU<RUNTIME>::device_sync();
     auto start = std::chrono::high_resolution_clock::now();
-    auto edge_size = new_frontier.v.size();
     #endif
 
     // auto seedItrB = thrust::counting_iterator<uint64_t>(clock());
@@ -572,10 +591,11 @@ void GPUBatchedScanBFS(GraphTy &G, const DeviceContextTy &Context, SItrTy B,
     thrust::fill(frontier_matrix.begin(), frontier_matrix.end(),  0);
 
     #ifdef FRONTIER_PROFILE
+    GPU<RUNTIME>::device_sync();
     auto end = std::chrono::high_resolution_clock::now();
     auto time =
         std::chrono::duration_cast<std::chrono::nanoseconds>(end - start);
-    profile_vector.push_back({edge_size, time.count()});
+    profile_vector.push_back({edge_size, time.count(), num_colors});
     #endif
 
     numNeighbors.resize(frontier.v.size() + 1);
