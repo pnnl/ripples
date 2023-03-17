@@ -72,6 +72,7 @@ struct FrontierProfile {
   size_t frontier_colors;
   size_t old_frontier_size;
   long scatter_time;
+  size_t max_outdegree;
 };
 std::vector<FrontierProfile> profile_vector;
 #endif
@@ -507,24 +508,26 @@ void GPUBatchedScanBFS(GraphTy &G, const DeviceContextTy &Context, SItrTy B,
 
   thrust::swap(frontier, new_frontier);
 
+  auto d_graph = Context.d_graph;
+  auto d_index = d_graph->d_index_;
+  auto d_edge = d_graph->d_edges_;
+  auto d_weight = d_graph->d_weights_;
+
   thrust::device_vector<vertex_type> numNeighbors(frontier.v.size() + 1, 0);
   GPUIndependentCascadeScan<vertex_type> simStep;
+  GPUEdgeScatter<decltype(d_index), decltype(d_weight), GraphTy> scatEdge{d_index, d_edge, d_weight};
   simStep.visited_matrix = visited_matrix.data().get();
   simStep.frontier_matrix = frontier_matrix.data().get();
 
   // std::cout << "Process Frontier" << std::endl;
 
   while (frontier.v.size() != 0) {
-    #ifdef FRONTIER_PROFILE
-    size_t vertex_size = frontier.v.size();
-    GPU<RUNTIME>::device_sync();
-    auto start_scatter = std::chrono::high_resolution_clock::now();
-    #endif
+    // #ifdef FRONTIER_PROFILE
+    // size_t vertex_size = frontier.v.size();
+    // GPU<RUNTIME>::device_sync();
+    // auto start_scatter = std::chrono::high_resolution_clock::now();
+    // #endif
     // std::cout << "Size = " << frontier.v.size() << std::endl;
-    auto d_graph = Context.d_graph;
-    auto d_index = d_graph->d_index_;
-    auto d_edge = d_graph->d_edges_;
-    auto d_weight = d_graph->d_weights_;
     // std::cout << "Inclusive Scan" << std::endl;
     thrust::transform_inclusive_scan(
         thrust::device, std::begin(frontier.v), std::end(frontier.v),
@@ -532,11 +535,40 @@ void GPUBatchedScanBFS(GraphTy &G, const DeviceContextTy &Context, SItrTy B,
         [d_index](const vertex_type &FE) {
           return d_index[FE + 1] - d_index[FE];
         },
-        thrust::plus<vertex_type>{});    
+        thrust::plus<vertex_type>{});
+    
+    // #ifdef FRONTIER_PROFILE
+    // GPU<RUNTIME>::device_sync();
+    // auto end_scatter = std::chrono::high_resolution_clock::now();
+    // #endif
+
+    // #ifdef FRONTIER_PROFILE
+    // size_t vertex_size = frontier.v.size();
+    // GPU<RUNTIME>::device_sync();
+    // auto start_scatter = std::chrono::high_resolution_clock::now();
+    // #endif 
 
     new_frontier.v.resize(numNeighbors.back());
     new_frontier.color.resize(numNeighbors.back() + 1);
     new_frontier.weight.resize(numNeighbors.back() + 1);
+
+    // #ifdef FRONTIER_PROFILE
+    // GPU<RUNTIME>::device_sync();
+    // auto end_scatter = std::chrono::high_resolution_clock::now();
+    // #endif
+
+    #ifdef FRONTIER_PROFILE
+    // Find largest outdegree node in frontier
+    size_t max_outdegree = thrust::transform_reduce(
+        thrust::device, std::begin(frontier.v), std::end(frontier.v),
+        [d_index](const vertex_type &FE) {
+          return d_index[FE + 1] - d_index[FE];
+        },
+        0, thrust::maximum<size_t>());
+    size_t vertex_size = frontier.v.size();
+    GPU<RUNTIME>::device_sync();
+    auto start_scatter = std::chrono::high_resolution_clock::now();
+    #endif 
 
     auto O = thrust::make_zip_iterator(
         thrust::make_tuple(new_frontier.v.begin(), new_frontier.color.begin(),
@@ -547,7 +579,6 @@ void GPUBatchedScanBFS(GraphTy &G, const DeviceContextTy &Context, SItrTy B,
     auto E = thrust::make_zip_iterator(thrust::make_tuple(
         frontier.v.end(), frontier.color.end(), numNeighbors.end() - 1,
         thrust::constant_iterator<decltype(O)>(O)));
-    GPUEdgeScatter<decltype(d_index), decltype(d_weight), GraphTy> scatEdge{d_index, d_edge, d_weight};
     thrust::for_each(thrust::device, B, E, scatEdge);
 
     #ifdef FRONTIER_PROFILE
@@ -606,7 +637,7 @@ void GPUBatchedScanBFS(GraphTy &G, const DeviceContextTy &Context, SItrTy B,
         std::chrono::duration_cast<std::chrono::nanoseconds>(end - start);
     auto time_scatter = std::chrono::duration_cast<std::chrono::nanoseconds>(
         end_scatter - start_scatter);
-    profile_vector.push_back({edge_size, time.count(), num_colors, vertex_size, time_scatter.count()});
+    profile_vector.push_back({edge_size, time.count(), num_colors, vertex_size, time_scatter.count(), max_outdegree});
     #endif
 
     numNeighbors.resize(frontier.v.size() + 1);

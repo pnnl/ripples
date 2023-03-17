@@ -459,6 +459,7 @@ class GPUWalkWorker<GraphTy, PRNGeneratorTy, ItrTy, independent_cascade_tag>
   PRNGeneratorTy rng_;
   trng::uniform_int_dist u_;
   std::shared_ptr<gpu_ctx<RUNTIME, GraphTy>> gpu_ctx_;
+  // Frontier<GraphTy> frontier, new_frontier;
 
   void batch(ItrTy first, ItrTy last) {
     auto size = std::distance(first, last);
@@ -617,7 +618,8 @@ class StreamingRRRGenerator {
       entry.frontier_time << "," <<
       entry.frontier_colors << "," <<
       entry.old_frontier_size << "," <<
-      entry.scatter_time << "\n";
+      entry.scatter_time << "," << 
+      entry.max_outdegree << "\n";
   }
   profileoutput.close();
 #endif
