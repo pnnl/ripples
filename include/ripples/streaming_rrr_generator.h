@@ -615,7 +615,9 @@ class StreamingRRRGenerator {
     profileoutput <<
       entry.frontier_size << "," <<
       entry.frontier_time << "," <<
-      entry.frontier_colors << "\n";
+      entry.frontier_colors << "," <<
+      entry.old_frontier_size << "," <<
+      entry.scatter_time << "\n";
   }
   profileoutput.close();
 #endif

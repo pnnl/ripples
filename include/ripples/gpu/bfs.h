@@ -70,6 +70,8 @@ struct FrontierProfile {
   size_t frontier_size;
   long frontier_time;
   size_t frontier_colors;
+  size_t old_frontier_size;
+  long scatter_time;
 };
 std::vector<FrontierProfile> profile_vector;
 #endif
@@ -257,47 +259,47 @@ void GPUBatchedBFS(GraphTy &G, const DeviceContextTy &Context, SItrTy B,
     new_frontier.weight.resize(numNeighbors.back() + 1);
 
     #if 0
-    Frontier<GraphTy> test_frontier;
-    test_frontier.v.resize(numNeighbors.back());
-    test_frontier.color.resize(numNeighbors.back() + 1);
-    test_frontier.weight.resize(numNeighbors.back() + 1);
-    {
-    auto O = thrust::make_zip_iterator(
-        thrust::make_tuple(test_frontier.v.begin(), test_frontier.color.begin(),
-                           test_frontier.weight.begin()));
-    auto B = thrust::make_zip_iterator(thrust::make_tuple(
-        frontier.v.begin(), frontier.color.begin(), numNeighbors.begin(),
-        thrust::constant_iterator<decltype(O)>(O),
-        thrust::constant_iterator<decltype(d_graph)>(d_graph)));
-    auto E = thrust::make_zip_iterator(thrust::make_tuple(
-        frontier.v.end(), frontier.color.end(), numNeighbors.end() - 1,
-        thrust::constant_iterator<decltype(O)>(O),
-        thrust::constant_iterator<decltype(d_graph)>(d_graph)));
-    // std::cout << "Process Each Edge" << std::endl;
-    for (auto itr = B; itr < E; ++itr) {
-      const auto &T = *itr;
-      auto vertex = thrust::get<0>(T);
-      auto color = thrust::get<1>(T);
-      auto startO = thrust::get<2>(T);
+      Frontier<GraphTy> test_frontier;
+      test_frontier.v.resize(numNeighbors.back());
+      test_frontier.color.resize(numNeighbors.back() + 1);
+      test_frontier.weight.resize(numNeighbors.back() + 1);
+      {
+      auto O = thrust::make_zip_iterator(
+          thrust::make_tuple(test_frontier.v.begin(), test_frontier.color.begin(),
+                            test_frontier.weight.begin()));
+      auto B = thrust::make_zip_iterator(thrust::make_tuple(
+          frontier.v.begin(), frontier.color.begin(), numNeighbors.begin(),
+          thrust::constant_iterator<decltype(O)>(O),
+          thrust::constant_iterator<decltype(d_graph)>(d_graph)));
+      auto E = thrust::make_zip_iterator(thrust::make_tuple(
+          frontier.v.end(), frontier.color.end(), numNeighbors.end() - 1,
+          thrust::constant_iterator<decltype(O)>(O),
+          thrust::constant_iterator<decltype(d_graph)>(d_graph)));
+      // std::cout << "Process Each Edge" << std::endl;
+      for (auto itr = B; itr < E; ++itr) {
+        const auto &T = *itr;
+        auto vertex = thrust::get<0>(T);
+        auto color = thrust::get<1>(T);
+        auto startO = thrust::get<2>(T);
 
-      // std::cout << "Compute + Zip" << std::endl;
+        // std::cout << "Compute + Zip" << std::endl;
 
-      auto startJ = d_graph->d_edges_ + d_graph->d_index_[vertex];
-      auto endJ = d_graph->d_edges_ + d_graph->d_index_[vertex + 1];
+        auto startJ = d_graph->d_edges_ + d_graph->d_index_[vertex];
+        auto endJ = d_graph->d_edges_ + d_graph->d_index_[vertex + 1];
 
-      auto startW = d_graph->d_weights_ + d_graph->d_index_[vertex];
-      auto endW = d_graph->d_weights_ + d_graph->d_index_[vertex + 1];
+        auto startW = d_graph->d_weights_ + d_graph->d_index_[vertex];
+        auto endW = d_graph->d_weights_ + d_graph->d_index_[vertex + 1];
 
-      auto adjB = thrust::make_zip_iterator(thrust::make_tuple(
-          startJ, thrust::constant_iterator<vertex_type>(color), startW));
-      auto adjE = thrust::make_zip_iterator(thrust::make_tuple(
-          endJ, thrust::constant_iterator<vertex_type>(color), endW));
+        auto adjB = thrust::make_zip_iterator(thrust::make_tuple(
+            startJ, thrust::constant_iterator<vertex_type>(color), startW));
+        auto adjE = thrust::make_zip_iterator(thrust::make_tuple(
+            endJ, thrust::constant_iterator<vertex_type>(color), endW));
 
-      // std::cout << "Copy" << std::endl;
+        // std::cout << "Copy" << std::endl;
 
-      thrust::copy(thrust::device, adjB, adjE, O + startO);
-    }
-    }
+        thrust::copy(thrust::device, adjB, adjE, O + startO);
+      }
+      }
     #else
     auto O = thrust::make_zip_iterator(
         thrust::make_tuple(new_frontier.v.begin(), new_frontier.color.begin(),
@@ -513,6 +515,11 @@ void GPUBatchedScanBFS(GraphTy &G, const DeviceContextTy &Context, SItrTy B,
   // std::cout << "Process Frontier" << std::endl;
 
   while (frontier.v.size() != 0) {
+    #ifdef FRONTIER_PROFILE
+    size_t vertex_size = frontier.v.size();
+    GPU<RUNTIME>::device_sync();
+    auto start_scatter = std::chrono::high_resolution_clock::now();
+    #endif
     // std::cout << "Size = " << frontier.v.size() << std::endl;
     auto d_graph = Context.d_graph;
     auto d_index = d_graph->d_index_;
@@ -525,7 +532,7 @@ void GPUBatchedScanBFS(GraphTy &G, const DeviceContextTy &Context, SItrTy B,
         [d_index](const vertex_type &FE) {
           return d_index[FE + 1] - d_index[FE];
         },
-        thrust::plus<vertex_type>{});
+        thrust::plus<vertex_type>{});    
 
     new_frontier.v.resize(numNeighbors.back());
     new_frontier.color.resize(numNeighbors.back() + 1);
@@ -544,6 +551,8 @@ void GPUBatchedScanBFS(GraphTy &G, const DeviceContextTy &Context, SItrTy B,
     thrust::for_each(thrust::device, B, E, scatEdge);
 
     #ifdef FRONTIER_PROFILE
+    GPU<RUNTIME>::device_sync();
+    auto end_scatter = std::chrono::high_resolution_clock::now();
     size_t edge_size = new_frontier.v.size();
     // Determine number of 1 bits in color
     size_t num_colors = thrust::transform_reduce(
@@ -595,7 +604,9 @@ void GPUBatchedScanBFS(GraphTy &G, const DeviceContextTy &Context, SItrTy B,
     auto end = std::chrono::high_resolution_clock::now();
     auto time =
         std::chrono::duration_cast<std::chrono::nanoseconds>(end - start);
-    profile_vector.push_back({edge_size, time.count(), num_colors});
+    auto time_scatter = std::chrono::duration_cast<std::chrono::nanoseconds>(
+        end_scatter - start_scatter);
+    profile_vector.push_back({edge_size, time.count(), num_colors, vertex_size, time_scatter.count()});
     #endif
 
     numNeighbors.resize(frontier.v.size() + 1);
