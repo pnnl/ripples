@@ -46,7 +46,7 @@ namespace ripples {
 
 template <GPURuntime R, typename GraphTy>
 struct gpu_graph {
-  using vertex_t = int;  // TODO vertex type hard-coded in nvgraph
+  using vertex_t = typename GraphTy::vertex_type;  // TODO vertex type hard-coded in nvgraph
   using edge_t = typename GraphTy::edge_type;
   using weight_t = typename edge_t::edge_weight;
 

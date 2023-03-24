@@ -435,6 +435,11 @@ class GPUWalkWorker<GraphTy, PRNGeneratorTy, ItrTy, independent_cascade_tag>
         rng_(rng),
         u_(0, G.num_nodes()),
         gpu_ctx_(ctx) {
+    #ifdef HIERARCHICAL
+    GPUCalculateDegrees(this->G_, *gpu_ctx_, ripples::independent_cascade_tag{},
+                        small_frontier_max, medium_frontier_max, large_frontier_max,
+                        extreme_frontier_max);
+    #endif
   }
 
   void svc_loop(std::atomic<size_t> &mpmc_head, ItrTy begin, ItrTy end) {
@@ -448,6 +453,7 @@ class GPUWalkWorker<GraphTy, PRNGeneratorTy, ItrTy, independent_cascade_tag>
       std::advance(last, batch_size_);
       if (last > end) last = end;
       batch(first, last);
+      // std::cout << "GPUWalkWorker::svc_loop: " << offset << std::endl;
     }
   }
 
@@ -459,6 +465,9 @@ class GPUWalkWorker<GraphTy, PRNGeneratorTy, ItrTy, independent_cascade_tag>
   PRNGeneratorTy rng_;
   trng::uniform_int_dist u_;
   std::shared_ptr<gpu_ctx<RUNTIME, GraphTy>> gpu_ctx_;
+  #ifdef HIERARCHICAL
+  int small_frontier_max, medium_frontier_max, large_frontier_max, extreme_frontier_max;
+  #endif
   // Frontier<GraphTy> frontier, new_frontier;
 
   void batch(ItrTy first, ItrTy last) {
@@ -468,7 +477,11 @@ class GPUWalkWorker<GraphTy, PRNGeneratorTy, ItrTy, independent_cascade_tag>
     std::generate(roots.begin(), roots.end(), [&]() { return u_(rng_); });
 
     // std::cout << "-----GPU Processing " << size << std::endl;
-    #ifdef EXPERIMENTAL_SCAN_BFS
+    #if defined(HIERARCHICAL)
+    GPUBatchedTieredQueueBFS(this->G_, *gpu_ctx_, std::begin(roots), std::end(roots),
+                  first, ripples::independent_cascade_tag{}, small_frontier_max, medium_frontier_max, large_frontier_max,
+                        extreme_frontier_max);
+    #elif defined(EXPERIMENTAL_SCAN_BFS)
     GPUBatchedScanBFS(this->G_, *gpu_ctx_, std::begin(roots), std::end(roots),
                   first, ripples::independent_cascade_tag{});
     #else
@@ -606,7 +619,9 @@ class StreamingRRRGenerator {
 #endif
 #ifdef FRONTIER_PROFILE
   std::ofstream profileoutput;
-  #ifdef EXPERIMENTAL_SCAN_BFS
+  #if defined(HIERARCHICAL)
+  profileoutput.open("hier_bfs_prof.csv", std::ios::out);
+  #elif defined(EXPERIMENTAL_SCAN_BFS)
   profileoutput.open("scan_bfs_prof.csv", std::ios::out);
   #else
   profileoutput.open("sort_bfs_prof.csv", std::ios::out);

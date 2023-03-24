@@ -57,7 +57,13 @@
 #define RUNTIME HIP
 #endif
 
+#include "ripples/gpu/bfs_kernels.h"
+
 #define EXPERIMENTAL_SCAN_BFS
+
+#define HIERARCHICAL
+
+// #define FULL_COLORS_MOTIVATION
 
 #define FRONTIER_PROFILE
 
@@ -93,6 +99,19 @@ struct Frontier {
   thrust::device_vector<typename GraphTy::vertex_type> v;
   thrust::device_vector<typename GraphTy::vertex_type> color;
   thrust::device_vector<typename GraphTy::weight_type> weight;
+};
+
+//! \brief A structure of arrays storing the Hierarchical BFS frontier.
+//!
+//! The frontier stores three piece of information:
+//!  - The vertex (v)
+//!  - The color representing the single BFS
+//!  - The edge weight with which we reached v;
+template <typename GraphTy>
+struct FrontierHierarch {
+  thrust::device_vector<typename GraphTy::vertex_type> v;
+  thrust::device_vector<typename GraphTy::vertex_type> color;
+  thrust::device_vector<typename GraphTy::vertex_type> offset;
 };
 
 //! \brief Get the next color ID from the color mask.
@@ -482,12 +501,21 @@ void GPUBatchedScanBFS(GraphTy &G, const DeviceContextTy &Context, SItrTy B,
 
   // Perform setup, initialize first set of visited vertices
   Frontier<GraphTy> frontier, new_frontier;
+  #ifdef FULL_COLORS_MOTIVATION
+  uint32_t color = 1 << (NumColors - 1);
+  for (auto itr = B; itr < E; ++itr, color >>= 1) {
+    frontier.v.push_back(*B);
+    frontier.color.push_back(color);
+    host_visited_matrix[*B] |= color;
+  }
+  #else
   uint32_t color = 1 << (NumColors - 1);
   for (auto itr = B; itr < E; ++itr, color >>= 1) {
     frontier.v.push_back(*itr);
     frontier.color.push_back(color);
     host_visited_matrix[*itr] |= color;
   }
+  #endif
   visited_matrix = host_visited_matrix;
 
   // Reduce frontier:
@@ -521,12 +549,27 @@ void GPUBatchedScanBFS(GraphTy &G, const DeviceContextTy &Context, SItrTy B,
 
   // std::cout << "Process Frontier" << std::endl;
 
+  #ifdef FRONTIER_PROFILE
+  size_t iteration = 0;
+  #endif
+
   while (frontier.v.size() != 0) {
-    // #ifdef FRONTIER_PROFILE
-    // size_t vertex_size = frontier.v.size();
-    // GPU<RUNTIME>::device_sync();
-    // auto start_scatter = std::chrono::high_resolution_clock::now();
-    // #endif
+    #ifdef FRONTIER_PROFILE
+    // size_t num_colors = thrust::transform_reduce(
+    //     thrust::device, frontier.color.begin(), frontier.color.end(),
+    //     [](const vertex_type &c) { return __popc(c); }, 0,
+    //     thrust::plus<vertex_type>());
+    // Find largest outdegree node in frontier
+    size_t max_outdegree = thrust::transform_reduce(
+        thrust::device, std::begin(frontier.v), std::end(frontier.v),
+        [d_index](const vertex_type &FE) {
+          return d_index[FE + 1] - d_index[FE];
+        },
+        0, thrust::maximum<size_t>());
+    size_t vertex_size = frontier.v.size();
+    GPU<RUNTIME>::device_sync();
+    auto start_scatter = std::chrono::high_resolution_clock::now();
+    #endif
     // std::cout << "Size = " << frontier.v.size() << std::endl;
     // std::cout << "Inclusive Scan" << std::endl;
     thrust::transform_inclusive_scan(
@@ -552,6 +595,8 @@ void GPUBatchedScanBFS(GraphTy &G, const DeviceContextTy &Context, SItrTy B,
     new_frontier.color.resize(numNeighbors.back() + 1);
     new_frontier.weight.resize(numNeighbors.back() + 1);
 
+    // std::cout << "Edges = " << new_frontier.v.size() << std::endl;
+
     // #ifdef FRONTIER_PROFILE
     // GPU<RUNTIME>::device_sync();
     // auto end_scatter = std::chrono::high_resolution_clock::now();
@@ -559,15 +604,15 @@ void GPUBatchedScanBFS(GraphTy &G, const DeviceContextTy &Context, SItrTy B,
 
     #ifdef FRONTIER_PROFILE
     // Find largest outdegree node in frontier
-    size_t max_outdegree = thrust::transform_reduce(
-        thrust::device, std::begin(frontier.v), std::end(frontier.v),
-        [d_index](const vertex_type &FE) {
-          return d_index[FE + 1] - d_index[FE];
-        },
-        0, thrust::maximum<size_t>());
-    size_t vertex_size = frontier.v.size();
-    GPU<RUNTIME>::device_sync();
-    auto start_scatter = std::chrono::high_resolution_clock::now();
+    // size_t max_outdegree = thrust::transform_reduce(
+    //     thrust::device, std::begin(frontier.v), std::end(frontier.v),
+    //     [d_index](const vertex_type &FE) {
+    //       return d_index[FE + 1] - d_index[FE];
+    //     },
+    //     0, thrust::maximum<size_t>());
+    // size_t vertex_size = frontier.v.size();
+    // GPU<RUNTIME>::device_sync();
+    // auto start_scatter = std::chrono::high_resolution_clock::now();
     #endif 
 
     auto O = thrust::make_zip_iterator(
@@ -630,17 +675,20 @@ void GPUBatchedScanBFS(GraphTy &G, const DeviceContextTy &Context, SItrTy B,
     frontier.color.resize(thrust::distance(frontierB, frontierE));
     thrust::fill(frontier_matrix.begin(), frontier_matrix.end(),  0);
 
+    numNeighbors.resize(frontier.v.size() + 1);
+
     #ifdef FRONTIER_PROFILE
     GPU<RUNTIME>::device_sync();
+    // auto end_scatter = std::chrono::high_resolution_clock::now();
     auto end = std::chrono::high_resolution_clock::now();
     auto time =
         std::chrono::duration_cast<std::chrono::nanoseconds>(end - start);
     auto time_scatter = std::chrono::duration_cast<std::chrono::nanoseconds>(
         end_scatter - start_scatter);
+    // profile_vector.push_back({vertex_size, time_scatter.count(), num_colors, vertex_size, time_scatter.count(), iteration});
+    // iteration++;
     profile_vector.push_back({edge_size, time.count(), num_colors, vertex_size, time_scatter.count(), max_outdegree});
     #endif
-
-    numNeighbors.resize(frontier.v.size() + 1);
   }
 
   // std::cout << "Clean Frontier" << std::endl;
@@ -662,6 +710,417 @@ void GPUBatchedScanBFS(GraphTy &G, const DeviceContextTy &Context, SItrTy B,
   }
 }
 
+#if defined(RIPPLES_ENABLE_CUDA)
+#define SMALL_THRESHOLD 32
+#else
+#define SMALL_THRESHOLD 64
+#endif
+#define MEDIUM_THRESHOLD 256
+#define LARGE_THRESHOLD 65536
+#define NUM_LEVELS 4
+
+template <typename GraphTy, typename DeviceContextTy, typename SItrTy,
+          typename OItrTy, typename diff_model_tag>
+void GPUBatchedTieredQueueBFS(GraphTy &G, const DeviceContextTy &Context, SItrTy B,
+                   SItrTy E, OItrTy O, diff_model_tag &&tag, int small_neighbors,
+                   int medium_neighbors, int large_neighbors, int extreme_neighbors) {
+  using DeviceGraphTy = typename DeviceContextTy::device_graph_type;
+  using vertex_type = typename GraphTy::vertex_type;
+  using weight_type = typename GraphTy::weight_type;
+
+  std::vector<typename GPU<RUNTIME>::stream_type> streams(NUM_LEVELS, GPU<RUNTIME>::create_stream());
+
+  // std::cout << "Initialization" << std::endl;
+
+  constexpr unsigned int NumColors = 8 * sizeof(vertex_type);
+
+  assert(std::distance(B, E) <= NumColors &&
+         "Only up to sizeof(vertex_type) BFS are supported.");
+
+  GPU<RUNTIME>::set_device(Context.gpu_id);
+
+  thrust::device_vector<vertex_type> frontier_matrix(G.num_nodes(), 0);
+  thrust::device_vector<vertex_type> visited_matrix(G.num_nodes());
+  thrust::host_vector<vertex_type> host_visited_matrix(G.num_nodes(), 0);
+
+  auto d_graph = Context.d_graph;
+  auto d_index = d_graph->d_index_;
+  auto d_edge = d_graph->d_edges_;
+  auto d_weight = d_graph->d_weights_;
+
+  // Perform setup, initialize first set of visited vertices
+  Frontier<GraphTy> frontier, new_frontier;
+  FrontierHierarch<GraphTy> small_frontier, medium_frontier, large_frontier, extreme_frontier;
+  // Resize all frontier queues
+  small_frontier.v.resize(small_neighbors);
+  small_frontier.color.resize(small_neighbors);
+  small_frontier.offset.resize(small_neighbors);
+  medium_frontier.v.resize(medium_neighbors);
+  medium_frontier.color.resize(medium_neighbors);
+  medium_frontier.offset.resize(medium_neighbors);
+  large_frontier.v.resize(large_neighbors);
+  large_frontier.color.resize(large_neighbors);
+  large_frontier.offset.resize(large_neighbors);
+  extreme_frontier.v.resize(extreme_neighbors);
+  extreme_frontier.color.resize(extreme_neighbors);
+  extreme_frontier.offset.resize(extreme_neighbors);
+  #ifdef FULL_COLORS_MOTIVATION
+  uint32_t color = 1 << (NumColors - 1);
+  for (auto itr = B; itr < E; ++itr, color >>= 1) {
+    frontier.v.push_back(*B);
+    frontier.color.push_back(color);
+    host_visited_matrix[*B] |= color;
+  }
+  #else
+  uint32_t color = 1 << (NumColors - 1);
+  for (auto itr = B; itr < E; ++itr, color >>= 1) {
+    frontier.v.push_back(*itr);
+    frontier.color.push_back(color);
+    host_visited_matrix[*itr] |= color;
+  }
+  #endif
+  visited_matrix = host_visited_matrix;
+
+  // Reduce frontier:
+  // -1 sort the frontier by vertex
+  // -2 count the unique vertices
+  // -2 reduce the frontier by fusing colors
+  thrust::sort_by_key(std::begin(frontier.v), std::end(frontier.v),
+                      std::begin(frontier.color));
+  size_t FrontierSize = thrust::inner_product(
+      frontier.v.begin(), frontier.v.end() - 1, frontier.v.begin() + 1, 1,
+      thrust::plus<int>(), thrust::not_equal_to<vertex_type>());
+  new_frontier.v.resize(FrontierSize);
+  new_frontier.color.resize(FrontierSize);
+  thrust::reduce_by_key(frontier.v.begin(), frontier.v.end(),
+                        frontier.color.begin(), new_frontier.v.begin(),
+                        new_frontier.color.begin(), thrust::equal_to<vertex_type>(),
+                        thrust::bit_or<vertex_type>());
+
+  thrust::swap(frontier, new_frontier);
+
+  thrust::device_vector<vertex_type> numNeighbors(frontier.v.size() + 1, 0);
+  thrust::device_vector<vertex_type> numNeighborsSeparate(frontier.v.size() + 1, 0);
+  GPUIndependentCascadeScan<vertex_type> simStep;
+  // GPUEdgeScatter<decltype(d_index), decltype(d_weight), GraphTy> scatEdge{d_index, d_edge, d_weight};
+  simStep.visited_matrix = visited_matrix.data().get();
+  simStep.frontier_matrix = frontier_matrix.data().get();
+
+  // GPU<RUNTIME>::device_sync();
+  // std::cout << "Process Frontier" << std::endl;
+
+  #ifdef FRONTIER_PROFILE
+  size_t iteration = 0;
+  #endif
+
+  while (frontier.v.size() != 0) {
+    #ifdef FRONTIER_PROFILE
+    // size_t num_colors = thrust::transform_reduce(
+    //     thrust::device, frontier.color.begin(), frontier.color.end(),
+    //     [](const vertex_type &c) { return __popc(c); }, 0,
+    //     thrust::plus<vertex_type>());
+    size_t vertex_size = frontier.v.size();
+    // GPU<RUNTIME>::device_sync();
+    // Find largest outdegree node in frontier
+    size_t max_outdegree = thrust::transform_reduce(
+        thrust::device, std::begin(frontier.v), std::end(frontier.v),
+        [d_index](const vertex_type &FE) {
+          return d_index[FE + 1] - d_index[FE];
+        },
+        0, thrust::maximum<size_t>());
+    GPU<RUNTIME>::device_sync();
+    auto start_scatter = std::chrono::high_resolution_clock::now();
+    #endif
+    // GPU<RUNTIME>::device_sync();
+    // std::cout << "Size = " << frontier.v.size() << std::endl;
+    // std::cout << "Inclusive Scan" << std::endl;
+    thrust::transform(
+        thrust::device, std::begin(frontier.v), std::end(frontier.v),
+        std::begin(numNeighborsSeparate) + 1,
+        [d_index](const vertex_type &FE) {
+          return d_index[FE + 1] - d_index[FE];
+        });
+    
+    thrust::inclusive_scan(thrust::device, std::begin(numNeighborsSeparate), std::end(numNeighborsSeparate),
+                        std::begin(numNeighbors), thrust::plus<vertex_type>{});
+    
+    auto toClassifyB = thrust::make_zip_iterator(thrust::make_tuple(frontier.v.begin(), frontier.color.begin(), numNeighbors.begin()));
+    auto toClassifyE = thrust::make_zip_iterator(thrust::make_tuple(frontier.v.end(), frontier.color.end(), numNeighbors.end() - 1));
+
+    // Distribute the frontier to the appropriate queues
+    auto smallCopyB = thrust::make_zip_iterator(thrust::make_tuple(small_frontier.v.begin(), small_frontier.color.begin(), small_frontier.offset.begin()));
+    auto smallsize = thrust::copy_if(thrust::device, toClassifyB, toClassifyE, std::begin(numNeighborsSeparate) + 1,
+                    smallCopyB, [](const vertex_type &degree) {
+                      return degree < SMALL_THRESHOLD;
+                    });
+    auto smallWork = thrust::distance(smallCopyB, smallsize);
+    auto mediumCopyB = thrust::make_zip_iterator(thrust::make_tuple(medium_frontier.v.begin(), medium_frontier.color.begin(), medium_frontier.offset.begin()));
+    auto mediumsize = thrust::copy_if(thrust::device, toClassifyB, toClassifyE, std::begin(numNeighborsSeparate) + 1,
+                    mediumCopyB, [](const vertex_type &degree) {
+                      return degree >= SMALL_THRESHOLD && degree < MEDIUM_THRESHOLD;
+                    });
+    auto mediumWork = thrust::distance(mediumCopyB, mediumsize);
+    auto largeCopyB = thrust::make_zip_iterator(thrust::make_tuple(large_frontier.v.begin(), large_frontier.color.begin(), large_frontier.offset.begin()));
+    auto largesize = thrust::copy_if(thrust::device, toClassifyB, toClassifyE, std::begin(numNeighborsSeparate) + 1,
+                    largeCopyB, [](const vertex_type &degree) {
+                      return degree >= MEDIUM_THRESHOLD && degree < LARGE_THRESHOLD;
+                    });
+    auto largeWork = thrust::distance(largeCopyB, largesize);
+    auto extremeCopyB = thrust::make_zip_iterator(thrust::make_tuple(extreme_frontier.v.begin(), extreme_frontier.color.begin(), extreme_frontier.offset.begin()));
+    auto extremesize = thrust::copy_if(thrust::device, toClassifyB, toClassifyE, std::begin(numNeighborsSeparate) + 1,
+                    extremeCopyB, [](const vertex_type &degree) {
+                      return degree >= LARGE_THRESHOLD;
+                    });
+    auto extremeWork = thrust::distance(extremeCopyB, extremesize);
+    
+    
+    
+    // #ifdef FRONTIER_PROFILE
+    // GPU<RUNTIME>::device_sync();
+    // auto end_scatter = std::chrono::high_resolution_clock::now();
+    // #endif
+
+    // #ifdef FRONTIER_PROFILE
+    // size_t vertex_size = frontier.v.size();
+    // GPU<RUNTIME>::device_sync();
+    // auto start_scatter = std::chrono::high_resolution_clock::now();
+    // #endif 
+
+    new_frontier.v.resize(numNeighbors.back());
+    new_frontier.color.resize(numNeighbors.back() + 1);
+    new_frontier.weight.resize(numNeighbors.back() + 1);
+
+    // #ifdef FRONTIER_PROFILE
+    // GPU<RUNTIME>::device_sync();
+    // auto end_scatter = std::chrono::high_resolution_clock::now();
+    // #endif
+
+    // auto O = thrust::make_zip_iterator(
+    //     thrust::make_tuple(new_frontier.v.begin(), new_frontier.color.begin(),
+    //                        new_frontier.weight.begin()));
+    // auto B = thrust::make_zip_iterator(thrust::make_tuple(
+    //     frontier.v.begin(), frontier.color.begin(), numNeighbors.begin(),
+    //     thrust::constant_iterator<decltype(O)>(O)));
+    // auto E = thrust::make_zip_iterator(thrust::make_tuple(
+    //     frontier.v.end(), frontier.color.end(), numNeighbors.end() - 1,
+    //     thrust::constant_iterator<decltype(O)>(O)));
+    // thrust::for_each(thrust::device, B, E, scatEdge);
+
+    auto new_frontier_v_ptr = thrust::raw_pointer_cast(new_frontier.v.data());
+    auto new_frontier_color_ptr = thrust::raw_pointer_cast(new_frontier.color.data());
+    auto new_frontier_weight_ptr = thrust::raw_pointer_cast(new_frontier.weight.data());
+    auto small_frontier_v_ptr = thrust::raw_pointer_cast(small_frontier.v.data());
+    auto small_frontier_color_ptr = thrust::raw_pointer_cast(small_frontier.color.data());
+    auto small_frontier_offset_ptr = thrust::raw_pointer_cast(small_frontier.offset.data());
+    auto medium_frontier_v_ptr = thrust::raw_pointer_cast(medium_frontier.v.data());
+    auto medium_frontier_color_ptr = thrust::raw_pointer_cast(medium_frontier.color.data());
+    auto medium_frontier_offset_ptr = thrust::raw_pointer_cast(medium_frontier.offset.data());
+    auto large_frontier_v_ptr = thrust::raw_pointer_cast(large_frontier.v.data());
+    auto large_frontier_color_ptr = thrust::raw_pointer_cast(large_frontier.color.data());
+    auto large_frontier_offset_ptr = thrust::raw_pointer_cast(large_frontier.offset.data());
+    auto extreme_frontier_v_ptr = thrust::raw_pointer_cast(extreme_frontier.v.data());
+    auto extreme_frontier_color_ptr = thrust::raw_pointer_cast(extreme_frontier.color.data());
+    auto extreme_frontier_offset_ptr = thrust::raw_pointer_cast(extreme_frontier.offset.data());
+    GPU<RUNTIME>::device_sync();
+    // std::cout << "smallWork: " << smallWork << " mediumWork: " << mediumWork << " largeWork: " << largeWork << " extremeWork: " << extremeWork << std::endl;
+    #if defined(RIPPLES_ENABLE_CUDA)
+    if(smallWork > 0)
+      thread_scatter_kernel<RUNTIME, GraphTy>
+        <<<(smallWork+31)/32, 32, 0, streams[0]>>>(d_index,
+          d_edge, d_weight,
+          small_frontier_v_ptr, small_frontier_color_ptr, small_frontier_offset_ptr,
+          new_frontier_v_ptr, new_frontier_color_ptr, new_frontier_weight_ptr,
+          G.num_nodes());
+    if(mediumWork > 0)
+      warp_block_scatter_kernel<RUNTIME, GraphTy>
+        <<<mediumWork, 32, 0, streams[1]>>>(d_index,
+          d_edge, d_weight,
+          medium_frontier_v_ptr, medium_frontier_color_ptr, medium_frontier_offset_ptr,
+          new_frontier_v_ptr, new_frontier_color_ptr, new_frontier_weight_ptr,
+          G.num_nodes());
+    if(largeWork > 0)
+      warp_block_scatter_kernel<RUNTIME, GraphTy>
+        <<<largeWork, 256, 0, streams[2]>>>(d_index,
+          d_edge, d_weight,
+          large_frontier_v_ptr, large_frontier_color_ptr, large_frontier_offset_ptr,
+          new_frontier_v_ptr, new_frontier_color_ptr, new_frontier_weight_ptr,
+          G.num_nodes());
+    if(extremeWork > 0)
+      warp_block_scatter_kernel<RUNTIME, GraphTy>
+        <<<extremeWork, 1024, 0, streams[3]>>>(d_index,
+          d_edge, d_weight,
+          extreme_frontier_v_ptr, extreme_frontier_color_ptr, extreme_frontier_offset_ptr,
+          new_frontier_v_ptr, new_frontier_color_ptr, new_frontier_weight_ptr,
+          G.num_nodes());
+    #elif defined(RIPPLES_ENABLE_HIP)
+    // std::cout << "smallWork" << std::endl;
+    if(smallWork > 0)
+      hipLaunchKernelGGL((thread_scatter_kernel<RUNTIME, GraphTy>), (smallWork+63)/64, 64,
+                        0, streams[0], d_index,
+                        d_edge, d_weight,
+                        small_frontier_v_ptr, small_frontier_color_ptr, small_frontier_offset_ptr,
+                        new_frontier_v_ptr, new_frontier_color_ptr, new_frontier_weight_ptr,
+                        smallWork);
+    // GPU<RUNTIME>::device_sync();
+    // std::cout << "mediumWork" << std::endl;
+    if(mediumWork > 0)
+      hipLaunchKernelGGL((warp_block_scatter_kernel<RUNTIME, GraphTy>), mediumWork, 64,
+                        0, streams[1], d_index,
+                        d_edge, d_weight,
+                        medium_frontier_v_ptr, medium_frontier_color_ptr, medium_frontier_offset_ptr,
+                        new_frontier_v_ptr, new_frontier_color_ptr, new_frontier_weight_ptr,
+                        mediumWork);
+    // GPU<RUNTIME>::device_sync();
+    // std::cout << "largeWork" << std::endl;
+    if(largeWork > 0)
+      hipLaunchKernelGGL((warp_block_scatter_kernel<RUNTIME, GraphTy>), largeWork, 256,
+                        0, streams[2], d_index,
+                        d_edge, d_weight,
+                        large_frontier_v_ptr, large_frontier_color_ptr, large_frontier_offset_ptr,
+                        new_frontier_v_ptr, new_frontier_color_ptr, new_frontier_weight_ptr,
+                        largeWork);
+    // GPU<RUNTIME>::device_sync();
+    // std::cout << "extremeWork" << std::endl;
+    if(extremeWork > 0)
+      hipLaunchKernelGGL((warp_block_scatter_kernel<RUNTIME, GraphTy>), extremeWork, 1024,
+                        0, streams[3], d_index,
+                        d_edge, d_weight,
+                        extreme_frontier_v_ptr, extreme_frontier_color_ptr, extreme_frontier_offset_ptr,
+                        new_frontier_v_ptr, new_frontier_color_ptr, new_frontier_weight_ptr,
+                        extremeWork);
+    #else
+    #error "Unsupported GPU runtime"
+    #endif
+    
+    GPU<RUNTIME>::device_sync();
+    // std::cout << "Done With Streams" << std::endl;
+    // std::cout << "Edges = " << new_frontier.v.size() << std::endl;
+
+    #ifdef FRONTIER_PROFILE
+    GPU<RUNTIME>::device_sync();
+    auto end_scatter = std::chrono::high_resolution_clock::now();
+    size_t edge_size = new_frontier.v.size();
+    // Determine number of 1 bits in color
+    size_t num_colors = thrust::transform_reduce(
+        thrust::device, new_frontier.color.begin(), new_frontier.color.end(),
+        [](const vertex_type &c) { return __popc(c); }, 0,
+        thrust::plus<vertex_type>());
+    GPU<RUNTIME>::device_sync();
+    auto start = std::chrono::high_resolution_clock::now();
+    #endif
+
+    // auto seedItrB = thrust::counting_iterator<uint64_t>(clock());
+    auto seedItrB = thrust::counting_iterator<uint64_t>(0);
+    auto seedItrE = seedItrB + thrust::distance(new_frontier.v.begin(),
+                                                new_frontier.v.end());
+    auto edgeB = thrust::make_zip_iterator(
+        thrust::make_tuple(new_frontier.v.begin(), new_frontier.color.begin(),
+                           new_frontier.weight.begin(), seedItrB));
+    auto edgeE = thrust::make_zip_iterator(
+        thrust::make_tuple(new_frontier.v.end(), new_frontier.color.end(),
+                           new_frontier.weight.end(), seedItrE));
+    // std::cout << "Sim Step" << std::endl;
+    thrust::for_each(thrust::device, edgeB, edgeE, simStep);
+
+    if (new_frontier.v.size() == 0) break;
+
+    // std::cout << "Rebuild" << std::endl;
+
+    frontier.v.resize(frontier_matrix.size());
+    frontier.color.resize(frontier_matrix.size());
+
+    // Rebuild new frontier queue
+    auto vertexBegin = thrust::counting_iterator<vertex_type>(0);
+    auto vertexEnd = vertexBegin + frontier_matrix.size();
+    auto frontierB = thrust::make_zip_iterator(
+      thrust::make_tuple(frontier.v.begin(), frontier.color.begin()));
+    auto copyB = thrust::make_zip_iterator(
+      thrust::make_tuple(vertexBegin, frontier_matrix.begin()));
+    auto copyE = thrust::make_zip_iterator(
+      thrust::make_tuple(vertexEnd, frontier_matrix.end()));
+    
+    auto frontierE = thrust::copy_if(copyB, copyE, frontierB, notZero<vertex_type>());
+
+    frontier.v.resize(thrust::distance(frontierB, frontierE));
+    frontier.color.resize(thrust::distance(frontierB, frontierE));
+    thrust::fill(frontier_matrix.begin(), frontier_matrix.end(),  0);
+
+    numNeighbors.resize(frontier.v.size() + 1);
+    numNeighborsSeparate.resize(frontier.v.size() + 1);
+
+    #ifdef FRONTIER_PROFILE
+    GPU<RUNTIME>::device_sync();
+    // auto end_scatter = std::chrono::high_resolution_clock::now();
+    auto end = std::chrono::high_resolution_clock::now();
+    auto time =
+        std::chrono::duration_cast<std::chrono::nanoseconds>(end - start);
+    auto time_scatter = std::chrono::duration_cast<std::chrono::nanoseconds>(
+        end_scatter - start_scatter);
+    // profile_vector.push_back({vertex_size, time_scatter.count(), num_colors, vertex_size, time_scatter.count(), iteration});
+    // iteration++;
+    profile_vector.push_back({edge_size, time.count(), num_colors, vertex_size, time_scatter.count(), max_outdegree});
+    #endif
+  }
+
+  // std::cout << "Clean Frontier" << std::endl;
+
+  host_visited_matrix = visited_matrix;
+
+  for (vertex_type v = 0; v < host_visited_matrix.size(); ++v) {
+    if (host_visited_matrix[v] == 0) continue;
+
+    vertex_type colors = host_visited_matrix[v];
+
+    while (colors != 0) {
+      vertex_type color = getNextColor(colors);
+
+      (O + color)->push_back(v);
+
+      colors = clearColor(colors, color);
+    }
+  }
+}
+
+template <typename GraphTy, typename DeviceContextTy, typename diff_model_tag>
+void GPUCalculateDegrees(GraphTy &G, const DeviceContextTy &Context, diff_model_tag &&tag,
+                         int &small_neighbors, int &medium_neighbors, int &large_neighbors,
+                         int &extreme_neighbors) {
+  using DeviceGraphTy = typename DeviceContextTy::device_graph_type;
+  using vertex_type = typename GraphTy::vertex_type;
+  
+  auto d_graph = Context.d_graph;
+  auto d_index = d_graph->d_index_;
+  // Count number of neighbors for each vertex
+  thrust::device_vector<vertex_type> numTotalNeighbors(G.num_nodes());
+  thrust::transform(thrust::device, thrust::make_counting_iterator<vertex_type>(0),
+                    thrust::make_counting_iterator<vertex_type>(G.num_nodes()),
+                    numTotalNeighbors.begin(),
+                    [d_index](const vertex_type &FE) {
+                      return d_index[FE + 1] - d_index[FE];
+                    });
+  small_neighbors = thrust::count_if(
+      thrust::device, numTotalNeighbors.begin(), numTotalNeighbors.end(),
+      [small_threshold = SMALL_THRESHOLD](const vertex_type &FE) {
+        return FE < small_threshold;
+      });
+  medium_neighbors = thrust::count_if(
+      thrust::device, numTotalNeighbors.begin(), numTotalNeighbors.end(),
+      [small_threshold = SMALL_THRESHOLD,
+       medium_threshold = MEDIUM_THRESHOLD](const vertex_type &FE) {
+        return FE >= small_threshold && FE < medium_threshold;
+      });
+  large_neighbors = thrust::count_if(
+      thrust::device, numTotalNeighbors.begin(), numTotalNeighbors.end(),
+      [medium_threshold = MEDIUM_THRESHOLD,
+       large_threshold = LARGE_THRESHOLD](const vertex_type &FE) {
+        return FE >= medium_threshold && FE < large_threshold;
+      });
+  extreme_neighbors = thrust::count_if(
+      thrust::device, numTotalNeighbors.begin(), numTotalNeighbors.end(),
+      [large_threshold = LARGE_THRESHOLD](const vertex_type &FE) {
+        return FE >= large_threshold;
+      });
+}
 }  // namespace ripples
 
 #endif
