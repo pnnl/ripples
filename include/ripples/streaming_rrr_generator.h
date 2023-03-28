@@ -88,6 +88,11 @@ class WalkWorker {
   virtual ~WalkWorker() {}
   virtual void svc_loop(std::atomic<size_t> &mpmc_head, ItrTy begin,
                         ItrTy end) = 0;
+  
+  #ifdef REORDERING
+  virtual void svc_loop(std::atomic<size_t> &mpmc_head, ItrTy begin,
+                        ItrTy end, typename std::vector<vertex_t>::iterator root_nodes_begin) = 0;
+  #endif
 
  protected:
   const GraphTy &G_;
@@ -121,6 +126,10 @@ class CPUWalkWorker : public WalkWorker<GraphTy, ItrTy> {
       batch(first, last);
     }
   }
+
+  #ifdef REORDERING
+  void svc_loop(std::atomic<size_t> &mpmc_head, ItrTy begin, ItrTy end, typename std::vector<vertex_t>::iterator root_nodes_begin) {}
+  #endif
 
  private:
   static constexpr size_t batch_size_ = 128;
@@ -290,6 +299,9 @@ class GPUWalkWorker<GraphTy, PRNGeneratorTy, ItrTy, linear_threshold_tag>
       batch(first, last);
     }
   }
+  #ifdef REORDERING
+  void svc_loop(std::atomic<size_t> &mpmc_head, ItrTy begin, ItrTy end, typename std::vector<vertex_t>::iterator root_nodes_begin) {}
+  #endif
 
  private:
   config_t conf_;
@@ -442,7 +454,12 @@ class GPUWalkWorker<GraphTy, PRNGeneratorTy, ItrTy, independent_cascade_tag>
     #endif
   }
 
+  #ifdef REORDERING
+  void svc_loop(std::atomic<size_t> &mpmc_head, ItrTy begin, ItrTy end) {}
+  void svc_loop(std::atomic<size_t> &mpmc_head, ItrTy begin, ItrTy end, typename std::vector<vertex_t>::iterator root_nodes_begin) {
+  #else
   void svc_loop(std::atomic<size_t> &mpmc_head, ItrTy begin, ItrTy end) {
+  #endif
     // set device and stream
     size_t offset = 0;
     while ((offset = mpmc_head.fetch_add(batch_size_)) <
@@ -452,7 +469,12 @@ class GPUWalkWorker<GraphTy, PRNGeneratorTy, ItrTy, independent_cascade_tag>
       auto last = first;
       std::advance(last, batch_size_);
       if (last > end) last = end;
+      #ifdef REORDERING
+      // std::advance(root_nodes_begin, offset);
+      batch(first, last, root_nodes_begin + offset);
+      #else
       batch(first, last);
+      #endif
       // std::cout << "GPUWalkWorker::svc_loop: " << offset << std::endl;
     }
   }
@@ -470,22 +492,39 @@ class GPUWalkWorker<GraphTy, PRNGeneratorTy, ItrTy, independent_cascade_tag>
   #endif
   // Frontier<GraphTy> frontier, new_frontier;
 
+  #ifdef REORDERING
+  void batch(ItrTy first, ItrTy last, typename std::vector<vertex_t>::iterator root_nodes_first) {
+  #else
   void batch(ItrTy first, ItrTy last) {
+  #endif
     auto size = std::distance(first, last);
+    #ifdef REORDERING
+    auto roots_begin = root_nodes_first;
+    auto roots_end = root_nodes_first + size;
+    // Print the root nodes
+    // std::cout << "Root nodes: ";
+    // for (auto it = roots_begin; it != roots_end; it++) {
+    //   std::cout << *it << " ";
+    // }
+    // std::cout << std::endl;
+    #else
     std::vector<vertex_t> roots(size);
     trng::uniform_int_dist u(0, this->G_.num_nodes());
     std::generate(roots.begin(), roots.end(), [&]() { return u_(rng_); });
+    auto roots_begin = std::begin(roots);
+    auto roots_end = std::end(roots);
+    #endif
 
     // std::cout << "-----GPU Processing " << size << std::endl;
     #if defined(HIERARCHICAL)
-    GPUBatchedTieredQueueBFS(this->G_, *gpu_ctx_, std::begin(roots), std::end(roots),
+    GPUBatchedTieredQueueBFS(this->G_, *gpu_ctx_, roots_begin, roots_end,
                   first, ripples::independent_cascade_tag{}, small_frontier_max, medium_frontier_max, large_frontier_max,
                         extreme_frontier_max);
     #elif defined(EXPERIMENTAL_SCAN_BFS)
-    GPUBatchedScanBFS(this->G_, *gpu_ctx_, std::begin(roots), std::end(roots),
+    GPUBatchedScanBFS(this->G_, *gpu_ctx_, roots_begin, roots_end,
                   first, ripples::independent_cascade_tag{});
     #else
-    GPUBatchedBFS(this->G_, *gpu_ctx_, std::begin(roots), std::end(roots),
+    GPUBatchedBFS(this->G_, *gpu_ctx_, roots_begin, roots_end,
                   first, ripples::independent_cascade_tag{});
     #endif
     // std::cout << "-----GPU Processed " << size << std::endl;
@@ -511,7 +550,9 @@ class StreamingRRRGenerator {
                         const std::unordered_map<size_t, size_t> &worker_to_gpu)
       : num_cpu_workers_(num_cpu_workers),
         num_gpu_workers_(num_gpu_workers),
-        console(spdlog::get("Streaming Generator")) {
+        console(spdlog::get("Streaming Generator")),
+        master_rng_(master_rng),
+        u_(0, G.num_nodes()){
     if (!console) {
       console = spdlog::stdout_color_st("Streaming Generator");
     }
@@ -634,7 +675,9 @@ class StreamingRRRGenerator {
       entry.frontier_colors << "," <<
       entry.old_frontier_size << "," <<
       entry.scatter_time << "," << 
-      entry.max_outdegree << "\n";
+      entry.max_outdegree << "," <<
+      entry.iteration << "," <<
+      entry.edge_colors << "\n";
   }
   profileoutput.close();
 #endif
@@ -655,10 +698,21 @@ class StreamingRRRGenerator {
 
     mpmc_head.store(0);
 
+#ifdef REORDERING
+    // Pregenerate random numbers for reordering
+    std::vector<vertex_t> root_nodes(std::distance(begin, end));
+    std::generate(root_nodes.begin(), root_nodes.end(), [&]() { return u_(master_rng_); });
+    std::sort(root_nodes.begin(), root_nodes.end());
+#endif
+
 #pragma omp parallel num_threads(num_cpu_workers_ + num_gpu_workers_)
     {
       size_t rank = omp_get_thread_num();
+      #ifdef REORDERING
+      workers[rank]->svc_loop(mpmc_head, begin, end, root_nodes.begin());
+      #else
       workers[rank]->svc_loop(mpmc_head, begin, end);
+      #endif
     }
 
 #if GPU_PROFILE
@@ -685,6 +739,8 @@ class StreamingRRRGenerator {
 #endif
   std::vector<worker_t *> workers;
   std::atomic<size_t> mpmc_head{0};
+  PRNGeneratorTy master_rng_;
+  trng::uniform_int_dist u_;
 
 #if GPU_PROFILE
   struct iter_profile_t {

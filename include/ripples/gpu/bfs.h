@@ -63,6 +63,8 @@
 
 #define HIERARCHICAL
 
+#define REORDERING
+
 // #define FULL_COLORS_MOTIVATION
 
 #define FRONTIER_PROFILE
@@ -79,6 +81,8 @@ struct FrontierProfile {
   size_t old_frontier_size;
   long scatter_time;
   size_t max_outdegree;
+  size_t iteration;
+  size_t edge_colors;
 };
 std::vector<FrontierProfile> profile_vector;
 #endif
@@ -259,6 +263,10 @@ void GPUBatchedBFS(GraphTy &G, const DeviceContextTy &Context, SItrTy B,
 
   // std::cout << "Process Frontier" << std::endl;
 
+  #ifdef FRONTIER_PROFILE
+  size_t iteration = 0;
+  #endif
+
   while (frontier.v.size() != 0) {
     // std::cout << "Size = " << frontier.v.size() << std::endl;
     auto d_graph = Context.d_graph;
@@ -407,6 +415,7 @@ void GPUBatchedBFS(GraphTy &G, const DeviceContextTy &Context, SItrTy B,
     auto end = std::chrono::high_resolution_clock::now();
     auto time =
         std::chrono::duration_cast<std::chrono::nanoseconds>(end - start);
+    iteration++;
     profile_vector.push_back({edge_size, time.count(), num_colors});
     #endif
 
@@ -686,8 +695,8 @@ void GPUBatchedScanBFS(GraphTy &G, const DeviceContextTy &Context, SItrTy B,
     auto time_scatter = std::chrono::duration_cast<std::chrono::nanoseconds>(
         end_scatter - start_scatter);
     // profile_vector.push_back({vertex_size, time_scatter.count(), num_colors, vertex_size, time_scatter.count(), iteration});
-    // iteration++;
-    profile_vector.push_back({edge_size, time.count(), num_colors, vertex_size, time_scatter.count(), max_outdegree});
+    iteration++;
+    profile_vector.push_back({edge_size, time.count(), num_colors, vertex_size, time_scatter.count(), max_outdegree, iteration});
     #endif
   }
 
@@ -815,10 +824,10 @@ void GPUBatchedTieredQueueBFS(GraphTy &G, const DeviceContextTy &Context, SItrTy
 
   while (frontier.v.size() != 0) {
     #ifdef FRONTIER_PROFILE
-    // size_t num_colors = thrust::transform_reduce(
-    //     thrust::device, frontier.color.begin(), frontier.color.end(),
-    //     [](const vertex_type &c) { return __popc(c); }, 0,
-    //     thrust::plus<vertex_type>());
+    size_t num_colors = thrust::transform_reduce(
+        thrust::device, frontier.color.begin(), frontier.color.end(),
+        [](const vertex_type &c) { return __popc(c); }, 0,
+        thrust::plus<vertex_type>());
     size_t vertex_size = frontier.v.size();
     // GPU<RUNTIME>::device_sync();
     // Find largest outdegree node in frontier
@@ -1001,7 +1010,7 @@ void GPUBatchedTieredQueueBFS(GraphTy &G, const DeviceContextTy &Context, SItrTy
     auto end_scatter = std::chrono::high_resolution_clock::now();
     size_t edge_size = new_frontier.v.size();
     // Determine number of 1 bits in color
-    size_t num_colors = thrust::transform_reduce(
+    size_t edge_colors = thrust::transform_reduce(
         thrust::device, new_frontier.color.begin(), new_frontier.color.end(),
         [](const vertex_type &c) { return __popc(c); }, 0,
         thrust::plus<vertex_type>());
@@ -1057,8 +1066,8 @@ void GPUBatchedTieredQueueBFS(GraphTy &G, const DeviceContextTy &Context, SItrTy
     auto time_scatter = std::chrono::duration_cast<std::chrono::nanoseconds>(
         end_scatter - start_scatter);
     // profile_vector.push_back({vertex_size, time_scatter.count(), num_colors, vertex_size, time_scatter.count(), iteration});
-    // iteration++;
-    profile_vector.push_back({edge_size, time.count(), num_colors, vertex_size, time_scatter.count(), max_outdegree});
+    iteration++;
+    profile_vector.push_back({edge_size, time.count(), num_colors, vertex_size, time_scatter.count(), max_outdegree, iteration, edge_colors});
     #endif
   }
 
@@ -1120,6 +1129,11 @@ void GPUCalculateDegrees(GraphTy &G, const DeviceContextTy &Context, diff_model_
       [large_threshold = LARGE_THRESHOLD](const vertex_type &FE) {
         return FE >= large_threshold;
       });
+  // Print out the number of vertices with each number of neighbors
+  std::cout << "Small neighbors: " << small_neighbors << std::endl;
+  std::cout << "Medium neighbors: " << medium_neighbors << std::endl;
+  std::cout << "Large neighbors: " << large_neighbors << std::endl;
+  std::cout << "Extreme neighbors: " << extreme_neighbors << std::endl;
 }
 }  // namespace ripples
 
