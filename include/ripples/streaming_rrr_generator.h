@@ -483,7 +483,9 @@ class GPUWalkWorker<GraphTy, PRNGeneratorTy, ItrTy, independent_cascade_tag>
                  size_t first_seq) {}
 
  private:
-  static constexpr size_t batch_size_ = 32;
+  // static constexpr size_t batch_size_ = 16;
+  // static constexpr size_t batch_size_ = 32;
+  static constexpr size_t batch_size_ = 64;
   PRNGeneratorTy rng_;
   trng::uniform_int_dist u_;
   std::shared_ptr<gpu_ctx<RUNTIME, GraphTy>> gpu_ctx_;
@@ -517,9 +519,11 @@ class GPUWalkWorker<GraphTy, PRNGeneratorTy, ItrTy, independent_cascade_tag>
 
     // std::cout << "-----GPU Processing " << size << std::endl;
     #if defined(HIERARCHICAL)
+    uint64_t NumColors = sizeof(uint64_t) * 8;
+    // uint32_t NumColors = sizeof(uint32_t) * 8;
     GPUBatchedTieredQueueBFS(this->G_, *gpu_ctx_, roots_begin, roots_end,
                   first, ripples::independent_cascade_tag{}, small_frontier_max, medium_frontier_max, large_frontier_max,
-                        extreme_frontier_max);
+                        extreme_frontier_max, NumColors);
     #elif defined(EXPERIMENTAL_SCAN_BFS)
     GPUBatchedScanBFS(this->G_, *gpu_ctx_, roots_begin, roots_end,
                   first, ripples::independent_cascade_tag{});
@@ -677,7 +681,8 @@ class StreamingRRRGenerator {
       entry.scatter_time << "," << 
       entry.max_outdegree << "," <<
       entry.iteration << "," <<
-      entry.edge_colors << "\n";
+      entry.edge_colors << "," <<
+      entry.unique_colors << "\n";
   }
   profileoutput.close();
 #endif
@@ -702,7 +707,9 @@ class StreamingRRRGenerator {
     // Pregenerate random numbers for reordering
     std::vector<vertex_t> root_nodes(std::distance(begin, end));
     std::generate(root_nodes.begin(), root_nodes.end(), [&]() { return u_(master_rng_); });
+    #ifdef SORTING
     std::sort(root_nodes.begin(), root_nodes.end());
+    #endif
 #endif
 
 #pragma omp parallel num_threads(num_cpu_workers_ + num_gpu_workers_)

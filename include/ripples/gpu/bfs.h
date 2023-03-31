@@ -65,6 +65,8 @@
 
 #define REORDERING
 
+#define SORTING
+
 // #define FULL_COLORS_MOTIVATION
 
 #define FRONTIER_PROFILE
@@ -83,6 +85,7 @@ struct FrontierProfile {
   size_t max_outdegree;
   size_t iteration;
   size_t edge_colors;
+  size_t unique_colors;
 };
 std::vector<FrontierProfile> profile_vector;
 #endif
@@ -98,10 +101,10 @@ namespace ripples {
 //!  - The vertex (v)
 //!  - The color representing the single BFS
 //!  - The edge weight with which we reached v;
-template <typename GraphTy>
+template <typename GraphTy, typename ColorTy = typename GraphTy::vertex_type>
 struct Frontier {
   thrust::device_vector<typename GraphTy::vertex_type> v;
-  thrust::device_vector<typename GraphTy::vertex_type> color;
+  thrust::device_vector<ColorTy> color;
   thrust::device_vector<typename GraphTy::weight_type> weight;
 };
 
@@ -111,10 +114,10 @@ struct Frontier {
 //!  - The vertex (v)
 //!  - The color representing the single BFS
 //!  - The edge weight with which we reached v;
-template <typename GraphTy>
+template <typename GraphTy, typename ColorTy = typename GraphTy::vertex_type>
 struct FrontierHierarch {
   thrust::device_vector<typename GraphTy::vertex_type> v;
-  thrust::device_vector<typename GraphTy::vertex_type> color;
+  thrust::device_vector<ColorTy> color;
   thrust::device_vector<typename GraphTy::vertex_type> offset;
 };
 
@@ -132,10 +135,23 @@ __host__ __device__ uint64_t getNextColor(uint64_t color) {
   return __builtin_clzl(color);
 }
 
+template <typename T>
+__host__ __device__ T numColors(T color);
+
+template <>
+__host__ __device__ uint32_t numColors(uint32_t color) {
+  return __builtin_popcount(color);
+}
+
+template <>
+__host__ __device__ uint64_t numColors(uint64_t color) {
+  return __builtin_popcountl(color);
+}
+
 //! \brief Get a color mask from a color ID.
 template <typename T>
 __host__ __device__ T getMaskFromColor(T color) {
-  return 1ul << ((sizeof(T) * 8 - 1) - color);
+  return (T)1 << ((sizeof(T) * 8 - 1) - color);
 }
 
 //! \brief Remove a color from the mask of colors.
@@ -358,8 +374,8 @@ void GPUBatchedBFS(GraphTy &G, const DeviceContextTy &Context, SItrTy B,
     // Determine number of 1 bits in color
     size_t num_colors = thrust::transform_reduce(
         thrust::device, new_frontier.color.begin(), new_frontier.color.end(),
-        [](const vertex_type &c) { return __popc(c); }, 0,
-        thrust::plus<vertex_type>());
+        [](const vertex_type &c) { return numColors(c); }, 0,
+        thrust::plus<uint32_t>());
     GPU<RUNTIME>::device_sync();
     auto start = std::chrono::high_resolution_clock::now();
     #endif
@@ -441,7 +457,7 @@ void GPUBatchedBFS(GraphTy &G, const DeviceContextTy &Context, SItrTy B,
   }
 }
 
-template <typename VertexTy>
+template <typename ColorTy>
 struct GPUIndependentCascadeScan {
   template <typename Tuple>
   __device__ void operator()(Tuple &T) {
@@ -464,24 +480,24 @@ struct GPUIndependentCascadeScan {
       colors = clearColor(colors, color);
     }
     if(newColors != 0){
-      VertexTy *addr = visited_matrix + vertex;
+      ColorTy *addr = visited_matrix + vertex;
       atomicOr(addr, newColors);
-      VertexTy *frontier_addr = frontier_matrix + vertex;
+      ColorTy *frontier_addr = frontier_matrix + vertex;
       atomicOr(frontier_addr, newColors);
     }
   }
 
-  VertexTy *visited_matrix;
-  VertexTy *frontier_matrix;
+  ColorTy *visited_matrix;
+  ColorTy *frontier_matrix;
 };
 
-template<typename VertexTy>
+template<typename VertexTy, typename ColorTy = VertexTy>
 struct notZero
 {
 	__host__ __device__
-    bool operator()(thrust::tuple<VertexTy, VertexTy> T)
+    bool operator()(thrust::tuple<VertexTy, ColorTy> T)
 	{
-		VertexTy v = thrust::get<1>(T);
+		ColorTy v = thrust::get<1>(T);
 		return (v != 0);
 	}
 	
@@ -566,7 +582,7 @@ void GPUBatchedScanBFS(GraphTy &G, const DeviceContextTy &Context, SItrTy B,
     #ifdef FRONTIER_PROFILE
     // size_t num_colors = thrust::transform_reduce(
     //     thrust::device, frontier.color.begin(), frontier.color.end(),
-    //     [](const vertex_type &c) { return __popc(c); }, 0,
+    //     [](const vertex_type &c) { return numColors(c); }, 0,
     //     thrust::plus<vertex_type>());
     // Find largest outdegree node in frontier
     size_t max_outdegree = thrust::transform_reduce(
@@ -642,8 +658,8 @@ void GPUBatchedScanBFS(GraphTy &G, const DeviceContextTy &Context, SItrTy B,
     // Determine number of 1 bits in color
     size_t num_colors = thrust::transform_reduce(
         thrust::device, new_frontier.color.begin(), new_frontier.color.end(),
-        [](const vertex_type &c) { return __popc(c); }, 0,
-        thrust::plus<vertex_type>());
+        [](const vertex_type &c) { return numColors(c); }, 0,
+        thrust::plus<uint32_t>());
     GPU<RUNTIME>::device_sync();
     auto start = std::chrono::high_resolution_clock::now();
     #endif
@@ -729,28 +745,30 @@ void GPUBatchedScanBFS(GraphTy &G, const DeviceContextTy &Context, SItrTy B,
 #define NUM_LEVELS 4
 
 template <typename GraphTy, typename DeviceContextTy, typename SItrTy,
-          typename OItrTy, typename diff_model_tag>
+          typename OItrTy, typename diff_model_tag, typename ColorTy = typename GraphTy::vertex_type>
 void GPUBatchedTieredQueueBFS(GraphTy &G, const DeviceContextTy &Context, SItrTy B,
                    SItrTy E, OItrTy O, diff_model_tag &&tag, int small_neighbors,
-                   int medium_neighbors, int large_neighbors, int extreme_neighbors) {
+                   int medium_neighbors, int large_neighbors, int extreme_neighbors,
+                   ColorTy NumColors = 32) {
   using DeviceGraphTy = typename DeviceContextTy::device_graph_type;
   using vertex_type = typename GraphTy::vertex_type;
   using weight_type = typename GraphTy::weight_type;
+  using color_type = ColorTy;
 
   std::vector<typename GPU<RUNTIME>::stream_type> streams(NUM_LEVELS, GPU<RUNTIME>::create_stream());
 
   // std::cout << "Initialization" << std::endl;
 
-  constexpr unsigned int NumColors = 8 * sizeof(vertex_type);
+  // constexpr unsigned int NumColors = 8 * sizeof(color_type);
 
   assert(std::distance(B, E) <= NumColors &&
-         "Only up to sizeof(vertex_type) BFS are supported.");
+         "Only up to sizeof(color_type) BFS are supported.");
 
   GPU<RUNTIME>::set_device(Context.gpu_id);
 
-  thrust::device_vector<vertex_type> frontier_matrix(G.num_nodes(), 0);
-  thrust::device_vector<vertex_type> visited_matrix(G.num_nodes());
-  thrust::host_vector<vertex_type> host_visited_matrix(G.num_nodes(), 0);
+  thrust::device_vector<color_type> frontier_matrix(G.num_nodes(), 0);
+  thrust::device_vector<color_type> visited_matrix(G.num_nodes());
+  thrust::host_vector<color_type> host_visited_matrix(G.num_nodes(), 0);
 
   auto d_graph = Context.d_graph;
   auto d_index = d_graph->d_index_;
@@ -758,8 +776,8 @@ void GPUBatchedTieredQueueBFS(GraphTy &G, const DeviceContextTy &Context, SItrTy
   auto d_weight = d_graph->d_weights_;
 
   // Perform setup, initialize first set of visited vertices
-  Frontier<GraphTy> frontier, new_frontier;
-  FrontierHierarch<GraphTy> small_frontier, medium_frontier, large_frontier, extreme_frontier;
+  Frontier<GraphTy, ColorTy> frontier, new_frontier;
+  FrontierHierarch<GraphTy, ColorTy> small_frontier, medium_frontier, large_frontier, extreme_frontier;
   // Resize all frontier queues
   small_frontier.v.resize(small_neighbors);
   small_frontier.color.resize(small_neighbors);
@@ -774,14 +792,14 @@ void GPUBatchedTieredQueueBFS(GraphTy &G, const DeviceContextTy &Context, SItrTy
   extreme_frontier.color.resize(extreme_neighbors);
   extreme_frontier.offset.resize(extreme_neighbors);
   #ifdef FULL_COLORS_MOTIVATION
-  uint32_t color = 1 << (NumColors - 1);
+  color_type color = (color_type)1 << (NumColors - 1);
   for (auto itr = B; itr < E; ++itr, color >>= 1) {
     frontier.v.push_back(*B);
     frontier.color.push_back(color);
     host_visited_matrix[*B] |= color;
   }
   #else
-  uint32_t color = 1 << (NumColors - 1);
+  color_type color = (color_type)1 << (NumColors - 1);
   for (auto itr = B; itr < E; ++itr, color >>= 1) {
     frontier.v.push_back(*itr);
     frontier.color.push_back(color);
@@ -804,13 +822,13 @@ void GPUBatchedTieredQueueBFS(GraphTy &G, const DeviceContextTy &Context, SItrTy
   thrust::reduce_by_key(frontier.v.begin(), frontier.v.end(),
                         frontier.color.begin(), new_frontier.v.begin(),
                         new_frontier.color.begin(), thrust::equal_to<vertex_type>(),
-                        thrust::bit_or<vertex_type>());
+                        thrust::bit_or<color_type>());
 
   thrust::swap(frontier, new_frontier);
 
   thrust::device_vector<vertex_type> numNeighbors(frontier.v.size() + 1, 0);
   thrust::device_vector<vertex_type> numNeighborsSeparate(frontier.v.size() + 1, 0);
-  GPUIndependentCascadeScan<vertex_type> simStep;
+  GPUIndependentCascadeScan<color_type> simStep;
   // GPUEdgeScatter<decltype(d_index), decltype(d_weight), GraphTy> scatEdge{d_index, d_edge, d_weight};
   simStep.visited_matrix = visited_matrix.data().get();
   simStep.frontier_matrix = frontier_matrix.data().get();
@@ -826,8 +844,11 @@ void GPUBatchedTieredQueueBFS(GraphTy &G, const DeviceContextTy &Context, SItrTy
     #ifdef FRONTIER_PROFILE
     size_t num_colors = thrust::transform_reduce(
         thrust::device, frontier.color.begin(), frontier.color.end(),
-        [](const vertex_type &c) { return __popc(c); }, 0,
-        thrust::plus<vertex_type>());
+        [](const color_type &c) { return numColors(c); }, 0,
+        thrust::plus<uint32_t>());
+    size_t unique_colors = numColors(thrust::reduce(
+        thrust::device, frontier.color.begin(), frontier.color.end(),
+        (color_type)0, thrust::bit_or<color_type>()));
     size_t vertex_size = frontier.v.size();
     // GPU<RUNTIME>::device_sync();
     // Find largest outdegree node in frontier
@@ -934,28 +955,28 @@ void GPUBatchedTieredQueueBFS(GraphTy &G, const DeviceContextTy &Context, SItrTy
     // std::cout << "smallWork: " << smallWork << " mediumWork: " << mediumWork << " largeWork: " << largeWork << " extremeWork: " << extremeWork << std::endl;
     #if defined(RIPPLES_ENABLE_CUDA)
     if(smallWork > 0)
-      thread_scatter_kernel<RUNTIME, GraphTy>
+      thread_scatter_kernel<RUNTIME, GraphTy, ColorTy>
         <<<(smallWork+31)/32, 32, 0, streams[0]>>>(d_index,
           d_edge, d_weight,
           small_frontier_v_ptr, small_frontier_color_ptr, small_frontier_offset_ptr,
           new_frontier_v_ptr, new_frontier_color_ptr, new_frontier_weight_ptr,
           G.num_nodes());
     if(mediumWork > 0)
-      warp_block_scatter_kernel<RUNTIME, GraphTy>
+      warp_block_scatter_kernel<RUNTIME, GraphTy, ColorTy>
         <<<mediumWork, 32, 0, streams[1]>>>(d_index,
           d_edge, d_weight,
           medium_frontier_v_ptr, medium_frontier_color_ptr, medium_frontier_offset_ptr,
           new_frontier_v_ptr, new_frontier_color_ptr, new_frontier_weight_ptr,
           G.num_nodes());
     if(largeWork > 0)
-      warp_block_scatter_kernel<RUNTIME, GraphTy>
+      warp_block_scatter_kernel<RUNTIME, GraphTy, ColorTy>
         <<<largeWork, 256, 0, streams[2]>>>(d_index,
           d_edge, d_weight,
           large_frontier_v_ptr, large_frontier_color_ptr, large_frontier_offset_ptr,
           new_frontier_v_ptr, new_frontier_color_ptr, new_frontier_weight_ptr,
           G.num_nodes());
     if(extremeWork > 0)
-      warp_block_scatter_kernel<RUNTIME, GraphTy>
+      warp_block_scatter_kernel<RUNTIME, GraphTy, ColorTy>
         <<<extremeWork, 1024, 0, streams[3]>>>(d_index,
           d_edge, d_weight,
           extreme_frontier_v_ptr, extreme_frontier_color_ptr, extreme_frontier_offset_ptr,
@@ -964,7 +985,7 @@ void GPUBatchedTieredQueueBFS(GraphTy &G, const DeviceContextTy &Context, SItrTy
     #elif defined(RIPPLES_ENABLE_HIP)
     // std::cout << "smallWork" << std::endl;
     if(smallWork > 0)
-      hipLaunchKernelGGL((thread_scatter_kernel<RUNTIME, GraphTy>), (smallWork+63)/64, 64,
+      hipLaunchKernelGGL((thread_scatter_kernel<RUNTIME, GraphTy, ColorTy>), (smallWork+63)/64, 64,
                         0, streams[0], d_index,
                         d_edge, d_weight,
                         small_frontier_v_ptr, small_frontier_color_ptr, small_frontier_offset_ptr,
@@ -973,7 +994,7 @@ void GPUBatchedTieredQueueBFS(GraphTy &G, const DeviceContextTy &Context, SItrTy
     // GPU<RUNTIME>::device_sync();
     // std::cout << "mediumWork" << std::endl;
     if(mediumWork > 0)
-      hipLaunchKernelGGL((warp_block_scatter_kernel<RUNTIME, GraphTy>), mediumWork, 64,
+      hipLaunchKernelGGL((warp_block_scatter_kernel<RUNTIME, GraphTy, ColorTy>), mediumWork, 64,
                         0, streams[1], d_index,
                         d_edge, d_weight,
                         medium_frontier_v_ptr, medium_frontier_color_ptr, medium_frontier_offset_ptr,
@@ -982,7 +1003,7 @@ void GPUBatchedTieredQueueBFS(GraphTy &G, const DeviceContextTy &Context, SItrTy
     // GPU<RUNTIME>::device_sync();
     // std::cout << "largeWork" << std::endl;
     if(largeWork > 0)
-      hipLaunchKernelGGL((warp_block_scatter_kernel<RUNTIME, GraphTy>), largeWork, 256,
+      hipLaunchKernelGGL((warp_block_scatter_kernel<RUNTIME, GraphTy, ColorTy>), largeWork, 256,
                         0, streams[2], d_index,
                         d_edge, d_weight,
                         large_frontier_v_ptr, large_frontier_color_ptr, large_frontier_offset_ptr,
@@ -991,7 +1012,7 @@ void GPUBatchedTieredQueueBFS(GraphTy &G, const DeviceContextTy &Context, SItrTy
     // GPU<RUNTIME>::device_sync();
     // std::cout << "extremeWork" << std::endl;
     if(extremeWork > 0)
-      hipLaunchKernelGGL((warp_block_scatter_kernel<RUNTIME, GraphTy>), extremeWork, 1024,
+      hipLaunchKernelGGL((warp_block_scatter_kernel<RUNTIME, GraphTy, ColorTy>), extremeWork, 1024,
                         0, streams[3], d_index,
                         d_edge, d_weight,
                         extreme_frontier_v_ptr, extreme_frontier_color_ptr, extreme_frontier_offset_ptr,
@@ -1012,8 +1033,8 @@ void GPUBatchedTieredQueueBFS(GraphTy &G, const DeviceContextTy &Context, SItrTy
     // Determine number of 1 bits in color
     size_t edge_colors = thrust::transform_reduce(
         thrust::device, new_frontier.color.begin(), new_frontier.color.end(),
-        [](const vertex_type &c) { return __popc(c); }, 0,
-        thrust::plus<vertex_type>());
+        [](const color_type &c) { return numColors(c); }, 0,
+        thrust::plus<uint32_t>());
     GPU<RUNTIME>::device_sync();
     auto start = std::chrono::high_resolution_clock::now();
     #endif
@@ -1048,7 +1069,7 @@ void GPUBatchedTieredQueueBFS(GraphTy &G, const DeviceContextTy &Context, SItrTy
     auto copyE = thrust::make_zip_iterator(
       thrust::make_tuple(vertexEnd, frontier_matrix.end()));
     
-    auto frontierE = thrust::copy_if(copyB, copyE, frontierB, notZero<vertex_type>());
+    auto frontierE = thrust::copy_if(copyB, copyE, frontierB, notZero<vertex_type, color_type>());
 
     frontier.v.resize(thrust::distance(frontierB, frontierE));
     frontier.color.resize(thrust::distance(frontierB, frontierE));
@@ -1067,7 +1088,7 @@ void GPUBatchedTieredQueueBFS(GraphTy &G, const DeviceContextTy &Context, SItrTy
         end_scatter - start_scatter);
     // profile_vector.push_back({vertex_size, time_scatter.count(), num_colors, vertex_size, time_scatter.count(), iteration});
     iteration++;
-    profile_vector.push_back({edge_size, time.count(), num_colors, vertex_size, time_scatter.count(), max_outdegree, iteration, edge_colors});
+    profile_vector.push_back({edge_size, time.count(), num_colors, vertex_size, time_scatter.count(), max_outdegree, iteration, edge_colors, unique_colors});
     #endif
   }
 
@@ -1078,16 +1099,19 @@ void GPUBatchedTieredQueueBFS(GraphTy &G, const DeviceContextTy &Context, SItrTy
   for (vertex_type v = 0; v < host_visited_matrix.size(); ++v) {
     if (host_visited_matrix[v] == 0) continue;
 
-    vertex_type colors = host_visited_matrix[v];
+    color_type colors = host_visited_matrix[v];
+    // std::cout << "Color = " << colors << "\n";
 
     while (colors != 0) {
-      vertex_type color = getNextColor(colors);
+      color_type color = getNextColor(colors);
 
       (O + color)->push_back(v);
 
       colors = clearColor(colors, color);
     }
+    // std::cout << "Done" << "\n";
   }
+  // std::cout << "Done Removing" << "\n";
 }
 
 template <typename GraphTy, typename DeviceContextTy, typename diff_model_tag>

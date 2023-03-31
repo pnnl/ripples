@@ -53,26 +53,29 @@
 
 namespace ripples {
 
-template <GPURuntime R, typename GraphTy>
+template <GPURuntime R,
+          typename GraphTy,
+          typename ColorTy =  typename GraphTy::vertex_type>
 __global__ void thread_scatter_kernel(
     typename GraphTy::vertex_type *index,
     typename GraphTy::vertex_type *edges,
     typename GraphTy::weight_type *weights,
     typename GraphTy::vertex_type *vertex,
-    typename GraphTy::vertex_type *colors,
+    ColorTy *colors,
     typename GraphTy::vertex_type *output_location,
     typename GraphTy::vertex_type *output_vertex,
-    typename GraphTy::vertex_type *output_colors,
+    ColorTy *output_colors,
     typename GraphTy::weight_type *output_weights,
     const size_t num_nodes) {
   using vertex_type = typename GraphTy::vertex_type;
+  using color_type = ColorTy;
 
   // Thread-parallel scatter
   int tid = blockIdx.x * blockDim.x + threadIdx.x;
   // tid = vertex id
   if (tid < num_nodes) {
     vertex_type vertex_id = vertex[tid];
-    vertex_type color = colors[tid];
+    color_type color = colors[tid];
     vertex_type output_offset = output_location[tid];
     vertex_type start = index[vertex_id];
     vertex_type end = index[vertex_id + 1];
@@ -84,26 +87,29 @@ __global__ void thread_scatter_kernel(
   }
 }
 
-template <GPURuntime R, typename GraphTy>
+template <GPURuntime R,
+          typename GraphTy,
+          typename ColorTy =  typename GraphTy::vertex_type>
 __global__ void warp_block_scatter_kernel(
     typename GraphTy::vertex_type *index,
     typename GraphTy::vertex_type *edges,
     typename GraphTy::weight_type *weights,
     typename GraphTy::vertex_type *vertex,
-    typename GraphTy::vertex_type *colors,
+    ColorTy *colors,
     typename GraphTy::vertex_type *output_location,
     typename GraphTy::vertex_type *output_vertex,
-    typename GraphTy::vertex_type *output_colors,
+    ColorTy *output_colors,
     typename GraphTy::weight_type *output_weights,
     const size_t num_nodes) {
   using vertex_type = typename GraphTy::vertex_type;
+  using color_type = ColorTy;
 
   // Warp/block-parallel scatter  
   int tid = threadIdx.x;
   int bid = blockIdx.x;
   if (bid < num_nodes) {
     vertex_type vertex_id = vertex[bid];
-    vertex_type color = colors[bid];
+    color_type color = colors[bid];
     vertex_type output_offset = output_location[bid];
     vertex_type start = index[vertex_id];
     vertex_type end = index[vertex_id + 1];
@@ -115,36 +121,5 @@ __global__ void warp_block_scatter_kernel(
     }
   }
 }
-
-// template <GPURuntime R, typename GraphTy>
-// __global__ void grid_scatter_kernel(
-//     typename GraphTy::vertex_type *index,
-//     typename GraphTy::vertex_type *colors,
-//     typename GraphTy::weight_type *weights,
-//     typename GraphTy::vertex_type *edges,
-//     typename GraphTy::vertex_type *output_location,
-//     typename GraphTy::vertex_type *output_vertex,
-//     typename GraphTy::vertex_type *output_colors,
-//     const size_t num_nodes) {
-//   using vertex_type = typename GraphTy::vertex_type;
-
-//   // Grid-parallel scatter
-//   int vertex_id = gridIdx.x;
-//   int edge_id = threadIdx.x;
-//   if (vertex_id < num_nodes) {
-//     int start = index[vertex_id];
-//     int end = index[vertex_id + 1];
-//     int output_offset = output_location[vertex_id];
-//     int color = colors[vertex_id];
-//     // Write the edges and colors to the output array
-//     for (int i = start; i < end; i += blockDim.x) {
-//       edge_offset = i + edge_id;
-//       if(edge_offset < end){
-//         output_vertex[output_offset + edge_offset] = edges[edge_offset];
-//         output_colors[output_offset + edge_offset] = color;
-//       }
-//     }
-//   }
-// }
 }  // namespace ripples
 #endif
