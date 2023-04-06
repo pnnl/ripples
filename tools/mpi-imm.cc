@@ -50,6 +50,8 @@
 #include "ripples/graph.h"
 #include "ripples/loaders.h"
 #include "ripples/mpi/imm.h"
+#include "ripples/imm_configuration.h"
+#include "ripples/imm_interface.h"
 #include "ripples/utility.h"
 
 #include "CLI/CLI.hpp"
@@ -158,11 +160,7 @@ int main(int argc, char *argv[]) {
   auto workers = CFG.streaming_workers;
   auto gpu_workers = CFG.streaming_gpu_workers;
   if (CFG.diffusionModel == "IC") {
-    ripples::StreamingRRRGenerator<
-        decltype(G), decltype(generator),
-        typename ripples::RRRsets<decltype(G)>::iterator,
-        ripples::independent_cascade_tag>
-        se(G, generator, R, workers - gpu_workers, gpu_workers,
+    ripples::ICStreamingGenerator se(G, generator, workers - gpu_workers, gpu_workers,
            CFG.worker_to_gpu);
     auto start = std::chrono::high_resolution_clock::now();
     seeds = ripples::mpi::IMM(
@@ -171,11 +169,7 @@ int main(int argc, char *argv[]) {
     auto end = std::chrono::high_resolution_clock::now();
     R.Total = end - start;
   } else if (CFG.diffusionModel == "LT") {
-    ripples::StreamingRRRGenerator<
-        decltype(G), decltype(generator),
-        typename ripples::RRRsets<decltype(G)>::iterator,
-        ripples::linear_threshold_tag>
-        se(G, generator, R, workers - gpu_workers, gpu_workers,
+    ripples::LTStreamingGenerator se(G, generator, workers - gpu_workers, gpu_workers,
            CFG.worker_to_gpu);
     auto start = std::chrono::high_resolution_clock::now();
     seeds = ripples::mpi::IMM(

@@ -11,8 +11,8 @@ class RipplesConan(ConanFile):
     generators = 'Waf'
 
     def configure(self):
-        self.options['fmt'].shared = True
-        self.options['spdlog'].shared = True
+        self.options['fmt'].shared = False
+        self.options['spdlog'].shared = False
 
     def requirements(self):
         self.requires('spdlog/1.9.2')
