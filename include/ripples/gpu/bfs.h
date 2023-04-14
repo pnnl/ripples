@@ -69,7 +69,7 @@
 
 // #define FULL_COLORS_MOTIVATION
 
-#define FRONTIER_PROFILE
+// #define FRONTIER_PROFILE
 
 #ifdef FRONTIER_PROFILE
 #include <chrono>
@@ -466,7 +466,7 @@ struct GPUIndependentCascadeScan {
     auto weight = thrust::get<2>(T);
     auto seed = thrust::get<3>(T);
 
-    thrust::minstd_rand generator(seed);
+    thrust::minstd_rand generator(seed*seed+19283);
     thrust::uniform_real_distribution<float> value;
     decltype(colors) newColors = 0;
 
@@ -665,7 +665,7 @@ void GPUBatchedScanBFS(GraphTy &G, const DeviceContextTy &Context, SItrTy B,
     #endif
 
     // auto seedItrB = thrust::counting_iterator<uint64_t>(clock());
-    auto seedItrB = thrust::counting_iterator<uint64_t>(0);
+    auto seedItrB = thrust::counting_iterator<uint64_t>(clock());
     auto seedItrE = seedItrB + thrust::distance(new_frontier.v.begin(),
                                                 new_frontier.v.end());
     auto edgeB = thrust::make_zip_iterator(
@@ -755,9 +755,7 @@ void GPUBatchedTieredQueueBFS(GraphTy &G, const DeviceContextTy &Context, SItrTy
   using weight_type = typename GraphTy::weight_type;
   using color_type = ColorTy;
 
-  std::vector<typename GPU<RUNTIME>::stream_type> streams(NUM_LEVELS, GPU<RUNTIME>::create_stream());
-
-  // std::cout << "Initialization" << std::endl;
+  // std::cout << "Initialization: " << Context.gpu_id << std::endl;
 
   // constexpr unsigned int NumColors = 8 * sizeof(color_type);
 
@@ -765,6 +763,8 @@ void GPUBatchedTieredQueueBFS(GraphTy &G, const DeviceContextTy &Context, SItrTy
          "Only up to sizeof(color_type) BFS are supported.");
 
   GPU<RUNTIME>::set_device(Context.gpu_id);
+
+  std::vector<typename GPU<RUNTIME>::stream_type> streams(NUM_LEVELS, GPU<RUNTIME>::create_stream());
 
   thrust::device_vector<color_type> frontier_matrix(G.num_nodes(), 0);
   thrust::device_vector<color_type> visited_matrix(G.num_nodes());
@@ -774,6 +774,9 @@ void GPUBatchedTieredQueueBFS(GraphTy &G, const DeviceContextTy &Context, SItrTy
   auto d_index = d_graph->d_index_;
   auto d_edge = d_graph->d_edges_;
   auto d_weight = d_graph->d_weights_;
+
+  // GPU<RUNTIME>::device_sync();
+  // std::cout << "Device Vectors: " << Context.gpu_id << std::endl;
 
   // Perform setup, initialize first set of visited vertices
   Frontier<GraphTy, ColorTy> frontier, new_frontier;
@@ -808,23 +811,36 @@ void GPUBatchedTieredQueueBFS(GraphTy &G, const DeviceContextTy &Context, SItrTy
   #endif
   visited_matrix = host_visited_matrix;
 
+  // GPU<RUNTIME>::device_sync();
+  // std::cout << "Color Setup: " << Context.gpu_id << std::endl;
+
   // Reduce frontier:
   // -1 sort the frontier by vertex
   // -2 count the unique vertices
   // -2 reduce the frontier by fusing colors
   thrust::sort_by_key(std::begin(frontier.v), std::end(frontier.v),
                       std::begin(frontier.color));
+  // GPU<RUNTIME>::device_sync();
+  // std::cout << "Inner Prod: " << Context.gpu_id << std::endl;
   size_t FrontierSize = thrust::inner_product(
       frontier.v.begin(), frontier.v.end() - 1, frontier.v.begin() + 1, 1,
       thrust::plus<int>(), thrust::not_equal_to<vertex_type>());
+  // GPU<RUNTIME>::device_sync();
+  // std::cout << "Resize + Reduce: " << Context.gpu_id << std::endl;
   new_frontier.v.resize(FrontierSize);
   new_frontier.color.resize(FrontierSize);
   thrust::reduce_by_key(frontier.v.begin(), frontier.v.end(),
                         frontier.color.begin(), new_frontier.v.begin(),
                         new_frontier.color.begin(), thrust::equal_to<vertex_type>(),
                         thrust::bit_or<color_type>());
+  // GPU<RUNTIME>::device_sync();
+  // std::cout << "Swap: " << Context.gpu_id << std::endl;
+  // thrust::swap(thrust::device, frontier, new_frontier);
+  frontier.v.swap(new_frontier.v);
+  frontier.color.swap(new_frontier.color);
 
-  thrust::swap(frontier, new_frontier);
+  // GPU<RUNTIME>::device_sync();
+  // std::cout << "Num Neighbors: " << Context.gpu_id << std::endl;
 
   thrust::device_vector<vertex_type> numNeighbors(frontier.v.size() + 1, 0);
   thrust::device_vector<vertex_type> numNeighborsSeparate(frontier.v.size() + 1, 0);
@@ -834,7 +850,7 @@ void GPUBatchedTieredQueueBFS(GraphTy &G, const DeviceContextTy &Context, SItrTy
   simStep.frontier_matrix = frontier_matrix.data().get();
 
   // GPU<RUNTIME>::device_sync();
-  // std::cout << "Process Frontier" << std::endl;
+  // std::cout << "Process Frontier: " << Context.gpu_id << std::endl;
 
   #ifdef FRONTIER_PROFILE
   size_t iteration = 0;
@@ -1023,7 +1039,7 @@ void GPUBatchedTieredQueueBFS(GraphTy &G, const DeviceContextTy &Context, SItrTy
     #endif
     
     GPU<RUNTIME>::device_sync();
-    // std::cout << "Done With Streams" << std::endl;
+    // std::cout << "Done With Streams: " << Context.gpu_id << std::endl;
     // std::cout << "Edges = " << new_frontier.v.size() << std::endl;
 
     #ifdef FRONTIER_PROFILE
@@ -1040,7 +1056,7 @@ void GPUBatchedTieredQueueBFS(GraphTy &G, const DeviceContextTy &Context, SItrTy
     #endif
 
     // auto seedItrB = thrust::counting_iterator<uint64_t>(clock());
-    auto seedItrB = thrust::counting_iterator<uint64_t>(0);
+    auto seedItrB = thrust::counting_iterator<uint64_t>(clock());
     auto seedItrE = seedItrB + thrust::distance(new_frontier.v.begin(),
                                                 new_frontier.v.end());
     auto edgeB = thrust::make_zip_iterator(
@@ -1121,6 +1137,8 @@ void GPUCalculateDegrees(GraphTy &G, const DeviceContextTy &Context, diff_model_
   using DeviceGraphTy = typename DeviceContextTy::device_graph_type;
   using vertex_type = typename GraphTy::vertex_type;
   
+  GPU<RUNTIME>::set_device(Context.gpu_id);
+
   auto d_graph = Context.d_graph;
   auto d_index = d_graph->d_index_;
   // Count number of neighbors for each vertex
@@ -1154,10 +1172,10 @@ void GPUCalculateDegrees(GraphTy &G, const DeviceContextTy &Context, diff_model_
         return FE >= large_threshold;
       });
   // Print out the number of vertices with each number of neighbors
-  std::cout << "Small neighbors: " << small_neighbors << std::endl;
-  std::cout << "Medium neighbors: " << medium_neighbors << std::endl;
-  std::cout << "Large neighbors: " << large_neighbors << std::endl;
-  std::cout << "Extreme neighbors: " << extreme_neighbors << std::endl;
+  // std::cout << "Small neighbors: " << small_neighbors << std::endl;
+  // std::cout << "Medium neighbors: " << medium_neighbors << std::endl;
+  // std::cout << "Large neighbors: " << large_neighbors << std::endl;
+  // std::cout << "Extreme neighbors: " << extreme_neighbors << std::endl;
 }
 }  // namespace ripples
 

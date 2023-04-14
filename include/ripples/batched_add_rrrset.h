@@ -62,7 +62,7 @@ template <typename GraphTy, typename SItrTy, typename OItrTy,
 void BatchedBFS(const GraphTy &G, SItrTy B, SItrTy E, OItrTy O,
                 PRNGeneratorTy& generator,
                 diff_model_tag &&tag) {
-  assert(std::distance(B, E) <= 64 && "Only up to 32 BFS are supported");
+  assert(std::distance(B, E) <= 64 && "Only up to 64 BFS are supported");
   using vertex_type = typename GraphTy::vertex_type;
   std::vector<std::vector<bool>> visited_matrix(std::distance(B, E), std::vector<bool>(G.num_nodes(), false));
 

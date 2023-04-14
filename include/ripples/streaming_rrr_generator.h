@@ -128,11 +128,22 @@ class CPUWalkWorker : public WalkWorker<GraphTy, ItrTy> {
   }
 
   #ifdef REORDERING
-  void svc_loop(std::atomic<size_t> &mpmc_head, ItrTy begin, ItrTy end, typename std::vector<vertex_t>::iterator root_nodes_begin) {}
+  void svc_loop(std::atomic<size_t> &mpmc_head, ItrTy begin, ItrTy end, typename std::vector<vertex_t>::iterator root_nodes_begin) {
+    size_t offset = 0;
+    while ((offset = mpmc_head.fetch_add(batch_size_)) <
+           std::distance(begin, end)) {
+      auto first = begin;
+      std::advance(first, offset);
+      auto last = first;
+      std::advance(last, batch_size_);
+      if (last > end) last = end;
+      batch(first, last, root_nodes_begin + offset);
+    }
+  }
   #endif
 
  private:
-  static constexpr size_t batch_size_ = 128;
+  static constexpr size_t batch_size_ = 64;
   std::vector<vertex_t> roots_;
   PRNGeneratorTy rng_;
   trng::uniform_int_dist u_;
@@ -174,6 +185,39 @@ class CPUWalkWorker : public WalkWorker<GraphTy, ItrTy> {
     p.n_ += size;
 #endif
   }
+
+#ifdef REORDERING
+  void batch(ItrTy first, ItrTy last, typename std::vector<vertex_t>::iterator root_nodes_first) {
+#if GPU_PROFILE
+    auto start = std::chrono::high_resolution_clock::now();
+#endif
+    auto size = std::distance(first, last);
+    auto v_start = root_nodes_first;
+    // auto v_end = root_nodes_first + size;
+    auto local_rng = rng_;
+    // auto local_u = u_;
+    // std::generate(roots_.begin(), roots_.begin() + size, [&]() { return local_u(local_rng); } );
+    // auto v_start = roots_.begin();
+    auto v_end = std::min(v_start + 64, v_start + size);
+    while (v_start < (root_nodes_first + size)) {
+      // std::cout << "CPU Processing " << size << std::endl;
+      BatchedBFS(this->G_, v_start, v_end, first, local_rng, diff_model_tag{});
+      // std::cout << "CPU Processed " << size << std::endl;
+
+      first += std::distance(v_start, v_end);
+      v_start += 64;
+      v_end = std::min(v_start + 64, root_nodes_first + size);
+    }
+    rng_ = local_rng;
+    // u_ = local_u;
+#if GPU_PROFILE
+    auto &p(prof_bd.back());
+    p.d_ += std::chrono::duration_cast<std::chrono::nanoseconds>(
+        std::chrono::high_resolution_clock::now() - start);
+    p.n_ += size;
+#endif
+  }
+  #endif
 
 #if GPU_PROFILE
  public:
@@ -485,6 +529,7 @@ class GPUWalkWorker<GraphTy, PRNGeneratorTy, ItrTy, independent_cascade_tag>
  private:
   // static constexpr size_t batch_size_ = 16;
   // static constexpr size_t batch_size_ = 32;
+  // static constexpr size_t batch_size_ = 1;
   static constexpr size_t batch_size_ = 64;
   PRNGeneratorTy rng_;
   trng::uniform_int_dist u_;
@@ -715,6 +760,7 @@ class StreamingRRRGenerator {
 #pragma omp parallel num_threads(num_cpu_workers_ + num_gpu_workers_)
     {
       size_t rank = omp_get_thread_num();
+      // std::cout << "rank = " << rank << std::endl;
       #ifdef REORDERING
       workers[rank]->svc_loop(mpmc_head, begin, end, root_nodes.begin());
       #else
