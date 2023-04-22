@@ -175,7 +175,8 @@ void BatchedBFSNeighborColor(const GraphTy &G, SItrTy B, SItrTy E, OItrTy O,
   assert(std::distance(B, E) <= 64 && "Only up to 64 BFS are supported");
   using vertex_type = typename GraphTy::vertex_type;
   // std::cout << "Vector init" << std::endl;
-  std::vector<uint64_t> visited_matrix(G.num_nodes(), 0);
+  std::vector<uint64_t> old_visited_matrix(G.num_nodes(), 0);
+  std::vector<uint64_t> new_visited_matrix(G.num_nodes(), 0);
 
   // using frontier_element = std::pair<vertex_type, uint64_t>;
   using frontier_element = vertex_type;
@@ -191,23 +192,21 @@ void BatchedBFSNeighborColor(const GraphTy &G, SItrTy B, SItrTy E, OItrTy O,
   // frontier.reserve(G.num_nodes());
   // new_frontier.reserve(G.num_nodes());
   for (auto itr = B; itr < E; ++itr, color >>= 1) {
-    auto pos = color_map.find(*itr);
-    if (pos == color_map.end()) {
-      // frontier.push_back(*itr);
-      color_map[*itr] = color;
-    } else {
-      color_map[*itr] |= color;
-    }
-    visited_matrix[*itr] |= color;
+    new_visited_matrix[*itr] |= color;
   }
 
-  assert(!frontier.empty())
+  bool found_one = true;
 
-  while (!color_map.empty()) {
-    new_color_map.clear();
-    // Iterate over color_map
-    for (auto& [vertex, colors] : color_map) {
-
+  while (found_one) {
+    found_one = false;
+    // Iterate over both visited_vertex and new_visited_vertex
+    for (vertex_type vertex = 0; vertex < G.num_nodes(); ++vertex) {
+      const uint64_t visited_old = old_visited_matrix[vertex];
+      const uint64_t visited_new = new_visited_matrix[vertex];
+      if (visited_old == visited_new) continue;
+      found_one = true;
+      uint64_t colors = visited_new ^ visited_old;
+      old_visited_matrix[vertex] |= visited_new;
       // Convert the colors to an array of color masks
       uint64_t color_masks[64];
       uint64_t num_colors = 0;
@@ -218,33 +217,25 @@ void BatchedBFSNeighborColor(const GraphTy &G, SItrTy B, SItrTy E, OItrTy O,
       }
 
       for (auto u : G.neighbors(vertex)) {
-        const uint64_t visited_old = visited_matrix[u.vertex];
-        uint64_t visited_new = 0;
-        #pragma omp simd reduction(|:visited_new)
+        const uint64_t old_mask = new_visited_matrix[u.vertex];
+        uint64_t new_mask = 0;
+        #pragma omp simd reduction(|:new_mask)
         for(size_t i = 0; i < num_colors; ++i) {
           const uint64_t color_mask = color_masks[i];
-          if(!(visited_old & color_mask) && value(generator[i]) <= u.weight) {
-            visited_new |= color_mask;
+          if(!(old_mask & color_mask) && value(generator[i]) <= u.weight) {
+            new_mask |= color_mask;
           }
         }
-        if(visited_new != 0){
-          visited_matrix[u.vertex] |= visited_new;
-          auto pos = new_color_map.find(u.vertex);
-          if (pos == new_color_map.end()) {
-            new_color_map[u.vertex] = visited_new;
-          } else {
-            pos->second |= visited_new;
-          }
+        if(new_mask != 0){
+          new_visited_matrix[u.vertex] |= new_mask;
         }
       }
     }
-
-    std::swap(color_map, new_color_map);
   }
 
   // Traverse visited_matrix and push the vertices into the output
   for (int i = 0; i < G.num_nodes(); ++i) {
-    uint64_t colors = visited_matrix[i];
+    uint64_t colors = new_visited_matrix[i];
     while (colors != 0) {
       uint64_t color = __builtin_clzl(colors);
       (O + color)->push_back(i);
