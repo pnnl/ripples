@@ -55,6 +55,8 @@
 #include "trng/uniform_int_dist.hpp"
 #include "trng/uniform01_dist.hpp"
 
+#define NEIGHBOR_COLOR
+
 namespace ripples {
 
 template <typename GraphTy, typename SItrTy, typename OItrTy,
@@ -88,7 +90,6 @@ void BatchedBFS(const GraphTy &G, SItrTy B, SItrTy E, OItrTy O,
 
   assert(frontier.size() != 0);
 
-  std::vector<size_t> newPosition(frontier.size());
   while (frontier.size() != 0) {
     new_frontier.resize(0);
     new_color_map.clear();
@@ -104,7 +105,11 @@ void BatchedBFS(const GraphTy &G, SItrTy B, SItrTy E, OItrTy O,
           uint64_t color = __builtin_clzl(colors);
 
           for (auto u : G.neighbors(vertex)) {
+            #ifdef NEIGHBOR_COLOR
+            if (!visited_matrix[color][u.vertex] && value(generator[0]) <= u.weight) {
+            #else
             if (!visited_matrix[color][u.vertex] && value(generator) <= u.weight) {
+            #endif
               visited_matrix[color][u.vertex] = true;
               (O + color)->push_back(u.vertex);
               auto pos = new_color_map.find(u.vertex);
@@ -123,7 +128,11 @@ void BatchedBFS(const GraphTy &G, SItrTy B, SItrTy E, OItrTy O,
         while (colors != 0) {
           uint64_t color = __builtin_clzl(colors);
 
+          #ifdef NEIGHBOR_COLOR
+          float threshold = value(generator[0]);
+          #else
           float threshold = value(generator);
+          #endif
           for (auto u : G.neighbors(vertex)) {
             threshold -= u.weight;
             if (threshold > 0) continue;
@@ -155,6 +164,92 @@ void BatchedBFS(const GraphTy &G, SItrTy B, SItrTy E, OItrTy O,
 
   for (int i = 0; i < std::distance(B, E); ++i, ++O) {
     std::sort(O->begin(), O->end());
+  }
+}
+
+template <typename GraphTy, typename SItrTy, typename OItrTy,
+          typename PRNGeneratorTy, typename diff_model_tag>
+void BatchedBFSNeighborColor(const GraphTy &G, SItrTy B, SItrTy E, OItrTy O,
+                PRNGeneratorTy& generator,
+                diff_model_tag &&tag) {
+  assert(std::distance(B, E) <= 64 && "Only up to 64 BFS are supported");
+  using vertex_type = typename GraphTy::vertex_type;
+  // std::cout << "Vector init" << std::endl;
+  std::vector<uint64_t> visited_matrix(G.num_nodes(), 0);
+
+  // using frontier_element = std::pair<vertex_type, uint64_t>;
+  using frontier_element = vertex_type;
+  // std::cout << "Unordered init" << std::endl;
+  std::unordered_map<vertex_type, uint64_t> color_map, new_color_map;
+
+  trng::uniform01_dist<float> value;
+
+  // std::cout << "BFS: " << std::distance(B, E) << std::endl;
+
+  uint64_t color = 1ul << 63;
+  // std::vector<frontier_element> frontier, new_frontier;
+  // frontier.reserve(G.num_nodes());
+  // new_frontier.reserve(G.num_nodes());
+  for (auto itr = B; itr < E; ++itr, color >>= 1) {
+    auto pos = color_map.find(*itr);
+    if (pos == color_map.end()) {
+      // frontier.push_back(*itr);
+      color_map[*itr] = color;
+    } else {
+      color_map[*itr] |= color;
+    }
+    visited_matrix[*itr] |= color;
+  }
+
+  assert(!frontier.empty())
+
+  while (!color_map.empty()) {
+    new_color_map.clear();
+    // Iterate over color_map
+    for (auto& [vertex, colors] : color_map) {
+
+      // Convert the colors to an array of color masks
+      uint64_t color_masks[64];
+      uint64_t num_colors = 0;
+      while (colors != 0) {
+        uint64_t color = __builtin_clzl(colors);
+        color_masks[num_colors++] = (1ul << ((sizeof(colors) * 8 - 1) - color));
+        colors -= (1ul << ((sizeof(colors) * 8 - 1) - color));
+      }
+
+      for (auto u : G.neighbors(vertex)) {
+        const uint64_t visited_old = visited_matrix[u.vertex];
+        uint64_t visited_new = 0;
+        #pragma omp simd reduction(|:visited_new)
+        for(size_t i = 0; i < num_colors; ++i) {
+          const uint64_t color_mask = color_masks[i];
+          if(!(visited_old & color_mask) && value(generator[i]) <= u.weight) {
+            visited_new |= color_mask;
+          }
+        }
+        if(visited_new != 0){
+          visited_matrix[u.vertex] |= visited_new;
+          auto pos = new_color_map.find(u.vertex);
+          if (pos == new_color_map.end()) {
+            new_color_map[u.vertex] = visited_new;
+          } else {
+            pos->second |= visited_new;
+          }
+        }
+      }
+    }
+
+    std::swap(color_map, new_color_map);
+  }
+
+  // Traverse visited_matrix and push the vertices into the output
+  for (int i = 0; i < G.num_nodes(); ++i) {
+    uint64_t colors = visited_matrix[i];
+    while (colors != 0) {
+      uint64_t color = __builtin_clzl(colors);
+      (O + color)->push_back(i);
+      colors -= (1ul << ((sizeof(colors) * 8 - 1) - color));
+    }
   }
 }
 
