@@ -174,23 +174,12 @@ void BatchedBFSNeighborColor(const GraphTy &G, SItrTy B, SItrTy E, OItrTy O,
                 diff_model_tag &&tag) {
   assert(std::distance(B, E) <= 64 && "Only up to 64 BFS are supported");
   using vertex_type = typename GraphTy::vertex_type;
-  // std::cout << "Vector init" << std::endl;
   std::vector<uint64_t> old_visited_matrix(G.num_nodes(), 0);
   std::vector<uint64_t> new_visited_matrix(G.num_nodes(), 0);
 
-  // using frontier_element = std::pair<vertex_type, uint64_t>;
-  using frontier_element = vertex_type;
-  // std::cout << "Unordered init" << std::endl;
-  std::unordered_map<vertex_type, uint64_t> color_map, new_color_map;
-
   trng::uniform01_dist<float> value;
 
-  // std::cout << "BFS: " << std::distance(B, E) << std::endl;
-
   uint64_t color = 1ul << 63;
-  // std::vector<frontier_element> frontier, new_frontier;
-  // frontier.reserve(G.num_nodes());
-  // new_frontier.reserve(G.num_nodes());
   for (auto itr = B; itr < E; ++itr, color >>= 1) {
     new_visited_matrix[*itr] |= color;
   }

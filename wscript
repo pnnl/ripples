@@ -107,6 +107,7 @@ def configure(conf):
     conf.env.ENABLE_HIP = False
     if conf.options.enable_hip:
         conf.env.ENABLE_HIP = True
+        conf.env.append_value('CXXFLAGS', ['--amdgpu-target=gfx90a'])
 
     if conf.env.ENABLE_HIP and conf.env.ENABLE_CUDA:
         conf.fatal('We are not currently supporting HIP and CUDA at the same time.')
@@ -118,7 +119,7 @@ def configure(conf):
 
     env = conf.env
     conf.setenv('release', env)
-    conf.env.append_value('CXXFLAGS', ['-O3', '-mtune=native'])
+    conf.env.append_value('CXXFLAGS', ['-O3', '-march=native', '-mtune=native', '-DNDEBUG'])
 
     conf.setenv('debug', env)
     conf.env.append_value('CXXFLAGS', ['-g', '-DDEBUG'])
