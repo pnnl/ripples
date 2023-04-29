@@ -116,9 +116,31 @@ struct Frontier {
 //!  - The edge weight with which we reached v;
 template <typename GraphTy, typename ColorTy = typename GraphTy::vertex_type>
 struct FrontierHierarch {
+  FrontierHierarch(size_t num_nodes) : v(num_nodes), color(num_nodes), offset(num_nodes) {}
   thrust::device_vector<typename GraphTy::vertex_type> v;
   thrust::device_vector<ColorTy> color;
   thrust::device_vector<typename GraphTy::vertex_type> offset;
+};
+
+template <typename GraphTy, typename ColorTy = typename GraphTy::vertex_type>
+struct BFSContext{
+  BFSContext(size_t num_nodes = 0, size_t small = 0, size_t medium = 0, size_t large = 0, size_t extreme = 0, size_t gpu_id = 0) :
+    small_frontier(small), medium_frontier(medium), large_frontier(large), extreme_frontier(extreme),
+    frontier_matrix(num_nodes), visited_matrix(num_nodes), host_visited_matrix(num_nodes) {
+      GPU<RUNTIME>::set_device(gpu_id);
+      streams = std::vector<typename GPU<RUNTIME>::stream_type>(4, GPU<RUNTIME>::create_stream());
+    }
+  Frontier<GraphTy, ColorTy> frontier, new_frontier;
+  FrontierHierarch<GraphTy, ColorTy> small_frontier;
+  FrontierHierarch<GraphTy, ColorTy> medium_frontier;
+  FrontierHierarch<GraphTy, ColorTy> large_frontier;
+  FrontierHierarch<GraphTy, ColorTy> extreme_frontier;
+  thrust::device_vector<typename GraphTy::vertex_type> numNeighbors;
+  thrust::device_vector<typename GraphTy::vertex_type> numNeighborsSeparate;
+  thrust::device_vector<ColorTy> frontier_matrix;
+  thrust::device_vector<ColorTy> visited_matrix;
+  thrust::host_vector<ColorTy> host_visited_matrix;
+  std::vector<typename GPU<RUNTIME>::stream_type> streams;
 };
 
 //! \brief Get the next color ID from the color mask.
@@ -746,9 +768,8 @@ void GPUBatchedScanBFS(GraphTy &G, const DeviceContextTy &Context, SItrTy B,
 
 template <typename GraphTy, typename DeviceContextTy, typename SItrTy,
           typename OItrTy, typename diff_model_tag, typename ColorTy = typename GraphTy::vertex_type>
-void GPUBatchedTieredQueueBFS(GraphTy &G, const DeviceContextTy &Context, SItrTy B,
-                   SItrTy E, OItrTy O, diff_model_tag &&tag, int small_neighbors,
-                   int medium_neighbors, int large_neighbors, int extreme_neighbors,
+void GPUBatchedTieredQueueBFS(const GraphTy &G, const DeviceContextTy &Context, SItrTy B,
+                   SItrTy E, OItrTy O, diff_model_tag &&tag, BFSContext<GraphTy, ColorTy> &bfs_ctx,
                    ColorTy NumColors = 32) {
   using DeviceGraphTy = typename DeviceContextTy::device_graph_type;
   using vertex_type = typename GraphTy::vertex_type;
@@ -764,11 +785,12 @@ void GPUBatchedTieredQueueBFS(GraphTy &G, const DeviceContextTy &Context, SItrTy
 
   GPU<RUNTIME>::set_device(Context.gpu_id);
 
-  std::vector<typename GPU<RUNTIME>::stream_type> streams(NUM_LEVELS, GPU<RUNTIME>::create_stream());
-
-  thrust::device_vector<color_type> frontier_matrix(G.num_nodes(), 0);
-  thrust::device_vector<color_type> visited_matrix(G.num_nodes());
-  thrust::host_vector<color_type> host_visited_matrix(G.num_nodes(), 0);
+  auto &streams = bfs_ctx.streams;
+  auto &frontier_matrix = bfs_ctx.frontier_matrix;
+  thrust::fill(frontier_matrix.begin(), frontier_matrix.end(), 0);
+  auto &visited_matrix = bfs_ctx.visited_matrix;
+  auto &host_visited_matrix = bfs_ctx.host_visited_matrix;
+  thrust::fill(host_visited_matrix.begin(), host_visited_matrix.end(), 0);
 
   auto d_graph = Context.d_graph;
   auto d_index = d_graph->d_index_;
@@ -779,21 +801,12 @@ void GPUBatchedTieredQueueBFS(GraphTy &G, const DeviceContextTy &Context, SItrTy
   // std::cout << "Device Vectors: " << Context.gpu_id << std::endl;
 
   // Perform setup, initialize first set of visited vertices
-  Frontier<GraphTy, ColorTy> frontier, new_frontier;
-  FrontierHierarch<GraphTy, ColorTy> small_frontier, medium_frontier, large_frontier, extreme_frontier;
-  // Resize all frontier queues
-  small_frontier.v.resize(small_neighbors);
-  small_frontier.color.resize(small_neighbors);
-  small_frontier.offset.resize(small_neighbors);
-  medium_frontier.v.resize(medium_neighbors);
-  medium_frontier.color.resize(medium_neighbors);
-  medium_frontier.offset.resize(medium_neighbors);
-  large_frontier.v.resize(large_neighbors);
-  large_frontier.color.resize(large_neighbors);
-  large_frontier.offset.resize(large_neighbors);
-  extreme_frontier.v.resize(extreme_neighbors);
-  extreme_frontier.color.resize(extreme_neighbors);
-  extreme_frontier.offset.resize(extreme_neighbors);
+  auto &frontier = bfs_ctx.frontier;
+  auto &new_frontier = bfs_ctx.new_frontier;
+  auto &small_frontier = bfs_ctx.small_frontier;
+  auto &medium_frontier = bfs_ctx.medium_frontier;
+  auto &large_frontier = bfs_ctx.large_frontier;
+  auto &extreme_frontier = bfs_ctx.extreme_frontier;
   #ifdef FULL_COLORS_MOTIVATION
   color_type color = (color_type)1 << (NumColors - 1);
   for (auto itr = B; itr < E; ++itr, color >>= 1) {
@@ -842,8 +855,15 @@ void GPUBatchedTieredQueueBFS(GraphTy &G, const DeviceContextTy &Context, SItrTy
   // GPU<RUNTIME>::device_sync();
   // std::cout << "Num Neighbors: " << Context.gpu_id << std::endl;
 
-  thrust::device_vector<vertex_type> numNeighbors(frontier.v.size() + 1, 0);
-  thrust::device_vector<vertex_type> numNeighborsSeparate(frontier.v.size() + 1, 0);
+  // thrust::device_vector<vertex_type> numNeighbors(frontier.v.size() + 1, 0);
+  auto &numNeighbors = bfs_ctx.numNeighbors;
+  numNeighbors.resize(frontier.v.size() + 1);
+  // thrust::fill(numNeighbors.begin(), numNeighbors.end(), 0);
+  auto &numNeighborsSeparate = bfs_ctx.numNeighborsSeparate;
+  numNeighborsSeparate.resize(frontier.v.size() + 1);
+  numNeighborsSeparate[0] = 0;
+  // thrust::fill(numNeighborsSeparate.begin(), numNeighborsSeparate.end(), 0);
+  // thrust::device_vector<vertex_type> numNeighborsSeparate(frontier.v.size() + 1, 0);
   GPUIndependentCascadeScan<color_type> simStep;
   // GPUEdgeScatter<decltype(d_index), decltype(d_weight), GraphTy> scatEdge{d_index, d_edge, d_weight};
   simStep.visited_matrix = visited_matrix.data().get();

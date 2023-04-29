@@ -517,6 +517,7 @@ class GPUWalkWorker<GraphTy, PRNGeneratorTy, ItrTy, independent_cascade_tag>
     GPUCalculateDegrees(this->G_, *gpu_ctx_, ripples::independent_cascade_tag{},
                         small_frontier_max, medium_frontier_max, large_frontier_max,
                         extreme_frontier_max);
+    bfs_ctx_ = BFSContext<GraphTy, decltype(NumColors)>(this->G_.num_nodes(), small_frontier_max, medium_frontier_max, large_frontier_max, extreme_frontier_max, ctx->gpu_id);
     #endif
   }
 
@@ -562,6 +563,8 @@ class GPUWalkWorker<GraphTy, PRNGeneratorTy, ItrTy, independent_cascade_tag>
   std::shared_ptr<gpu_ctx<RUNTIME, GraphTy>> gpu_ctx_;
   #ifdef HIERARCHICAL
   int small_frontier_max, medium_frontier_max, large_frontier_max, extreme_frontier_max;
+  uint64_t NumColors = sizeof(uint64_t) * 8;
+  BFSContext<GraphTy, decltype(NumColors)>  bfs_ctx_;
   #endif
   // Frontier<GraphTy> frontier, new_frontier;
 
@@ -590,11 +593,9 @@ class GPUWalkWorker<GraphTy, PRNGeneratorTy, ItrTy, independent_cascade_tag>
 
     // std::cout << "-----GPU Processing " << size << std::endl;
     #if defined(HIERARCHICAL)
-    uint64_t NumColors = sizeof(uint64_t) * 8;
     // uint32_t NumColors = sizeof(uint32_t) * 8;
     GPUBatchedTieredQueueBFS(this->G_, *gpu_ctx_, roots_begin, roots_end,
-                  first, ripples::independent_cascade_tag{}, small_frontier_max, medium_frontier_max, large_frontier_max,
-                        extreme_frontier_max, NumColors);
+                  first, ripples::independent_cascade_tag{}, bfs_ctx_, NumColors);
     #elif defined(EXPERIMENTAL_SCAN_BFS)
     GPUBatchedScanBFS(this->G_, *gpu_ctx_, roots_begin, roots_end,
                   first, ripples::independent_cascade_tag{});
