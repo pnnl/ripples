@@ -91,6 +91,9 @@ struct IMMExecutionRecord {
     , ThetaEstimationMostInfluential()
     , Counting()
     , Pivoting()
+    , Microbenchmarking()
+    , CPUBatchSize(64)
+    , GPUBatchSize(64)
     , GenerateRRRSets()
     , FindMostInfluentialSet()
     , Total()
@@ -111,6 +114,12 @@ struct IMMExecutionRecord {
   std::vector<ex_time_ms> ThetaEstimationMostInfluential;
   std::vector<ex_time_ms> Counting;
   std::vector<ex_time_ms> Pivoting;
+  //! Total microbenchmarking time.
+  ex_time_ms Microbenchmarking;
+  //! CPU Batch Size
+  size_t CPUBatchSize;
+  //! GPU Batch Size
+  size_t GPUBatchSize;
   //! Execution time of the RRR sets generation phase.
   ex_time_ms GenerateRRRSets;
   //! Execution time of the maximum coverage phase.

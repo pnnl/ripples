@@ -96,6 +96,10 @@ class WalkWorker {
   #endif
 
   virtual size_t batch_size() const = 0;
+  
+  virtual bool is_cpu() const = 0;
+
+  virtual void benchmark(ItrTy begin, typename std::vector<vertex_t>::iterator root_nodes_begin, size_t worksize, size_t batch_size)  = 0;
 
  protected:
   const GraphTy &G_;
@@ -149,8 +153,27 @@ class CPUWalkWorker : public WalkWorker<GraphTy, ItrTy> {
 
   size_t batch_size() const { return batch_size_; }
 
+  bool is_cpu() const { return true; }
+
+  void benchmark(ItrTy begin, typename std::vector<vertex_t>::iterator root_nodes_begin, size_t worksize, size_t batch_size){
+    auto local_rng = rng_;
+    for(size_t i = 0; i < worksize; i += batch_size){
+      auto first = root_nodes_begin;
+      std::advance(first, i);
+      auto last = first;
+      std::advance(last, batch_size);
+      if (last > root_nodes_begin + worksize) last = root_nodes_begin + worksize;
+      auto out_begin = std::min(begin + i, begin + worksize);
+      #ifdef NEIGHBOR_COLOR
+      BatchedBFSNeighborColor(this->G_, first, last, out_begin, local_rng, diff_model_tag{});
+      #else
+      BatchedBFS(this->G_, first, last, out_begin, local_rng, diff_model_tag{});
+      #endif
+    }
+  }
+
  private:
-  static constexpr size_t batch_size_ = 64;
+  static constexpr size_t batch_size_ = 8;
   std::vector<vertex_t> roots_;
   PRNGeneratorTy rng_;
   trng::uniform_int_dist u_;
@@ -369,6 +392,10 @@ class GPUWalkWorker<GraphTy, PRNGeneratorTy, ItrTy, linear_threshold_tag>
 
   size_t batch_size() const { return conf_.num_gpu_threads(); }
 
+  bool is_cpu() const { return false; }
+
+  void benchmark(ItrTy begin, typename std::vector<vertex_t>::iterator root_nodes_begin, size_t worksize, size_t batch_size){}
+
  private:
   config_t conf_;
   PRNGeneratorTy rng_;
@@ -552,6 +579,21 @@ class GPUWalkWorker<GraphTy, PRNGeneratorTy, ItrTy, independent_cascade_tag>
                  size_t first_seq) {}
   
   size_t batch_size() const { return batch_size_; }
+
+  bool is_cpu() const { return false; }
+
+  void benchmark(ItrTy begin, typename std::vector<vertex_t>::iterator root_nodes_begin, size_t worksize, size_t batch_size){
+    for(size_t i = 0; i < worksize; i += batch_size){
+      auto first = root_nodes_begin;
+      std::advance(first, i);
+      auto last = first;
+      std::advance(last, batch_size);
+      if (last > root_nodes_begin + worksize) last = root_nodes_begin + worksize;
+      auto out_begin = std::min(begin + i, begin + worksize);
+      GPUBatchedTieredQueueBFS(this->G_, *gpu_ctx_, first, last,
+                  out_begin, ripples::independent_cascade_tag{}, bfs_ctx_, NumColors);
+    }
+  }
 
  private:
   // static constexpr size_t batch_size_ = 16;
@@ -810,28 +852,28 @@ class StreamingRRRGenerator {
     #endif
 #endif
 
-    // Figure out if the total batch size is larger than the work needed to be executed
-    size_t total_batch_size = num_cpu_workers_ * cpu_batch_size_ + num_gpu_workers_ * gpu_batch_size_;
-    size_t work_size_ = std::distance(begin, end);
-    size_t new_gpu_batch_size_ = gpu_batch_size_;
-    size_t new_cpu_batch_size_ = cpu_batch_size_;
-    if (total_batch_size > work_size_) {
-      // If so, we need to adjust the batch sizes, prioritizing the GPU workers
-      if (num_gpu_workers_ > 0) {
-        new_gpu_batch_size_ = std::min((std::distance(begin, end) + num_gpu_workers_ - 1) / num_gpu_workers_, gpu_batch_size_);
-      }
-      work_size_ -= num_gpu_workers_ * new_gpu_batch_size_;
-      if (num_cpu_workers_ > 0) {
-        new_cpu_batch_size_ = std::min((work_size_ + num_cpu_workers_ - 1) / num_cpu_workers_, cpu_batch_size_);
-      }
-    }
+    // // Figure out if the total batch size is larger than the work needed to be executed
+    // size_t total_batch_size = num_cpu_workers_ * cpu_batch_size_ + num_gpu_workers_ * gpu_batch_size_;
+    // size_t work_size_ = std::distance(begin, end);
+    // size_t new_gpu_batch_size_ = gpu_batch_size_;
+    // size_t new_cpu_batch_size_ = cpu_batch_size_;
+    // if (total_batch_size > work_size_) {
+    //   // If so, we need to adjust the batch sizes, prioritizing the GPU workers
+    //   if (num_gpu_workers_ > 0) {
+    //     new_gpu_batch_size_ = std::min((std::distance(begin, end) + num_gpu_workers_ - 1) / num_gpu_workers_, gpu_batch_size_);
+    //   }
+    //   work_size_ -= num_gpu_workers_ * new_gpu_batch_size_;
+    //   if (num_cpu_workers_ > 0) {
+    //     new_cpu_batch_size_ = std::min((work_size_ + num_cpu_workers_ - 1) / num_cpu_workers_, cpu_batch_size_);
+    //   }
+    // }
 
 #pragma omp parallel num_threads(num_cpu_workers_ + num_gpu_workers_)
     {
       size_t rank = omp_get_thread_num();
       // std::cout << "rank: " << rank << std::endl;
       #ifdef REORDERING
-      workers[rank]->svc_loop(mpmc_head, begin, end, root_nodes.begin(), new_cpu_batch_size_, new_gpu_batch_size_);
+      workers[rank]->svc_loop(mpmc_head, begin, end, root_nodes.begin(), cpu_batch_size_, gpu_batch_size_);
       #else
       workers[rank]->svc_loop(mpmc_head, begin, end);
       #endif
@@ -851,9 +893,82 @@ class StreamingRRRGenerator {
 
   bool isGpuEnabled() const { return num_gpu_workers_ != 0; }
 
+  #if defined(RIPPLES_ENABLE_CUDA) || defined(RIPPLES_ENABLE_HIP)
+  void benchmark(size_t num_batches, size_t iterations, IMMExecutionRecord &record){
+    console->info("Microbenchmarking");
+    // Measure time of for loop
+    auto micro_start = std::chrono::high_resolution_clock::now();
+    for(size_t i = 0; i < iterations; ++i){
+      // Benchmark the CPU and GPU workers
+      size_t work_size = (num_gpu_workers_ * gpu_batch_size_ + num_cpu_workers_ * cpu_batch_size_)*num_batches;
+      std::vector<vertex_t> root_nodes(work_size);
+      std::vector<RRRset<GraphTy>> RR_bench(work_size);
+      
+      std::generate(root_nodes.begin(), root_nodes.end(), [&]() { return u_(master_rng_); });
+      #ifdef SORTING
+      std::sort(root_nodes.begin(), root_nodes.end());
+      #endif
+
+      // Atomic GPU time
+      std::atomic<size_t> gpu_time(0);
+
+      // Atomic CPU time
+      std::atomic<size_t> cpu_time(0);
+
+      std::vector<size_t> offsets(num_cpu_workers_ + num_gpu_workers_);
+      offsets[0] = 0;
+      for(size_t i = 1; i < num_cpu_workers_ + num_gpu_workers_; i++){
+        size_t batch_size = workers[i-1]->is_cpu() ? cpu_batch_size_ : gpu_batch_size_;
+        offsets[i] = offsets[i-1] + batch_size*num_batches;
+      }
+
+      // Print batch_sizes
+      // std::cout << "CPU batch size: " << cpu_batch_size_ << std::endl;
+      // std::cout << "GPU batch size: " << gpu_batch_size_ << std::endl;
+
+      #pragma omp parallel num_threads(num_cpu_workers_ + num_gpu_workers_)
+      {
+        size_t rank = omp_get_thread_num();
+        bool is_cpu = workers[rank]->is_cpu();
+        size_t batch_size = is_cpu ? cpu_batch_size_ : gpu_batch_size_;
+        // Time below section
+        auto start = std::chrono::high_resolution_clock::now();
+        workers[rank]->benchmark(RR_bench.begin() + offsets[rank], root_nodes.begin() + offsets[rank], batch_size*num_batches, batch_size);
+        auto d = std::chrono::duration_cast<std::chrono::nanoseconds>(
+          std::chrono::high_resolution_clock::now() - start);
+        if(is_cpu){
+          cpu_time += d.count();
+        } else {
+          gpu_time += d.count();
+        }
+      }
+
+      auto old_cpu_batch_size = cpu_batch_size_;
+
+      // Average cpu and gpu times per set
+      size_t cpu_avg = (cpu_time / num_cpu_workers_);
+      size_t gpu_avg = (gpu_time / num_gpu_workers_);
+      // std::cout << "CPU avg: " << cpu_avg << " ns" << std::endl;
+      // std::cout << "GPU avg: " << gpu_avg << " ns" << std::endl;
+
+      // Adjust CPU batch size to be roughly the same as the GPU batch size
+      cpu_batch_size_ = (size_t)std::round(((float)cpu_batch_size_ * (float)gpu_avg / (float)cpu_avg));
+      if(cpu_batch_size_ == old_cpu_batch_size){
+        break;
+      }
+    }
+    auto micro_end = std::chrono::high_resolution_clock::now();
+    console->info("Adjusted CPU batch size to {}", cpu_batch_size_);
+
+    record.Microbenchmarking = micro_end - micro_start;
+    record.CPUBatchSize = cpu_batch_size_;
+    record.GPUBatchSize = gpu_batch_size_;
+  }
+#endif // RIPPLES_ENABLE_CUDA || RIPPLES_ENABLE_HIP
+
  private:
   size_t num_cpu_workers_, num_gpu_workers_;
-  size_t cpu_batch_size_ = 64;
+  size_t cpu_batch_size_ = 1;
   size_t gpu_batch_size_ = 64;
   size_t max_batch_size_;
   std::shared_ptr<spdlog::logger> console;
@@ -880,6 +995,7 @@ class StreamingRRRGenerator {
   };
   profile_t prof_bd;
 #endif
+
 };
 }  // namespace ripples
 

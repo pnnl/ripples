@@ -104,6 +104,9 @@ auto GetExperimentRecord(const ToolConfiguration<IMMConfiguration> &CFG,
       {"Theta", R.Theta},
       {"Counting", R.Counting},
       {"Pivoting", R.Pivoting},
+      {"Microbenchmarking", R.Microbenchmarking},
+      {"CPUBatchSize", R.CPUBatchSize},
+      {"GPUBatchSize", R.GPUBatchSize},
       {"RRRSetSizeBytes", R.RRRSetSize},
       {"GenerateRRRSets", R.GenerateRRRSets},
       {"FindMostInfluentialSet", R.FindMostInfluentialSet},
@@ -177,6 +180,9 @@ int main(int argc, char **argv) {
     if (CFG.diffusionModel == "IC") {
       ripples::ICStreamingGenerator se(G, generator, workers - gpu_workers, gpu_workers,
              CFG.worker_to_gpu);
+      if(se.isGpuEnabled()){
+        se.benchmark(10, 10, R);
+      }
       auto start = std::chrono::high_resolution_clock::now();
       seeds = IMM(G, CFG, 1, se, R, ripples::independent_cascade_tag{},
                   ripples::omp_parallel_tag{});
