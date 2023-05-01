@@ -84,6 +84,7 @@ auto GetExperimentRecord(const ToolConfiguration<IMMConfiguration> &CFG,
       {"WorldSize", world_size},
       {"NumThreads", R.NumThreads},
       {"NumWalkWorkers", CFG.streaming_workers},
+      {"NumCPUTeams", CFG.streaming_cpu_teams},
       {"NumGPUWalkWorkers", CFG.streaming_gpu_workers},
       {"Total", R.Total},
       {"ThetaPrimeDeltas", R.ThetaPrimeDeltas},
@@ -91,6 +92,9 @@ auto GetExperimentRecord(const ToolConfiguration<IMMConfiguration> &CFG,
       {"ThetaEstimationGenerateRRR", R.ThetaEstimationGenerateRRR},
       {"ThetaEstimationMostInfluential", R.ThetaEstimationMostInfluential},
       {"Theta", R.Theta},
+      {"Microbenchmarking", R.Microbenchmarking},
+      {"CPUBatchSize", R.CPUBatchSize},
+      {"GPUBatchSize", R.GPUBatchSize},
       {"GenerateRRRSets", R.GenerateRRRSets},
       {"FindMostInfluentialSet", R.FindMostInfluentialSet},
       {"Seeds", seeds}};
@@ -124,7 +128,7 @@ int main(int argc, char *argv[]) {
   auto CFG = ripples::configuration();
   if (CFG.parallel) {
     if (ripples::streaming_command_line(
-            CFG.worker_to_gpu, CFG.streaming_workers, CFG.streaming_gpu_workers,
+            CFG.worker_to_gpu, CFG.streaming_workers, CFG.streaming_cpu_teams, CFG.streaming_gpu_workers,
             CFG.gpu_mapping_string) != 0) {
       console->error("invalid command line");
       return -1;
@@ -159,9 +163,13 @@ int main(int argc, char *argv[]) {
 
   auto workers = CFG.streaming_workers;
   auto gpu_workers = CFG.streaming_gpu_workers;
+  auto cpu_teams = CFG.streaming_cpu_teams;
   if (CFG.diffusionModel == "IC") {
-    ripples::ICStreamingGenerator se(G, generator, workers - gpu_workers, gpu_workers,
+    ripples::ICStreamingGenerator se(G, generator, workers - gpu_workers, cpu_teams, gpu_workers,
            CFG.worker_to_gpu);
+    if(se.isGpuEnabled()){
+        se.benchmark(4, 4, R);
+      }
     auto start = std::chrono::high_resolution_clock::now();
     seeds = ripples::mpi::IMM(
         G, CFG, 1.0, se, R, ripples::independent_cascade_tag{},
@@ -169,7 +177,7 @@ int main(int argc, char *argv[]) {
     auto end = std::chrono::high_resolution_clock::now();
     R.Total = end - start;
   } else if (CFG.diffusionModel == "LT") {
-    ripples::LTStreamingGenerator se(G, generator, workers - gpu_workers, gpu_workers,
+    ripples::LTStreamingGenerator se(G, generator, workers - gpu_workers, cpu_teams, gpu_workers,
            CFG.worker_to_gpu);
     auto start = std::chrono::high_resolution_clock::now();
     seeds = ripples::mpi::IMM(

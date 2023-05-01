@@ -55,9 +55,18 @@
 #include "trng/uniform_int_dist.hpp"
 #include "trng/uniform01_dist.hpp"
 
+#include <sched.h>
+
 #define NEIGHBOR_COLOR
 
 namespace ripples {
+
+struct BFSCPUContext{
+  BFSCPUContext(size_t num_nodes) : old_visited_matrix(num_nodes),
+                                    new_visited_matrix(num_nodes) {}
+  std::vector<uint64_t> old_visited_matrix;
+  std::vector<uint64_t> new_visited_matrix;
+};
 
 template <typename GraphTy, typename SItrTy, typename OItrTy,
           typename PRNGeneratorTy, typename diff_model_tag>
@@ -106,7 +115,7 @@ void BatchedBFS(const GraphTy &G, SItrTy B, SItrTy E, OItrTy O,
 
           for (auto u : G.neighbors(vertex)) {
             #ifdef NEIGHBOR_COLOR
-            if (!visited_matrix[color][u.vertex] && value(generator[0]) <= u.weight) {
+            if (!visited_matrix[color][u.vertex] && value(generator[0][0]) <= u.weight) {
             #else
             if (!visited_matrix[color][u.vertex] && value(generator) <= u.weight) {
             #endif
@@ -129,7 +138,7 @@ void BatchedBFS(const GraphTy &G, SItrTy B, SItrTy E, OItrTy O,
           uint64_t color = __builtin_clzl(colors);
 
           #ifdef NEIGHBOR_COLOR
-          float threshold = value(generator[0]);
+          float threshold = value(generator[0][0]);
           #else
           float threshold = value(generator);
           #endif
@@ -233,6 +242,110 @@ void BatchedBFSNeighborColor(const GraphTy &G, SItrTy B, SItrTy E, OItrTy O,
   }
 }
 
+template <typename GraphTy, typename SItrTy, typename OItrTy,
+          typename PRNGeneratorTy, typename diff_model_tag>
+void BatchedBFSNeighborColorOMP(const GraphTy &G, SItrTy B, SItrTy E, OItrTy O,
+                PRNGeneratorTy& generator,
+                diff_model_tag &&tag, BFSCPUContext &cpu_ctx, const size_t num_threads) {
+  size_t rank = omp_get_thread_num();
+  assert(std::distance(B, E) <= 32 && "Only up to 32 BFS are supported");
+  // std::cout << "Num threads: " << num_threads << std::endl;
+  // std::cout << "omp rank: " << omp_get_thread_num() << std::endl; 
+  using vertex_type = typename GraphTy::vertex_type;
+  // std::fill(cpu_ctx.old_visited_matrix.begin(), cpu_ctx.old_visited_matrix.end(), 0);
+  // std::fill(cpu_ctx.new_visited_matrix.begin(), cpu_ctx.new_visited_matrix.end(), 0);
+  // Perform chunk fill
+  #pragma omp parallel num_threads(num_threads) proc_bind(close)
+  {
+    // if(rank == 0) 
+    // {
+      // std::cout << "hwthread = " << sched_getcpu() << std::endl;
+      // printf("rank = %d | hwthread = %d\n", omp_get_thread_num(), sched_getcpu());
+    // }
+    const size_t chunk_size = (G.num_nodes() + num_threads - 1) / num_threads;
+    const size_t chunk_start = chunk_size * omp_get_thread_num();
+    const size_t chunk_end = std::min(chunk_start + chunk_size, G.num_nodes());
+    std::fill(cpu_ctx.old_visited_matrix.begin() + chunk_start, cpu_ctx.old_visited_matrix.begin() + chunk_end, 0);
+    std::fill(cpu_ctx.new_visited_matrix.begin() + chunk_start, cpu_ctx.new_visited_matrix.begin() + chunk_end, 0);
+  }
+  uint32_t itr_color_mask = (uint32_t)1 << 31;
+  for (auto itr = B; itr < E; ++itr, itr_color_mask >>= 1) {
+    cpu_ctx.new_visited_matrix[*itr] |= itr_color_mask;
+  }
+  bool found_one = true;
+  // size_t rank = omp_get_thread_num();
+  auto &old_visited_matrix = cpu_ctx.old_visited_matrix;
+  auto &new_visited_matrix = cpu_ctx.new_visited_matrix;
+  // std::cout << "Entering section: " << rank << std::endl;
+  trng::uniform01_dist<float> value;
+  // size_t iteration = 0;
+  while (found_one) {
+    found_one = false;
+    // iteration++;
+    // std::cout << "Iteration: " << iteration << std::endl;
+    // Iterate over both visited_vertex and new_visited_vertex
+    #pragma omp parallel for proc_bind(close) num_threads(num_threads) schedule(dynamic, 16)
+    for (vertex_type vertex = 0; vertex < G.num_nodes(); ++vertex) {
+      const uint32_t visited_old = old_visited_matrix[vertex];
+      const uint32_t visited_new = new_visited_matrix[vertex];
+      if (visited_old != visited_new){
+        const size_t inner_rank = omp_get_thread_num();
+        found_one = true;
+        uint32_t colors = visited_new ^ visited_old;
+        // #pragma omp single
+        old_visited_matrix[vertex] |= visited_new;
+        // Convert the colors to an array of color masks
+        uint32_t color_masks[32];
+        uint32_t num_colors = 0;
+        while (colors != 0) {
+          uint32_t color = __builtin_clz(colors);
+          color_masks[num_colors++] = ((uint32_t)1 << ((sizeof(colors) * 8 - 1) - color));
+          colors -= ((uint32_t)1 << ((sizeof(colors) * 8 - 1) - color));
+        }
+        for (auto u : G.neighbors(vertex)) {
+          const uint32_t old_mask = new_visited_matrix[u.vertex];
+          uint32_t new_mask = 0;
+          #pragma omp simd reduction(|:new_mask)
+          for(size_t i = 0; i < num_colors; ++i) {
+            const uint32_t color_mask = color_masks[i];
+            if(!(old_mask & color_mask) && value(generator[inner_rank][i]) <= u.weight) {
+              new_mask |= color_mask;
+            }
+          }
+          if(new_mask != 0){
+            #pragma omp atomic
+            new_visited_matrix[u.vertex] |= new_mask;
+          }
+        }
+      }
+    }
+  }
+  
+  // std::cout << "Copy Rank: " << rank << std::endl;
+  // Traverse visited_matrix and push the vertices into the output
+  // #pragma omp parallel for proc_bind(close) num_threads(num_threads)
+  // #pragma omp parallel for proc_bind(close) num_threads(num_threads) schedule(static)
+  // for (uint32_t color = 0; color < std::distance(B, E); ++color){
+  //   // std::cout << "Color: " << color << std::endl;
+  //   const uint32_t color_mask = (uint32_t)1 << ((sizeof(color_mask) * 8 - 1) - color);
+  //   for (size_t i = 0; i < G.num_nodes(); ++i){
+  //     if(new_visited_matrix[i] & color_mask){
+  //       (O + color)->push_back(i);
+  //     }
+  //   }
+  // }
+  for (int i = 0; i < G.num_nodes(); ++i) {
+    uint32_t colors = new_visited_matrix[i];
+    while (colors != 0) {
+      uint32_t color = __builtin_clz(colors);
+      (O + color)->push_back(i);
+      colors -= ((uint32_t)1 << ((sizeof(colors) * 8 - 1) - color));
+    }
+  }
 }
+
+}
+
+
 
 #endif

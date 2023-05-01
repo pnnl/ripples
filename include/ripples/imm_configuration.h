@@ -67,6 +67,7 @@ namespace ripples {
 //! The IMM algorithm configuration descriptor.
 struct IMMConfiguration : public TIMConfiguration {
   size_t streaming_workers{0};
+  size_t streaming_cpu_teams{0};
   size_t streaming_gpu_workers{0};
   size_t seed_select_max_workers{std::numeric_limits<size_t>::max()};
   size_t seed_select_max_gpu_workers{0};
@@ -78,6 +79,10 @@ struct IMMConfiguration : public TIMConfiguration {
   //! \param app The command-line parser object.
   void addCmdOptions(CLI::App &app) {
     TIMConfiguration::addCmdOptions(app);
+    app.add_option(
+           "--streaming-cpu-teams", streaming_cpu_teams,
+           "The number of CPU teams for collaborative RRR Set Generation.")
+        ->group("Streaming-Engine Options");
     app.add_option(
            "--streaming-gpu-workers", streaming_gpu_workers,
            "The number of GPU workers for the CPU+GPU streaming engine.")
@@ -100,6 +105,7 @@ ToolConfiguration<ripples::IMMConfiguration> configuration();
 
 inline int streaming_command_line(std::unordered_map<size_t, size_t> &worker_to_gpu,
                            size_t streaming_workers,
+                           size_t streaming_cpu_teams,
                            size_t streaming_gpu_workers,
                            std::string gpu_mapping_string) {
   auto console = spdlog::get("console");
@@ -147,6 +153,15 @@ inline int streaming_command_line(std::unordered_map<size_t, size_t> &worker_to_
 
   assert(streaming_gpu_workers == 0);
 #endif  // RIPPLES_ENABLE_CUDA
+  if(streaming_cpu_teams){
+    if(streaming_workers - streaming_gpu_workers < streaming_cpu_teams){
+      console->error("invalid number of streaming cpu teams");
+      return -1;
+    }
+  }
+  else{
+    streaming_cpu_teams = streaming_workers - streaming_gpu_workers;
+  }
   return 0;
 }
 }
