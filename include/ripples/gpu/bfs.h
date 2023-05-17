@@ -837,7 +837,7 @@ void GPUBatchedTieredQueueBFS(const GraphTy &G, const DeviceContextTy &Context, 
   // std::cout << "Inner Prod: " << Context.gpu_id << std::endl;
   size_t FrontierSize = thrust::inner_product(
       frontier.v.begin(), frontier.v.end() - 1, frontier.v.begin() + 1, 1,
-      thrust::plus<int>(), thrust::not_equal_to<vertex_type>());
+      thrust::plus<vertex_type>(), thrust::not_equal_to<vertex_type>());
   // GPU<RUNTIME>::device_sync();
   // std::cout << "Resize + Reduce: " << Context.gpu_id << std::endl;
   new_frontier.v.resize(FrontierSize);
@@ -996,28 +996,28 @@ void GPUBatchedTieredQueueBFS(const GraphTy &G, const DeviceContextTy &Context, 
           d_edge, d_weight,
           small_frontier_v_ptr, small_frontier_color_ptr, small_frontier_offset_ptr,
           new_frontier_v_ptr, new_frontier_color_ptr, new_frontier_weight_ptr,
-          G.num_nodes());
+          smallWork);
     if(mediumWork > 0)
       warp_block_scatter_kernel<RUNTIME, GraphTy, ColorTy>
         <<<mediumWork, 32, 0, streams[1]>>>(d_index,
           d_edge, d_weight,
           medium_frontier_v_ptr, medium_frontier_color_ptr, medium_frontier_offset_ptr,
           new_frontier_v_ptr, new_frontier_color_ptr, new_frontier_weight_ptr,
-          G.num_nodes());
+          mediumWork);
     if(largeWork > 0)
       warp_block_scatter_kernel<RUNTIME, GraphTy, ColorTy>
         <<<largeWork, 256, 0, streams[2]>>>(d_index,
           d_edge, d_weight,
           large_frontier_v_ptr, large_frontier_color_ptr, large_frontier_offset_ptr,
           new_frontier_v_ptr, new_frontier_color_ptr, new_frontier_weight_ptr,
-          G.num_nodes());
+          largeWork);
     if(extremeWork > 0)
       warp_block_scatter_kernel<RUNTIME, GraphTy, ColorTy>
         <<<extremeWork, 1024, 0, streams[3]>>>(d_index,
           d_edge, d_weight,
           extreme_frontier_v_ptr, extreme_frontier_color_ptr, extreme_frontier_offset_ptr,
           new_frontier_v_ptr, new_frontier_color_ptr, new_frontier_weight_ptr,
-          G.num_nodes());
+          extremeWork);
     #elif defined(RIPPLES_ENABLE_HIP)
     // std::cout << "smallWork" << std::endl;
     if(smallWork > 0)
