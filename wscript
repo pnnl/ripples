@@ -78,7 +78,7 @@ def configure(conf):
     conf.load('waf_unit_test')
     conf.load('sphinx', tooldir='waftools')
 
-    if conf.options.enable_metall:
+    if conf.options.enable_metall or conf.options.enable_cuda:
         conf.env.CXXFLAGS += ['-std=c++17', '-pipe']
     else:
         conf.env.CXXFLAGS += ['-std=c++14', '-pipe']
