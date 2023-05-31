@@ -40,7 +40,7 @@
 //
 //===----------------------------------------------------------------------===//
 
-#include <experimental/filesystem>
+#include <filesystem>
 #include <iostream>
 #include <string>
 
@@ -102,11 +102,13 @@ int main(int argc, char **argv) {
   auto loading_start = std::chrono::high_resolution_clock::now();
   Graph G = ripples::loadGraph<Graph>(CFG, weightGen);
   auto loading_end = std::chrono::high_resolution_clock::now();
-
   console->info("Loading Done!");
   console->info("Number of Nodes : {}", G.num_nodes());
   console->info("Number of Edges : {}", G.num_edges());
-  spdlog::get("console")->info("Loading took {} s", (double)std::chrono::duration_cast<std::chrono::milliseconds>(loading_end - loading_start).count() / 1000.0);
+  const auto load_time = std::chrono::duration_cast<std::chrono::milliseconds>(
+                             loading_end - loading_start)
+                             .count();
+  console->info("Loading took {}ms", load_time);
 
   if (CFG.binaryDump) {
     // Dump in binary format

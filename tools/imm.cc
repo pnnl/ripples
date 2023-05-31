@@ -153,47 +153,49 @@ int main(int argc, char **argv) {
   weightGen.split(2, 0);
 
   using dest_type = ripples::WeightedDestination<uint32_t, float>;
-  #if defined ENABLE_METALL
+#if defined ENABLE_METALL
   using GraphFwd =
-      ripples::Graph<uint32_t, dest_type, ripples::ForwardDirection<uint32_t>, metall::manager::allocator_type<char>>;
+      ripples::Graph<uint32_t, dest_type, ripples::ForwardDirection<uint32_t>,
+                     metall::manager::allocator_type<char>>;
   using GraphBwd =
-      ripples::Graph<uint32_t, dest_type, ripples::BackwardDirection<uint32_t>, metall::manager::allocator_type<char>>;
-  #else
+      ripples::Graph<uint32_t, dest_type, ripples::BackwardDirection<uint32_t>,
+                     metall::manager::allocator_type<char>>;
+#else
   using GraphFwd =
       ripples::Graph<uint32_t, dest_type, ripples::ForwardDirection<uint32_t>>;
   using GraphBwd =
       ripples::Graph<uint32_t, dest_type, ripples::BackwardDirection<uint32_t>>;
-  #endif
-console->info("Loading...");
-auto loading_start = std::chrono::high_resolution_clock::now();
+#endif
+  console->info("Loading...");
+  auto loading_start = std::chrono::high_resolution_clock::now();
 #if defined ENABLE_METALL
-bool exists = metall::manager::consistent(CFG.metall_dir.c_str());
-metall::manager manager = (exists ?
-                         metall::manager(metall::open_only, CFG.metall_dir.c_str())
-                         : metall::manager(metall::create_only, CFG.metall_dir.c_str()));
+  bool exists = metall::manager::consistent(CFG.metall_dir.c_str());
+  metall::manager manager =
+      (exists ? metall::manager(metall::open_only, CFG.metall_dir.c_str())
+              : metall::manager(metall::create_only, CFG.metall_dir.c_str()));
   GraphBwd *Gr;
-  if(exists){
+  if (exists) {
     console->info("Previously existing graph exists! Loading...");
     Gr = manager.find<GraphBwd>("graph").first;
-    // Gr->recalculate_addresses();
-  }
-  else{
+  } else {
     console->info("Creating new metall directory...");
-    GraphFwd Gf = ripples::loadGraph<GraphFwd>(CFG, weightGen, manager.get_allocator());
-    Gr = manager.construct<GraphBwd>("graph")(Gf.get_transpose(manager.get_allocator()));
+    GraphFwd Gf =
+        ripples::loadGraph<GraphFwd>(CFG, weightGen, manager.get_allocator());
+    Gr = manager.construct<GraphBwd>("graph")(Gf.get_transpose());
   }
-
   GraphBwd &G(*Gr);
-  //GraphBwd G(Gr[0]);
 #else
   GraphFwd Gf = ripples::loadGraph<GraphFwd>(CFG, weightGen);
   GraphBwd G = Gf.get_transpose();
 #endif
   auto loading_end = std::chrono::high_resolution_clock::now();
   console->info("Loading Done!");
-  spdlog::get("console")->info("Loading took {} s", (double)std::chrono::duration_cast<std::chrono::milliseconds>(loading_end - loading_start).count() / 1000.0);
   console->info("Number of Nodes : {}", G.num_nodes());
   console->info("Number of Edges : {}", G.num_edges());
+  const auto load_time = std::chrono::duration_cast<std::chrono::milliseconds>(
+                             loading_end - loading_start)
+                             .count();
+  console->info("Loading took {}ms", load_time);
 
   nlohmann::json executionLog;
 

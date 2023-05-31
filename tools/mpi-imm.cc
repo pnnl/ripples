@@ -145,24 +145,23 @@ int main(int argc, char *argv[]) {
   using GraphBwd =
       ripples::Graph<uint32_t, edge_type, ripples::BackwardDirection<uint32_t>>;
   #endif
-console->info("Loading...");
-#if defined ENABLE_METALL
-bool exists = metall::manager::consistent(CFG.metall_dir.c_str());
-metall::manager manager = (exists ?
-                         metall::manager(metall::open_only, CFG.metall_dir.c_str())
-                         : metall::manager(metall::create_only, CFG.metall_dir.c_str()));
+  console->info("Loading...");
+  #if defined ENABLE_METALL
+  bool exists = metall::manager::consistent(CFG.metall_dir.c_str());
+  metall::manager manager =
+      (exists ? metall::manager(metall::open_only, CFG.metall_dir.c_str())
+              : metall::manager(metall::create_only, CFG.metall_dir.c_str()));
   GraphBwd *Gr;
-  if(exists){
+  if (exists) {
     console->info("Previously existing graph exists! Loading...");
     Gr = manager.find<GraphBwd>("graph").first;
-    // Gr->recalculate_addresses();
-  }
-  else{
+  } else {
     console->info("Creating new metall directory...");
-    GraphFwd Gf = ripples::loadGraph<GraphFwd>(CFG, weightGen, manager.get_allocator());
-    Gr = manager.construct<GraphBwd>("graph")(Gf.get_transpose(manager.get_allocator()));
+    GraphFwd Gf =
+        ripples::loadGraph<GraphFwd>(CFG, weightGen, manager.get_allocator());
+    Gr = manager.construct<GraphBwd>("graph")(Gf.get_transpose());
   }
-  GraphBwd G(Gr[0]);
+  GraphBwd &G(*Gr);
 #else
   std::allocator<char> = GraphAllocator;
   GraphFwd Gf = ripples::loadGraph<GraphFwd>(CFG, weightGen, GraphAllocator);
