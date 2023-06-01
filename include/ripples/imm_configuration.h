@@ -69,6 +69,7 @@ struct IMMConfiguration : public TIMConfiguration {
   size_t streaming_workers{0};
   size_t streaming_cpu_teams{0};
   size_t streaming_gpu_workers{0};
+  size_t gpu_batch_size{64};
   size_t seed_select_max_workers{std::numeric_limits<size_t>::max()};
   size_t seed_select_max_gpu_workers{0};
   std::string gpu_mapping_string{""};
@@ -86,6 +87,10 @@ struct IMMConfiguration : public TIMConfiguration {
     app.add_option(
            "--streaming-gpu-workers", streaming_gpu_workers,
            "The number of GPU workers for the CPU+GPU streaming engine.")
+        ->group("Streaming-Engine Options");
+    app.add_option(
+           "--gpu-batch-size", gpu_batch_size,
+           "The number of GPU colors for the CPU+GPU streaming engine.")
         ->group("Streaming-Engine Options");
     app.add_option("--streaming-gpu-mapping", gpu_mapping_string,
                    "A comma-separated set of OpenMP numbers for GPU workers.")

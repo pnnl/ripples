@@ -53,11 +53,15 @@
 
 #if defined(RIPPLES_ENABLE_CUDA)
 #define RUNTIME CUDA
+#define MAX_COLOR_WIDTH 32
 #elif defined(RIPPLES_ENABLE_HIP)
 #define RUNTIME HIP
+#define MAX_COLOR_WIDTH 64
 #endif
 
 #include "ripples/gpu/bfs_kernels.h"
+
+#include <cassert>
 
 #define EXPERIMENTAL_SCAN_BFS
 
@@ -66,6 +70,8 @@
 #define REORDERING
 
 #define SORTING
+
+#define FUSED_COLOR_SET
 
 // #define FULL_COLORS_MOTIVATION
 
@@ -143,42 +149,67 @@ struct BFSContext{
   std::vector<typename GPU<RUNTIME>::stream_type> streams;
 };
 
+template <typename GraphTy, typename ColorTy = typename GraphTy::vertex_type, size_t num_sets = MAX_COLOR_WIDTH>
+struct BFSMultiContext{
+  BFSMultiContext(size_t num_nodes = 0, size_t small = 0, size_t medium = 0, size_t large = 0, size_t extreme = 0, size_t gpu_id = 0) :
+    small_vertices(small), medium_vertices(medium + small), large_vertices(large + medium + small), extreme_vertices(extreme + large + medium + small),
+    small_colors(small * num_sets), medium_colors((medium + small) * num_sets), large_colors((large + medium + small) * num_sets), extreme_colors((extreme + large + medium + small) * num_sets),
+    frontier_matrix(num_nodes*num_sets), visited_matrix(num_nodes*num_sets), host_visited_matrix(num_nodes*num_sets), workloads(4), host_workloads(4) {
+      GPU<RUNTIME>::set_device(gpu_id);
+      streams = std::vector<typename GPU<RUNTIME>::stream_type>(4, GPU<RUNTIME>::create_stream());
+    }
+  thrust::device_vector<typename GraphTy::vertex_type> small_vertices;
+  thrust::device_vector<typename GraphTy::vertex_type> medium_vertices;
+  thrust::device_vector<typename GraphTy::vertex_type> large_vertices;
+  thrust::device_vector<typename GraphTy::vertex_type> extreme_vertices;
+  thrust::device_vector<ColorTy> small_colors;
+  thrust::device_vector<ColorTy> medium_colors;
+  thrust::device_vector<ColorTy> large_colors;
+  thrust::device_vector<ColorTy> extreme_colors;
+  thrust::device_vector<typename GraphTy::vertex_type> workloads;
+  thrust::host_vector<typename GraphTy::vertex_type> host_workloads;
+  thrust::device_vector<ColorTy> frontier_matrix;
+  thrust::device_vector<ColorTy> visited_matrix;
+  thrust::host_vector<ColorTy> host_visited_matrix;
+  std::vector<typename GPU<RUNTIME>::stream_type> streams;
+};
+
 //! \brief Get the next color ID from the color mask.
 template <typename T>
-__host__ __device__ T getNextColor(T color);
+__host__ __device__ __inline__ T getNextColor(T color);
 
 template <>
-__host__ __device__ uint32_t getNextColor(uint32_t color) {
+__host__ __device__ __inline__ uint32_t getNextColor(uint32_t color) {
   return __builtin_clz(color);
 }
 
 template <>
-__host__ __device__ uint64_t getNextColor(uint64_t color) {
+__host__ __device__ __inline__ uint64_t getNextColor(uint64_t color) {
   return __builtin_clzl(color);
 }
 
 template <typename T>
-__host__ __device__ T numColors(T color);
+__host__ __device__ __inline__ T numColors(T color);
 
 template <>
-__host__ __device__ uint32_t numColors(uint32_t color) {
+__host__ __device__ __inline__ uint32_t numColors(uint32_t color) {
   return __builtin_popcount(color);
 }
 
 template <>
-__host__ __device__ uint64_t numColors(uint64_t color) {
+__host__ __device__ __inline__ uint64_t numColors(uint64_t color) {
   return __builtin_popcountl(color);
 }
 
 //! \brief Get a color mask from a color ID.
 template <typename T>
-__host__ __device__ T getMaskFromColor(T color) {
+__host__ __device__ __inline__ T getMaskFromColor(T color) {
   return (T)1 << ((sizeof(T) * 8 - 1) - color);
 }
 
 //! \brief Remove a color from the mask of colors.
 template <typename T>
-__host__ __device__ T clearColor(T colors, T color) {
+__host__ __device__ __inline__ T clearColor(T colors, T color) {
   return colors & (~getMaskFromColor(color));
 }
 
@@ -1147,6 +1178,212 @@ void GPUBatchedTieredQueueBFS(const GraphTy &G, const DeviceContextTy &Context, 
     }
     // std::cout << "Done" << "\n";
   }
+  // std::cout << "Done Removing" << "\n";
+}
+
+template <typename GraphTy, typename DeviceContextTy, typename SItrTy,
+          typename OItrTy, typename diff_model_tag, typename ColorTy>
+void GPUBatchedBFSMultiColorFused(
+    const GraphTy &G, const DeviceContextTy &Context, SItrTy B, SItrTy E,
+    OItrTy O, diff_model_tag &&tag,
+    BFSMultiContext<GraphTy, ColorTy, MAX_COLOR_WIDTH> &bfs_ctx) {
+  using DeviceGraphTy = typename DeviceContextTy::device_graph_type;
+  using vertex_type = typename GraphTy::vertex_type;
+  using weight_type = typename GraphTy::weight_type;
+  using color_type = ColorTy;
+
+  // std::cout << "Initialization: " << Context.gpu_id << std::endl;
+
+  #if defined(RIPPLES_ENABLE_CUDA)
+    constexpr size_t thread_size = 32;
+    typedef uint32_t WarpMaskTy;
+  #elif defined(RIPPLES_ENABLE_HIP)
+    constexpr size_t thread_size = 64;
+    typedef uint64_t WarpMaskTy;
+  #else
+    #error "Unsupported GPU runtime"
+  #endif
+
+  const size_t num_colors = std::distance(B, E);
+  constexpr size_t color_size = sizeof(color_type) * 8;
+  const size_t unrounded_color_dim = (num_colors + color_size - 1) / color_size;
+  // Round color_dim to a power of 2
+  const size_t color_dim = (size_t)1
+                           << (size_t)std::ceil(std::log2(unrounded_color_dim));
+  // // Print out unrounded color_dim and color_dim
+  // std::cout << "unrounded_color_dim = " << unrounded_color_dim << std::endl;
+  // std::cout << "color_dim = " << color_dim << std::endl;
+  // // Print num_colors
+  // std::cout << "num_colors = " << num_colors << std::endl;
+
+  // Assert color_dim is less than or equal to warp size
+#if defined(RIPPLES_ENABLE_CUDA)
+  assert(color_dim <= 32 &&
+         "color_dim must be less than or equal to warp size.");
+#elif defined(RIPPLES_ENABLE_HIP)
+  assert(color_dim <= 64 &&
+         "color_dim must be less than or equal to warp size.");
+#endif
+
+  GPU<RUNTIME>::set_device(Context.gpu_id);
+
+  auto &streams = bfs_ctx.streams;
+  auto &frontier_matrix = bfs_ctx.frontier_matrix;
+  thrust::fill(frontier_matrix.begin(), frontier_matrix.end(), 0);
+  auto &visited_matrix = bfs_ctx.visited_matrix;
+  thrust::fill(visited_matrix.begin(), visited_matrix.end(), 0);
+  auto &host_visited_matrix = bfs_ctx.host_visited_matrix;
+
+  auto d_graph = Context.d_graph;
+  auto d_index = d_graph->d_index_;
+  auto d_edge = d_graph->d_edges_;
+  auto d_weight = d_graph->d_weights_;
+
+  // GPU<RUNTIME>::device_sync();
+  // std::cout << "Device Vectors: " << Context.gpu_id << std::endl;
+
+  // Perform setup, initialize first set of visited vertices
+
+  auto &workloads = bfs_ctx.workloads;
+  auto &host_workloads = bfs_ctx.host_workloads;
+  color_type color = (color_type)1 << (color_size - 1);
+  size_t count = 0;
+#ifdef FULL_COLORS_MOTIVATION
+  for (auto itr = B; itr < E; ++itr, ++count) {
+    const size_t color_block_id = count / color_size;
+    frontier_matrix[(*B) * color_dim + color_block_id] |= color;
+    color =
+        color == (color_type)1 ? (color_type)1 << (color_size - 1) : (color_type)color >> 1;
+  }
+#else
+  for (auto itr = B; itr < E; ++itr, ++count) {
+    assert(color != 0);
+    const size_t color_block_id = count / color_size;
+    frontier_matrix[(*itr) * color_dim + color_block_id] |= color;
+    color =
+        color == (color_type)1 ? (color_type)1 << (color_size - 1) : (color_type)color >> 1;
+  }
+#endif
+
+#ifdef FRONTIER_PROFILE
+  size_t iteration = 0;
+#endif
+
+  bool finished = false;
+  auto small_vertices_ptr = thrust::raw_pointer_cast(bfs_ctx.small_vertices.data());
+  auto small_colors_ptr = thrust::raw_pointer_cast(bfs_ctx.small_colors.data());
+  auto medium_vertices_ptr = thrust::raw_pointer_cast(bfs_ctx.medium_vertices.data());
+  auto medium_colors_ptr = thrust::raw_pointer_cast(bfs_ctx.medium_colors.data());
+  auto large_vertices_ptr = thrust::raw_pointer_cast(bfs_ctx.large_vertices.data());
+  auto large_colors_ptr = thrust::raw_pointer_cast(bfs_ctx.large_colors.data());
+  auto extreme_vertices_ptr = thrust::raw_pointer_cast(bfs_ctx.extreme_vertices.data());
+  auto extreme_colors_ptr = thrust::raw_pointer_cast(bfs_ctx.extreme_colors.data());
+  auto workloads_ptr = thrust::raw_pointer_cast(workloads.data());
+  auto visited_matrix_ptr = thrust::raw_pointer_cast(visited_matrix.data());
+  auto frontier_matrix_ptr = thrust::raw_pointer_cast(frontier_matrix.data());
+  constexpr size_t num_threads = 256;
+  const size_t num_nodes_per_block = num_threads / color_dim;
+  const size_t num_build_blocks =
+      (G.num_nodes() + num_nodes_per_block - 1) / num_nodes_per_block;
+
+  while (!finished) {
+    finished = true;
+    // Set workloads to 0
+    thrust::fill(workloads.begin(), workloads.end(), 0);
+    GPU<RUNTIME>::device_sync();
+    build_frontier_queues_kernel<RUNTIME, GraphTy, color_type, WarpMaskTy>
+        <<<num_build_blocks, num_threads, 0, streams[0]>>>(
+            d_index, small_vertices_ptr, medium_vertices_ptr,
+            large_vertices_ptr, extreme_vertices_ptr, 
+            small_colors_ptr, medium_colors_ptr, large_colors_ptr, extreme_colors_ptr,
+            visited_matrix_ptr,
+            frontier_matrix_ptr, workloads_ptr, G.num_nodes(), num_colors,
+            color_dim);
+    GPU<RUNTIME>::device_sync();
+
+    const size_t block_size = thread_size / color_dim;
+    // Retrieve workload sizes
+    host_workloads = workloads;
+
+    // // print workloads from host_workloads
+    // for (size_t i = 0; i < host_workloads.size(); i++) {
+    //   std::cout << "Workload " << i << " = " << host_workloads[i] << std::endl;
+    // }
+
+    size_t threshold = 0;
+    const size_t num_blocks =
+        (host_workloads[threshold] + block_size - 1) / block_size;
+    // Enqueue binned kernels
+    if (host_workloads[threshold] > 0){
+      finished = false;
+      fused_color_thread_scatter_kernel<RUNTIME, GraphTy, color_type>
+          <<<num_blocks, thread_size, 0, streams[threshold]>>>(
+              d_index, d_edge, d_weight, small_vertices_ptr,
+              small_colors_ptr, frontier_matrix_ptr,
+              host_workloads[threshold], color_dim);
+    }
+    threshold++;
+    if (host_workloads[threshold] > 0){
+      finished = false;
+      fused_color_set_scatter_kernel<RUNTIME, GraphTy, color_type>
+          <<<host_workloads[threshold], thread_size, 0, streams[threshold]>>>(
+              d_index, d_edge, d_weight, medium_vertices_ptr,
+              medium_colors_ptr,
+              frontier_matrix_ptr, host_workloads[threshold], color_dim);
+    }
+    threshold++;
+    if (host_workloads[threshold] > 0){
+      finished = false;
+      fused_color_set_scatter_kernel<RUNTIME, GraphTy, color_type>
+          <<<host_workloads[threshold], 256, 0, streams[threshold]>>>(
+              d_index, d_edge, d_weight, large_vertices_ptr,
+              large_colors_ptr, frontier_matrix_ptr,
+              host_workloads[threshold], color_dim);
+    }
+    threshold++;
+    if (host_workloads[threshold] > 0){
+      finished = false;
+      fused_color_set_scatter_kernel<RUNTIME, GraphTy, color_type>
+          <<<host_workloads[threshold], 1024, 0, streams[threshold]>>>(
+              d_index, d_edge, d_weight, extreme_vertices_ptr,
+              extreme_colors_ptr,
+              frontier_matrix_ptr, host_workloads[threshold], color_dim);
+    }
+    GPU<RUNTIME>::device_sync();
+  }
+
+  // std::cout << "Free! " << Context.gpu_id << std::endl;
+
+  host_visited_matrix = visited_matrix;
+  // size_t num_vertices_check = 0;
+  for (vertex_type v = 0; v < G.num_nodes(); v++) {
+    for(size_t color_set = 0; color_set < unrounded_color_dim; color_set++){
+      if(host_visited_matrix[(v * color_dim) + color_set] == 0) continue;
+
+      color_type colors = host_visited_matrix[(v * color_dim) + color_set];
+      // num_vertices_check += numColors(colors);
+      size_t offset = color_set * color_size;
+      while (colors != 0) {
+        color_type color = getNextColor(colors);
+        // if(offset >= num_colors){
+        //   std::cout << "Color = " << color << "\n";
+        //   assert(color < num_colors && "Color out of bounds");
+        // }
+
+        (O + (offset + color))->push_back(v);
+
+        colors = clearColor(colors, color);
+      }
+    }
+    // std::cout << "Done" << "\n";
+  }
+  // Add up out number of vertices in O + color for each color
+  // size_t num_vertices = 0;
+  // for (size_t color = 0; color < num_colors; color++) {
+  //   num_vertices += (O + color)->size();
+  // }
+  // std::cout << "Number of vertices = " << num_vertices << " num_check = " << num_vertices_check << std::endl;
+  // assert(num_vertices >= num_colors && "Number of vertices is incorrect");
   // std::cout << "Done Removing" << "\n";
 }
 

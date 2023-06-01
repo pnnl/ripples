@@ -166,8 +166,9 @@ int main(int argc, char *argv[]) {
   auto cpu_teams = CFG.streaming_cpu_teams;
   if (CFG.diffusionModel == "IC") {
     ripples::ICStreamingGenerator se(G, generator, workers - gpu_workers, cpu_teams, gpu_workers,
-           CFG.worker_to_gpu);
-    if(se.isGpuEnabled()){
+    CFG.gpu_batch_size, CFG.worker_to_gpu);
+    R.GPUBatchSize = CFG.gpu_batch_size;
+    if(se.isGpuEnabled() && cpu_teams){
         se.benchmark(4, 4, R);
       }
     auto start = std::chrono::high_resolution_clock::now();
@@ -178,7 +179,7 @@ int main(int argc, char *argv[]) {
     R.Total = end - start;
   } else if (CFG.diffusionModel == "LT") {
     ripples::LTStreamingGenerator se(G, generator, workers - gpu_workers, cpu_teams, gpu_workers,
-           CFG.worker_to_gpu);
+           CFG.gpu_batch_size, CFG.worker_to_gpu);
     auto start = std::chrono::high_resolution_clock::now();
     seeds = ripples::mpi::IMM(
         G, CFG, 1.0, se, R, ripples::linear_threshold_tag{},

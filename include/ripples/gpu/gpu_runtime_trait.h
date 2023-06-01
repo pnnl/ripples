@@ -67,6 +67,7 @@ class GPURuntimeTrait {
   static void set_device(const device_id_type &);
   static device_id_type num_devices();
   static size_type max_blocks();
+  static size_type max_threads();
 
   static stream_type create_stream();
   static void destroy_stream(stream_type &);
@@ -165,7 +166,15 @@ class GPURuntimeTrait<HIP> {
     return res;
   }
   static size_type max_blocks() {
-    return 1 << 16;
+    hipDeviceProp_t prop;
+    hipGetDeviceProperties(&prop, 0);
+    return prop.maxGridSize[0];
+  }
+
+  static size_type max_threads() {
+    hipDeviceProp_t prop;
+    hipGetDeviceProperties(&prop, 0);
+    return prop.maxThreadsPerBlock;
   }
 
   static stream_type create_stream() {
