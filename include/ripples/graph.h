@@ -591,6 +591,12 @@ class Graph {
 
   template <typename FStream>
   void load_binary(FStream &FS) {
+    #ifdef ENABLE_METALL
+    // Static assert 0
+    throw 0 && "Not implemented yet, don't use with Metall";
+    #endif
+
+
     if (!FS.is_open()) throw "Bad things happened!!!";
 
     FS.read(reinterpret_cast<char *>(&numNodes), sizeof(numNodes));

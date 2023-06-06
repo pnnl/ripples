@@ -56,6 +56,7 @@ namespace ripples {
 struct GraphInputConfiguration {
   std::string IFileName{""};        //!< The input file name
   std::string metall_dir{"/tmp/graph"}; //!< Where is the metall directory?
+  std::string rr_dir{"/tmp/rr"};    //!< Where is the rr directory?
   bool weighted{false};             //!< is Graph weighted?
   bool undirected{false};           //!< is Graph undirected?
   bool disable_renumbering{false};  //!< trust the input to be clean.
@@ -74,7 +75,9 @@ struct GraphInputConfiguration {
         ->group("Input Options")
         ->required();
     app.add_flag("--metall-store-dir", metall_dir,
-                 "Directory to store metall graph data.")
+                    "Directory to store metall graph data.")
+        ->group("Input Options");
+    app.add_flag("--rr-store-dir", rr_dir, "Directory to store RR data.")
         ->group("Input Options");
     app.add_flag("--reload-binary", reload, "Reload a graph from binary input")
         ->group("Input Options");

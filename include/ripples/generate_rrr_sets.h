@@ -78,8 +78,8 @@ using RRRsetAllocator = libmemkind::pmem::allocator<vertex_type>;
 template<typename vertex_type>
 using RRRsetAllocator = metall::manager::allocator_type<vertex_type>;
 
-metall::manager &metall_manager_instance() {
-  static metall::manager manager(metall::create_only, "/dev/shm/metall_tmp");
+metall::manager &metall_manager_instance(std::string path) {
+  static metall::manager manager(metall::create_only, path.c_str());
   return manager;
 }
 
