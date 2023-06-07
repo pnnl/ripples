@@ -49,6 +49,7 @@
 #include <numeric>
 #include <vector>
 #include <execution>
+#include <cassert>
 
 #include <ripples/utility.h>
 
@@ -355,18 +356,17 @@ class Graph {
     idMap(allocator),
     reverseMap(allocator){
 
-    VertexTy currentID{0};
     VertexTy maxVertexID = 0;
     for (auto itr = begin; itr != end; ++itr) {
       if (idMap.count(itr->source) == 0) {
-        idMap[itr->source];
+        idMap[itr->source] = itr->source;
         if (renumbering) {
           reverseMap.push_back(itr->source);
         }
       }
 
       if (idMap.count(itr->destination) == 0) {
-        idMap[itr->destination];
+        idMap[itr->destination] = itr->destination;
         if (renumbering) {
           reverseMap.push_back(itr->destination);
         }
@@ -376,49 +376,47 @@ class Graph {
     }
 
     if (renumbering) {
-      // TODO: enable the C++ 17 parallel sort
+      // Could utilize the C++ 17 parallel sort
       std::sort(reverseMap.begin(), reverseMap.end());
       #pragma omp parallel for
       for (size_t i = 0; i < reverseMap.size(); ++i) {
+        assert(idMap.count(reverseMap.at(i)) > 0);
         idMap.at(reverseMap.at(i)) = i;
       }
+      assert(idMap.size() == reverseMap.size());
     } else {
       reverseMap.resize(maxVertexID + 1);
       #pragma omp parallel for
       for (VertexTy id = 0; id <= maxVertexID; ++id) {
         reverseMap.at(id) = id;
-        idMap.at(id) = id;
       }
     }
 
-    size_t num_nodes = renumbering ? idMap.size() : maxVertexID + 1;
-    size_t num_edges = std::distance(begin, end);
+    numNodes = reverseMap.size();
+    numEdges = std::distance(begin, end);
 
-    edges = allocate_edges(num_edges);
-    index = allocate_index(num_nodes + 1);
+    edges = allocate_edges(numEdges);
+    index = allocate_index(numNodes + 1);
 
 #pragma omp parallel for
-    for (size_t i = 0; i < num_nodes + 1; ++i) {
+    for (size_t i = 0; i < numNodes + 1; ++i) {
       index[i] = edges;
     }
 
 #pragma omp parallel for
-    for (size_t i = 0; i < num_edges; ++i) {
+    for (size_t i = 0; i < numEdges; ++i) {
       edges[i] = DestinationTy();
     }
-
-    numNodes = num_nodes;
-    numEdges = num_edges;
 
     for (auto itr = begin; itr != end; ++itr) {
       index[DirectionPolicy::Source(itr, idMap) + 1] += 1;
     }
 
-    for (size_t i = 1; i <= num_nodes; ++i) {
+    for (size_t i = 1; i <= numNodes; ++i) {
       index[i] += index[i - 1] - edges;
     }
 
-    std::vector<edge_pointer_t> ptrEdge(index, index + num_nodes);
+    std::vector<edge_pointer_t> ptrEdge(index, index + numNodes);
     for (auto itr = begin; itr != end; ++itr) {
       *ptrEdge[DirectionPolicy::Source(itr, idMap)] =
           edge_type::template Create<DirectionPolicy>(itr, idMap);
