@@ -182,7 +182,7 @@ auto Sampling(const GraphTy &G, const ConfTy &CFG, double l,
   #if defined ENABLE_MEMKIND
   RRRsetAllocator<vertex_type> allocator(CFG.rr_dir.c_str(), 0);
   #elif defined ENABLE_METALL_RRRSETS
-  RRRsetAllocator<vertex_type> allocator =  metall_manager_instance().get_allocator();
+  RRRsetAllocator<vertex_type> allocator =  metall_manager_instance(CFG.rr_dir).get_allocator();
   #else
   RRRsetAllocator<vertex_type> allocator;
   #endif
@@ -268,7 +268,7 @@ auto Sampling(const GraphTy &G, const ConfTy &CFG, double l,
   #if defined ENABLE_MEMKIND
   RRRsetAllocator<vertex_type> allocator(CFG.rr_dir.c_str(), 0);
   #elif defined ENABLE_METALL_RRRSETS
-  RRRsetAllocator<vertex_type> allocator =  metall_manager_instance().get_allocator();
+  RRRsetAllocator<vertex_type> allocator =  metall_manager_instance(CFG.rr_dir).get_allocator();
   #else
   RRRsetAllocator<vertex_type> allocator;
   #endif
