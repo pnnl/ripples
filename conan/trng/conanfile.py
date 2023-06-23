@@ -14,18 +14,20 @@ class LibtrngConan(ConanFile):
     options = {"shared": [True, False]}
     default_options = "shared=True"
     generators = "cmake"
-    scm = {
-        "type" : "git",
-        "url" : "https://github.com/mminutoli/trng4.git",
-        "subfolder" : "trng",
-        "revision" : "basic_hip_support"
-    }
+
+    def source(self):
+        tools.download('https://github.com/rabauke/trng4/archive/refs/tags/v' + self.version + '.tar.gz', 'trng-' + self.version + '.tar.gz')
+        tools.unzip('trng-' + self.version + '.tar.gz')
+        tools.replace_in_file(
+            'trng4-' + self.version + '/CMakeLists.txt',
+            'add_subdirectory(examples)',
+            ''
+        )
+        return 'trng4-' + self.version
 
     def build(self):
         cmake = CMake(self)
-        cmake.definitions['TRNG_ENABLE_EXAMPLES'] = False
-        cmake.definitions['TRNG_ENABLE_TESTS'] = False
-        cmake.configure(source_folder='trng')
+        cmake.configure(source_folder='trng4-' + self.version)
         cmake.parallel = False
         cmake.build()
         cmake.install()
