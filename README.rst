@@ -78,7 +78,7 @@ To enable Memkind or Metall please replace the conan install command with one of
 .. code-block:: shell
 
    $ conan install --install-folder build . -o memkind=True
-   $ conan install --install-folder build . -o metall=True
+   $ conan install --install-folder build . -o metal=True
 
 Now we are ready to configure and build ripples:
 
