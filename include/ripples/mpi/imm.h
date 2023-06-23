@@ -151,7 +151,7 @@ auto Sampling(const GraphTy &G, const ConfTy &CFG, double l,
   double LB = 0;
   #if defined ENABLE_MEMKIND
   RRRsetAllocator<vertex_type> allocator("/pmem1", 0);
-  #elif defined ENABLE_METALL
+  #elif defined ENABLE_METALL_RRRSETS
   RRRsetAllocator<vertex_type> allocator =  metall_manager_instance().get_allocator();
 #else
   RRRsetAllocator<vertex_type> allocator;

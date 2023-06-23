@@ -39,7 +39,6 @@
 // SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 //
 //===----------------------------------------------------------------------===//
-
 #include <iostream>
 #include <sstream>
 #include <string>
@@ -154,16 +153,49 @@ int main(int argc, char **argv) {
   weightGen.split(2, 0);
 
   using dest_type = ripples::WeightedDestination<uint32_t, float>;
+#if defined ENABLE_METALL
+  using GraphFwd =
+      ripples::Graph<uint32_t, dest_type, ripples::ForwardDirection<uint32_t>,
+                     metall::manager::allocator_type<char>>;
+  using GraphBwd =
+      ripples::Graph<uint32_t, dest_type, ripples::BackwardDirection<uint32_t>,
+                     metall::manager::allocator_type<char>>;
+#else
   using GraphFwd =
       ripples::Graph<uint32_t, dest_type, ripples::ForwardDirection<uint32_t>>;
   using GraphBwd =
       ripples::Graph<uint32_t, dest_type, ripples::BackwardDirection<uint32_t>>;
+#endif
   console->info("Loading...");
+  auto loading_start = std::chrono::high_resolution_clock::now();
+#if defined ENABLE_METALL
+  bool exists = metall::manager::consistent(CFG.metall_dir.c_str());
+  metall::manager manager =
+      (exists ? metall::manager(metall::open_only, CFG.metall_dir.c_str())
+              : metall::manager(metall::create_only, CFG.metall_dir.c_str()));
+  GraphBwd *Gr;
+  if (exists) {
+    console->info("Previously existing graph exists! Loading...");
+    Gr = manager.find<GraphBwd>("graph").first;
+  } else {
+    console->info("Creating new metall directory...");
+    GraphFwd Gf =
+        ripples::loadGraph<GraphFwd>(CFG, weightGen, manager.get_allocator());
+    Gr = manager.construct<GraphBwd>("graph")(Gf.get_transpose());
+  }
+  GraphBwd &G(*Gr);
+#else
   GraphFwd Gf = ripples::loadGraph<GraphFwd>(CFG, weightGen);
   GraphBwd G = Gf.get_transpose();
+#endif
+  auto loading_end = std::chrono::high_resolution_clock::now();
   console->info("Loading Done!");
   console->info("Number of Nodes : {}", G.num_nodes());
   console->info("Number of Edges : {}", G.num_edges());
+  const auto load_time = std::chrono::duration_cast<std::chrono::milliseconds>(
+                             loading_end - loading_start)
+                             .count();
+  console->info("Loading took {}ms", load_time);
 
   nlohmann::json executionLog;
 
@@ -182,8 +214,8 @@ int main(int argc, char **argv) {
     decltype(R.Total) real_total;
     if (CFG.diffusionModel == "IC") {
       ripples::StreamingRRRGenerator<
-          decltype(G), decltype(generator),
-          typename ripples::RRRsets<decltype(G)>::iterator,
+          GraphBwd, decltype(generator),
+          typename ripples::RRRsets<GraphBwd>::iterator,
           ripples::independent_cascade_tag>
           se(G, generator, R, workers - gpu_workers, gpu_workers,
              CFG.worker_to_gpu);
@@ -195,8 +227,8 @@ int main(int argc, char **argv) {
       real_total = end - start;
     } else if (CFG.diffusionModel == "LT") {
       ripples::StreamingRRRGenerator<
-          decltype(G), decltype(generator),
-          typename ripples::RRRsets<decltype(G)>::iterator,
+          GraphBwd, decltype(generator),
+          typename ripples::RRRsets<GraphBwd>::iterator,
           ripples::linear_threshold_tag>
           se(G, generator, R, workers - gpu_workers, gpu_workers,
              CFG.worker_to_gpu);

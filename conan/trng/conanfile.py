@@ -5,6 +5,7 @@ from conans import ConanFile, CMake, tools
 class LibtrngConan(ConanFile):
     name = "libtrng"
     license = "BSD"
+    version = "4.22"
     author = "Heiko Bauke"
     url = "https://www.numbercrunch.de/trng/"
     description = "Tina's Random Number Generator Library"

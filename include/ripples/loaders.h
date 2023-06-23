@@ -232,21 +232,22 @@ std::vector<EdgeTy> loadEdgeList(const Configuration &CFG, PRNG &weightGen) {
 }
 
 namespace {
-template <typename GraphTy, typename ConfTy, typename PrngTy>
-GraphTy loadGraph_helper(ConfTy &CFG, PrngTy &PRNG) {
-  GraphTy G;
+template <typename GraphTy, typename ConfTy, typename PrngTy, typename allocator_t = std::allocator<char>>
+GraphTy loadGraph_helper(ConfTy &CFG, PrngTy &PRNG, allocator_t allocator = allocator_t()) {
+  GraphTy G(allocator);
 
   if (!CFG.reload) {
     using vertex_type = typename GraphTy::vertex_type;
     using weight_type = typename GraphTy::edge_type::edge_weight;
     using edge_type = ripples::Edge<vertex_type, weight_type>;
     auto edgeList = ripples::loadEdgeList<edge_type>(CFG, PRNG);
-    GraphTy tmpG(edgeList.begin(), edgeList.end(), !CFG.disable_renumbering);
+    GraphTy tmpG(edgeList.begin(), edgeList.end(), !CFG.disable_renumbering, allocator);
     G = std::move(tmpG);
   } else {
     std::ifstream binaryDump(CFG.IFileName, std::ios::binary);
-    GraphTy tmpG(binaryDump);
-    G = std::move(tmpG);
+    // GraphTy tmpG(binaryDump, allocator);
+    // G = std::move(tmpG);
+    G.load_binary(binaryDump);
   }
 
   return G;
@@ -262,22 +263,22 @@ GraphTy loadGraph_helper(ConfTy &CFG, PrngTy &PRNG) {
 //! \param CFG The configuration object.
 //! \param PRNG The parallel random number generator.
 //! \return The GraphTy graph loaded from the input file.
-template <typename GraphTy, typename ConfTy, typename PrngTy>
-GraphTy loadGraph(ConfTy &CFG, PrngTy &PRNG) {
-  GraphTy G;
+template <typename GraphTy, typename ConfTy, typename PrngTy, typename allocator_t = std::allocator<char>>
+GraphTy loadGraph(ConfTy &CFG, PrngTy &PRNG, allocator_t allocator = allocator_t()) {
+  GraphTy G(allocator);
   if (CFG.distribution == "uniform") {
     WeightGenerator<trng::lcg64, trng::uniform01_dist<float>> gen(
         PRNG, CFG.scale_factor);
-    G = loadGraph_helper<GraphTy>(CFG, gen);
+    G = loadGraph_helper<GraphTy>(CFG, gen, allocator);
   } else if (CFG.distribution == "normal") {
     WeightGenerator<trng::lcg64, trng::truncated_normal_dist<float>> gen(
         PRNG,
         trng::truncated_normal_dist<float>(CFG.mean, CFG.variance, 0.0, 1.0),
         CFG.scale_factor);
-    G = loadGraph_helper<GraphTy>(CFG, gen);
+    G = loadGraph_helper<GraphTy>(CFG, gen, allocator);
   } else if (CFG.distribution == "const") {
     auto gen = [&]() -> float { return CFG.mean; };
-    G = loadGraph_helper<GraphTy>(CFG, gen);
+    G = loadGraph_helper<GraphTy>(CFG, gen, allocator);
   } else {
     throw std::domain_error("Unsupported distribution");
   }

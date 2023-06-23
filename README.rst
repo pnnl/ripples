@@ -54,7 +54,16 @@ First of all we need to set up the Python environment needed.
    $ pipenv install
    $ pipenv shell
 
-Then we need to install dependencies:
+Then, we set up the conan profile:
+
+.. code-block:: shell
+
+   $ conan profile new default --detect
+   $ conan profile update settings.compiler.libcxx=libstdc++11 default
+   $ conan profile update env.CC=$(which gcc) default
+   $ conan profile update env.CXX=$(which g++) default
+
+Next, we need to install dependencies:
 
 .. code-block:: shell
 
@@ -69,8 +78,7 @@ To enable Memkind or Metall please replace the conan install command with one of
 .. code-block:: shell
 
    $ conan install --install-folder build . -o memkind=True
-   $ conan install --install-folder build . -o metall=True
-
+   $ conan install --install-folder build . -o metal=True
 
 Now we are ready to configure and build ripples:
 
@@ -108,7 +116,7 @@ This project uses `WAF <https://waf.io>`_ as its build system.  Building Ripples
 is a two-step process: configure the project and build the tools.  Before
 attempting to build, be sure to have the following dependencies installed:
 
-- A compiler with C++14 support and OpenMP support.
+- A compiler with C++17 support and OpenMP support.
 - `Spdlog <https://github.com/gabime/spdlog>`_
 - `JSON <https://github.com/nlohmann/json>`_
 - `TRNG4 <https://github.com/rabauke/trng4>`_
@@ -152,6 +160,14 @@ command line options can be obtained through:
 
    $ ./build/release/tools/<tool_name> --help
 
+Allocate RRRSets Using Metall
+=============================
+
+Ripples + Metall has another mode that allocates intermediate data (called RRRSets) using Metall.
+
+To enable the mode, define ENABLE_METALL_RRRSETS macro (e.g., insert ``#define ENABLE_METALL_RRRSETS`` at the beginning of tools/imm.cc).
+
+The storage directory can be specified with ``--rr-store-dir=<PATH>`` argument when executing imm.
 
 Ripples Team
 ============
@@ -160,6 +176,7 @@ Ripples Team
 - `Mahantesh Halappanavar <mahantesh.halappanavar@pnnl.gov>`_
 - `Ananth Kalyanaraman <ananth@wsu.edu>`_
 - `Maurizio Drocco <maurizio.drocco@ibm.com>`_
+- `Reece Neff <reece.neff@pnnl.gov>`_
 
 Disclamer Notice
 ================
