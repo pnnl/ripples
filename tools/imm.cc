@@ -184,7 +184,7 @@ int main(int argc, char **argv) {
              CFG.gpu_batch_size, CFG.worker_to_gpu);
       R.GPUBatchSize = CFG.gpu_batch_size;
       if(se.isGpuEnabled() && cpu_teams){
-        se.benchmark(4, 4, R);
+        se.benchmark(2, 4, R);
       }
       auto start = std::chrono::high_resolution_clock::now();
       seeds = IMM(G, CFG, 1, se, R, ripples::independent_cascade_tag{},

@@ -915,10 +915,10 @@ class StreamingRRRGenerator {
         size_t rank_outer = omp_get_thread_num();
         if(num_gpu_workers_){
           // CPU + GPU
-          #pragma omp parallel num_threads(2*num_gpu_workers_/num_cpu_teams_) proc_bind(close)
+          #pragma omp parallel num_threads(1 + num_gpu_workers_/num_cpu_teams_) proc_bind(close)
           {
             size_t rank_inner = omp_get_thread_num();
-            size_t rank = rank_outer*2 + rank_inner;
+            size_t rank = rank_outer*(1 + num_gpu_workers_/num_cpu_teams_) + rank_inner;
             // Convert above into printf
             // printf("OMP Rank: %d | HW Thread: %d\n", rank, sched_getcpu());
             #ifdef REORDERING
@@ -1005,10 +1005,10 @@ class StreamingRRRGenerator {
       #pragma omp parallel num_threads(num_cpu_teams_) proc_bind(spread)
       {
         size_t rank_outer = omp_get_thread_num();
-        #pragma omp parallel num_threads(2*num_gpu_workers_/num_cpu_teams_) proc_bind(close)
+        #pragma omp parallel num_threads(1 + num_gpu_workers_/num_cpu_teams_) proc_bind(close)
         {
           size_t rank_inner = omp_get_thread_num();
-          size_t rank = rank_outer*2 + rank_inner;
+          size_t rank = rank_outer*(1 + num_gpu_workers_/num_cpu_teams_) + rank_inner;
           // Convert above into printf
           // printf("OMP Rank: %d | HW Thread: %d\n", rank, sched_getcpu());
           bool is_cpu = workers[rank]->is_cpu();
