@@ -243,12 +243,14 @@ void BatchedBFSNeighborColor(const GraphTy &G, SItrTy B, SItrTy E, OItrTy O,
 }
 
 template <typename GraphTy, typename SItrTy, typename OItrTy,
-          typename PRNGeneratorTy, typename diff_model_tag>
+          typename PRNGeneratorTy, typename diff_model_tag, typename ColorTy>
 void BatchedBFSNeighborColorOMP(const GraphTy &G, SItrTy B, SItrTy E, OItrTy O,
                 PRNGeneratorTy& generator,
-                diff_model_tag &&tag, BFSCPUContext &cpu_ctx, const size_t num_threads) {
+                diff_model_tag &&tag, BFSCPUContext &cpu_ctx, const size_t num_threads,
+                ColorTy color_type) {
   size_t rank = omp_get_thread_num();
-  assert(std::distance(B, E) <= 32 && "Only up to 32 BFS are supported");
+  constexpr ColorTy color_size = sizeof(ColorTy) * 8;
+  assert(std::distance(B, E) <= num_colors && "Only up to 64 BFS are supported");
   // std::cout << "Num threads: " << num_threads << std::endl;
   // std::cout << "omp rank: " << omp_get_thread_num() << std::endl; 
   using vertex_type = typename GraphTy::vertex_type;
@@ -268,7 +270,7 @@ void BatchedBFSNeighborColorOMP(const GraphTy &G, SItrTy B, SItrTy E, OItrTy O,
     std::fill(cpu_ctx.old_visited_matrix.begin() + chunk_start, cpu_ctx.old_visited_matrix.begin() + chunk_end, 0);
     std::fill(cpu_ctx.new_visited_matrix.begin() + chunk_start, cpu_ctx.new_visited_matrix.begin() + chunk_end, 0);
   }
-  uint32_t itr_color_mask = (uint32_t)1 << 31;
+  ColorTy itr_color_mask = (ColorTy)1 << color_size - 1;
   for (auto itr = B; itr < E; ++itr, itr_color_mask >>= 1) {
     cpu_ctx.new_visited_matrix[*itr] |= itr_color_mask;
   }
@@ -286,28 +288,28 @@ void BatchedBFSNeighborColorOMP(const GraphTy &G, SItrTy B, SItrTy E, OItrTy O,
     // Iterate over both visited_vertex and new_visited_vertex
     #pragma omp parallel for proc_bind(close) num_threads(num_threads) schedule(dynamic, 16)
     for (vertex_type vertex = 0; vertex < G.num_nodes(); ++vertex) {
-      const uint32_t visited_old = old_visited_matrix[vertex];
-      const uint32_t visited_new = new_visited_matrix[vertex];
+      const ColorTy visited_old = old_visited_matrix[vertex];
+      const ColorTy visited_new = new_visited_matrix[vertex];
       if (visited_old != visited_new){
         const size_t inner_rank = omp_get_thread_num();
         found_one = true;
-        uint32_t colors = visited_new ^ visited_old;
+        ColorTy colors = visited_new ^ visited_old;
         // #pragma omp single
         old_visited_matrix[vertex] |= visited_new;
         // Convert the colors to an array of color masks
-        uint32_t color_masks[32];
-        uint32_t num_colors = 0;
+        ColorTy color_masks[color_size];
+        ColorTy num_colors = 0;
         while (colors != 0) {
-          uint32_t color = __builtin_clz(colors);
-          color_masks[num_colors++] = ((uint32_t)1 << ((sizeof(colors) * 8 - 1) - color));
-          colors -= ((uint32_t)1 << ((sizeof(colors) * 8 - 1) - color));
+          ColorTy color = __builtin_clzll(colors);
+          color_masks[num_colors++] = (static_cast<ColorTy>(1) << (color_size - 1 - color));
+          colors -= (static_cast<ColorTy>(1) << (color_size - 1 - color));
         }
         for (auto u : G.neighbors(vertex)) {
-          const uint32_t old_mask = new_visited_matrix[u.vertex];
-          uint32_t new_mask = 0;
+          const ColorTy old_mask = new_visited_matrix[u.vertex];
+          ColorTy new_mask = 0;
           #pragma omp simd reduction(|:new_mask)
           for(size_t i = 0; i < num_colors; ++i) {
-            const uint32_t color_mask = color_masks[i];
+            const ColorTy color_mask = color_masks[i];
             if(!(old_mask & color_mask) && value(generator[inner_rank][i]) <= u.weight) {
               new_mask |= color_mask;
             }
@@ -335,11 +337,11 @@ void BatchedBFSNeighborColorOMP(const GraphTy &G, SItrTy B, SItrTy E, OItrTy O,
   //   }
   // }
   for (int i = 0; i < G.num_nodes(); ++i) {
-    uint32_t colors = new_visited_matrix[i];
+    ColorTy colors = new_visited_matrix[i];
     while (colors != 0) {
-      uint32_t color = __builtin_clz(colors);
+      ColorTy color = __builtin_clzll(colors);
       (O + color)->push_back(i);
-      colors -= ((uint32_t)1 << ((sizeof(colors) * 8 - 1) - color));
+      colors -= (static_cast<ColorTy>(1) << (color_size - 1 - color));
     }
   }
 }

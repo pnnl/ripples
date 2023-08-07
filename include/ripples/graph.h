@@ -548,6 +548,13 @@ class Graph {
     return G;
   }
 
+  // Function to set the edgeweights to a constant value
+  void setEdgeWeights(weight_type w) {
+    for (size_t i = 0; i < numEdges; ++i) {
+      edges[i].weight = w;
+    }
+  }
+
   edge_type **csr_index() const { return index; }
 
   edge_type *csr_edges() const { return edges; }

@@ -246,6 +246,10 @@ GraphTy loadGraph_helper(ConfTy &CFG, PrngTy &PRNG) {
   } else {
     std::ifstream binaryDump(CFG.IFileName, std::ios::binary);
     GraphTy tmpG(binaryDump);
+    // if CFG.distribution is "const", overwrite edge weights to CFG.mean
+    if (CFG.distribution == "const") {
+      tmpG.setEdgeWeights(CFG.mean);
+    }
     G = std::move(tmpG);
   }
 

@@ -699,5 +699,220 @@ __global__ void build_frontier_queues_kernel(
 }
 #endif // HIP_VERSION Check
 
+template <GPURuntime R,
+          typename GraphTy,
+          typename ColorTy,
+          typename WarpMaskTy>
+__global__ void build_frontier_queues_kernel_check(
+    const typename GraphTy::vertex_type * __restrict__ index,
+    typename GraphTy::vertex_type * __restrict__ small_frontier,
+    typename GraphTy::vertex_type * __restrict__ medium_frontier,
+    typename GraphTy::vertex_type * __restrict__ large_frontier,
+    typename GraphTy::vertex_type * __restrict__ extreme_frontier,
+    ColorTy * __restrict__ small_color,
+    ColorTy * __restrict__ medium_color,
+    ColorTy * __restrict__ large_color,
+    ColorTy * __restrict__ extreme_color,
+    ColorTy * __restrict__ visited_matrix,
+    const ColorTy * __restrict__ frontier_matrix,
+    typename GraphTy::vertex_type * __restrict__ frontier_offsets,
+    ColorTy * __restrict__ reduced_frontier,
+    const size_t num_nodes,
+    const size_t num_colors,
+    const size_t color_dim) {
+  using vertex_type = typename GraphTy::vertex_type;
+  using color_type = ColorTy;
+
+  // Extern shared memory
+  extern __shared__ color_type s_active_colors[];
+
+  constexpr size_t color_size = sizeof(color_type) * 8;
+  constexpr int frontier_bins = 4;
+
+  // Warp/block-parallel scatter  
+  const int tid = threadIdx.x;
+  const int bid = blockIdx.x;
+  const int warp_tid = tid % warpSize;
+  const int warp_id = tid / warpSize;
+  const int num_warps = blockDim.x / warpSize;
+  const int color_set = warp_tid / color_dim;
+  const int color_id = warp_tid % color_dim;
+  int frontier_bin = -1;
+  color_type frontier_colors = 0;
+  color_type active_colors = 0;
+  for(int global_id = bid * blockDim.x + tid;
+             global_id < num_nodes * color_dim;
+             global_id += blockDim.x * gridDim.x) {
+    const vertex_type vertex_id = global_id / color_dim;
+    if (vertex_id < num_nodes){
+      color_type old_visited = visited_matrix[global_id];
+      color_type new_visited = frontier_matrix[global_id];
+      frontier_colors = old_visited ^ new_visited;
+      active_colors |= frontier_colors;
+      visited_matrix[global_id] = new_visited;
+    }
+    // __warp tid in __ballot returns least significant bit as 0th lane
+    WarpMaskTy frontier_mask = __ballot(frontier_colors != 0);
+    // Create bitmask of 1 values for each color in the warp
+    WarpMaskTy warp_color_mask = (((WarpMaskTy)1 << color_dim) - 1) << (color_set * color_dim);
+    // Create bitmask of threads in warp that have a frontier vertex
+    WarpMaskTy frontier_mask_filtered = frontier_mask & warp_color_mask;
+    WarpMaskTy warp_offset_mask = ((WarpMaskTy)1 << color_set * color_dim) - 1;
+    vertex_type *vertex_frontier;
+    ColorTy *color_frontier;
+
+    if(frontier_mask_filtered){
+      // Retrieve outdegree
+      vertex_type start = index[vertex_id];
+      vertex_type end = index[vertex_id + 1];
+      vertex_type outdegree = end - start;
+      // Find block-wide offsets for each frontier queue
+      if(outdegree < 64/color_dim){
+        vertex_frontier = small_frontier;
+        color_frontier = small_color;
+        frontier_bin = 0;
+      } else if(outdegree < 256/color_dim){
+        vertex_frontier = medium_frontier;
+        color_frontier = medium_color;
+        frontier_bin = 1;
+      } else if(outdegree < 65536/color_dim){
+        vertex_frontier = large_frontier;
+        color_frontier = large_color;
+        frontier_bin = 2;
+      } else {
+        vertex_frontier = extreme_frontier;
+        color_frontier = extreme_color;
+        frontier_bin = 3;
+      }
+      // Share outdegree with warps in warp_color_mask
+    }
+    #pragma unroll
+    for(int i = 0; i < frontier_bins; i++){
+      vertex_type offset;
+      WarpMaskTy active_threads = __ballot(color_id == 0 && frontier_bin == i);
+      uint32_t thread_leader = ffs(active_threads) - 1;
+      WarpMaskTy offset_mask = active_threads & warp_offset_mask;
+      if(warp_tid == thread_leader){
+        offset = atomicAdd(frontier_offsets + i, popcount(active_threads));
+      }
+      offset = __shfl(offset, thread_leader);
+      offset += popcount(offset_mask);
+      if(frontier_bin == i){
+        vertex_frontier[offset] = vertex_id;
+        offset *= color_dim;
+        color_frontier[offset + color_id] = frontier_colors;
+      }
+    }
+  }
+  // bitwise-OR all threads with the same color_id
+  for(int offset = warpSize / 2; offset >= color_dim; offset /= 2){
+    active_colors |= __shfl_down(active_colors, offset, warpSize);
+  }
+  // Store in shared memory so all colors are contiguous
+  // Color 0, Color 0, Color 1, Color 1, ...
+  if(color_set == 0){
+    s_active_colors[color_id * num_warps + warp_id] = active_colors;
+  }
+  __syncthreads();
+  // Segmented block reduce OR
+  // Baseline offset
+  const int color_offset = tid / num_warps;
+  const int color_offset_id = tid % num_warps;
+  if (color_offset < color_dim){
+    for(int offset = num_warps / 2; offset > 0; offset /= 2){
+      if(color_offset_id < offset){
+        s_active_colors[tid] |= s_active_colors[tid + offset];
+      }
+      __syncthreads();
+    }
+    if(color_offset_id == 0){
+      atomicOr(&reduced_frontier[color_offset], s_active_colors[tid]);
+    }
+  }
+}
+
+// XOR the frontier matrix with the visited matrix, and OR the result together
+// into a single color_dim chunk.
+template <GPURuntime R,
+          typename GraphTy,
+          typename ColorTy,
+          typename WarpMaskTy>
+__global__ void build_frontier_matrix_kernel(
+    ColorTy * __restrict__ visited_matrix,
+    const ColorTy * __restrict__ frontier_matrix,
+    ColorTy * __restrict__ reduced_frontier,
+    const size_t num_nodes,
+    const size_t color_dim) {
+  using color_type = ColorTy;
+
+  // Extern shared memory
+  extern __shared__ color_type s_active_colors[];
+  
+  // Warp/block-parallel scatter  
+  const int tid = threadIdx.x;
+  const int bid = blockIdx.x;
+  const int warp_tid = tid % warpSize;
+  const int warp_id = tid / warpSize;
+  const int num_warps = blockDim.x / warpSize;
+  const int color_id = warp_tid % color_dim;
+  const int color_set = warp_tid / color_dim;
+  const int colors_per_warp = warpSize / color_dim;
+  color_type active_colors = 0;
+
+  // Grid-Stride Loop
+  for(int global_id = bid * blockDim.x + tid;
+             global_id < num_nodes * color_dim;
+             global_id += blockDim.x * gridDim.x) {
+    active_colors |= visited_matrix[global_id] ^ frontier_matrix[global_id];
+  }
+  // bitwise-OR all threads with the same color_id
+  for(int offset = warpSize / 2; offset >= color_dim; offset /= 2){
+    active_colors |= __shfl_down(active_colors, offset, warpSize);
+  }
+  // Store in shared memory so all colors are contiguous
+  // Color 0, Color 0, Color 1, Color 1, ...
+  if(color_set == 0){
+    s_active_colors[color_id * num_warps + warp_id] = active_colors;
+  }
+  __syncthreads();
+  // Segmented block reduce OR
+  // Baseline offset
+  const int color_offset = tid / num_warps;
+  const int color_offset_id = tid % num_warps;
+  if (color_offset < color_dim){
+    for(int offset = num_warps / 2; offset > 0; offset /= 2){
+      if(color_offset_id < offset){
+        s_active_colors[tid] |= s_active_colors[tid + offset];
+      }
+      __syncthreads();
+    }
+    if(color_offset_id == 0){
+      atomicOr(&reduced_frontier[color_offset], s_active_colors[tid]);
+    }
+  }
+}
+
+template <GPURuntime R,
+          typename GraphTy,
+          typename ColorTy>
+__global__ void filter_finished(
+    ColorTy * __restrict__ frontier_matrix,
+    ColorTy * __restrict__ visited_matrix,
+    const ColorTy * __restrict__ reduced_frontier,
+    const size_t num_nodes,
+    const size_t color_dim){
+  using color_type = ColorTy;
+  using vertex_type = typename GraphTy::vertex_type;
+  const int tid = threadIdx.x;
+  const int bid = blockIdx.x;
+  const color_type color_mask = reduced_frontier[tid % color_dim];
+  for(int global_id = bid * blockDim.x + tid;
+      global_id < num_nodes * color_dim;
+      global_id += blockDim.x * gridDim.x) {
+    frontier_matrix[global_id] &= color_mask;
+    visited_matrix[global_id] &= color_mask;
+  }
+}
+
 }  // namespace ripples
 #endif

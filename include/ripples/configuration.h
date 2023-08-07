@@ -118,6 +118,7 @@ struct OutputConfiguration {
 //! parameter of the Inf-Max problem.
 struct AlgorithmConfiguration {
   size_t k{10};                      //!< The size of the seedset
+  size_t num_rr_sets{0};             //!< The number of RR sets to generate, if overriding Theta.
   bool parallel{false};              //!< The sequential vs parallel algorithm
   std::string diffusionModel{"IC"};  //!< The diffusion model to use.
 
@@ -130,6 +131,9 @@ struct AlgorithmConfiguration {
         ->group("Algorithm Options");
     app.add_flag("-p,--parallel", parallel,
                  "Trigger the parallel implementation")
+        ->group("Algorithm Options");
+    app.add_option("--rrsets", num_rr_sets,
+                 "Manually set the number of RR sets")
         ->group("Algorithm Options");
     app.add_option("-d,--diffusion-model", diffusionModel,
                    "The diffusion model to use (LT|IC)")
