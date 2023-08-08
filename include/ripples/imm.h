@@ -323,11 +323,13 @@ auto Sampling(const GraphTy &G, const ConfTy &CFG, double l,
     ssize_t thetaPrime = ThetaPrime(x, epsilonPrime, l, k, G.num_nodes(),
                                     std::forward<execution_tag>(ex_tag));
 
+    auto RRend = RR.end();
     auto timeRRRSets = measure<>::exec_time([&]() {
-    if (thetaPrime < RR.size()){
+    if (thetaPrime <= RR.size()){
       size_t delta = thetaPrime - thetaPrimePrev;
       thetaPrimePrev = thetaPrime;
       record.ThetaPrimeDeltas.push_back(delta);
+      RRend = RR.begin() + thetaPrime + 1;
     }
     else{
       size_t delta = thetaPrime - RR.size();
@@ -339,12 +341,12 @@ auto Sampling(const GraphTy &G, const ConfTy &CFG, double l,
                       std::forward<diff_model_tag>(model_tag),
                       std::forward<execution_tag>(ex_tag));
       }
+      RRend = RR.end();
     });
     record.ThetaEstimationGenerateRRR.push_back(timeRRRSets);
 
-    double f;
     auto RRbegin = RR.begin();
-    auto RRend = RR.begin() + thetaPrime;
+    double f;
 
     spdlog::get("console")->info("Finding top-k Seeds: {}", thetaPrime);
 
@@ -415,27 +417,30 @@ void Sampling(const GraphTy &G, const ConfTy &CFG, double l,
     ssize_t thetaPrime = ThetaPrime(x, epsilonPrime, l, k, G.num_nodes(),
                                     std::forward<sequential_tag>(ex_tag));
 
+    auto RRend = RR.end();
     auto timeRRRSets = measure<>::exec_time([&]() {
-    if (thetaPrime < RR.size()){
+    if (thetaPrime <= RR.size()){
       size_t delta = thetaPrime - thetaPrimePrev;
       thetaPrimePrev = thetaPrime;
       record.ThetaPrimeDeltas.push_back(delta);
+      RRend = RR.begin() + thetaPrime + 1;
     }
     else{
       size_t delta = thetaPrime - RR.size();
+      spdlog::get("console")->info("Generating Sets: {}", delta);
       record.ThetaPrimeDeltas.push_back(delta);
       RR.insert(RR.end(), delta, RRRset<GraphTy>(allocator));
       auto begin = RR.end() - delta;
       GenerateRRRSets(G, generator, begin, RR.end(), record,
-                        std::forward<diff_model_tag>(model_tag),
-                        std::forward<sequential_tag>(ex_tag));
+                      std::forward<diff_model_tag>(model_tag),
+                      std::forward<sequential_tag>(ex_tag));
       }
+      RRend = RR.end();
     });
     record.ThetaEstimationGenerateRRR.push_back(timeRRRSets);
 
-    double f;
     auto RRbegin = RR.begin();
-    auto RRend = RR.begin() + thetaPrime;
+    double f;
 
     auto timeMostInfluential = measure<>::exec_time([&]() {
       const auto &S = FindMostInfluentialSet(
@@ -523,27 +528,30 @@ auto Sampling(const GraphTy &G, const ConfTy &CFG, double l,
     ssize_t thetaPrime = ThetaPrime(x, epsilonPrime, l, k, G.num_nodes(),
                                     std::forward<sequential_tag>(ex_tag));
 
+    auto RRend = RR.end();
     auto timeRRRSets = measure<>::exec_time([&]() {
-    if (thetaPrime < RR.size()){
+    if (thetaPrime <= RR.size()){
       size_t delta = thetaPrime - thetaPrimePrev;
       thetaPrimePrev = thetaPrime;
       record.ThetaPrimeDeltas.push_back(delta);
+      RRend = RR.begin() + thetaPrime + 1;
     }
     else{
       size_t delta = thetaPrime - RR.size();
+      spdlog::get("console")->info("Generating Sets: {}", delta);
       record.ThetaPrimeDeltas.push_back(delta);
       RR.insert(RR.end(), delta, RRRset<GraphTy>(allocator));
       auto begin = RR.end() - delta;
       GenerateRRRSets(G, generator, begin, RR.end(), record,
-                        std::forward<diff_model_tag>(model_tag),
-                        std::forward<sequential_tag>(ex_tag));
+                      std::forward<diff_model_tag>(model_tag),
+                      std::forward<sequential_tag>(ex_tag));
       }
+      RRend = RR.end();
     });
     record.ThetaEstimationGenerateRRR.push_back(timeRRRSets);
 
-    double f;
     auto RRbegin = RR.begin();
-    auto RRend = RR.begin() + thetaPrime;
+    double f;
 
     auto timeMostInfluential = measure<>::exec_time([&]() {
       const auto &S = FindMostInfluentialSet(
