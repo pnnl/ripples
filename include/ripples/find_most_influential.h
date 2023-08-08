@@ -81,9 +81,9 @@ namespace ripples {
 //!
 //! \return a pair where the size_t is the number of RRRset covered and
 //! the set of vertices selected as seeds.
-template <typename GraphTy, typename ConfTy, typename RRRset>
+template <typename GraphTy, typename ConfTy, typename RRRsetsItr>
 auto FindMostInfluentialSet(const GraphTy &G, const ConfTy &CFG,
-                            std::vector<RRRset> &RRRsets,
+                            RRRsetsItr rrr_begin, RRRsetsItr rrr_end,
                             IMMExecutionRecord &record, bool enableGPU,
                             sequential_tag &&ex_tag) {
   using vertex_type = typename GraphTy::vertex_type;
@@ -103,7 +103,7 @@ auto FindMostInfluentialSet(const GraphTy &G, const ConfTy &CFG,
   std::vector<std::pair<vertex_type, size_t>> queue_storage(G.num_nodes());
 
   auto counting = measure<>::exec_time([&]() {
-    CountOccurrencies(RRRsets.begin(), RRRsets.end(), vertexCoverage.begin(),
+    CountOccurrencies(rrr_begin, rrr_end, vertexCoverage.begin(),
                       vertexCoverage.end(),
                       std::forward<sequential_tag>(ex_tag));
   });
@@ -117,9 +117,9 @@ auto FindMostInfluentialSet(const GraphTy &G, const ConfTy &CFG,
   std::vector<typename GraphTy::vertex_type> result;
   result.reserve(k);
 
-  size_t uncovered = RRRsets.size();
+  size_t uncovered = std::distance(rrr_begin, rrr_end);
 
-  auto end = RRRsets.end();
+  auto end = rrr_end;
   typename IMMExecutionRecord::ex_time_ms pivoting;
 
   while (result.size() < k && uncovered != 0) {
@@ -134,22 +134,22 @@ auto FindMostInfluentialSet(const GraphTy &G, const ConfTy &CFG,
 
     uncovered -= element.second;
 
-    auto cmp = [=](const RRRset &a) -> auto {
+    auto cmp = [=](const typename std::iterator_traits<RRRsetsItr>::value_type &a) -> auto {
       return !std::binary_search(a.begin(), a.end(), element.first);
     };
 
     auto start = std::chrono::high_resolution_clock::now();
-    auto itr = partition(RRRsets.begin(), end, cmp,
+    auto itr = partition(rrr_begin, end, cmp,
                          std::forward<sequential_tag>(ex_tag));
     pivoting += (std::chrono::high_resolution_clock::now() - start);
 
     counting += measure<>::exec_time([&]() {
-      if (std::distance(itr, end) < std::distance(RRRsets.begin(), itr)) {
+      if (std::distance(itr, end) < std::distance(rrr_begin, itr)) {
         UpdateCounters(itr, end, vertexCoverage,
                        std::forward<sequential_tag>(ex_tag));
       } else {
         std::fill(vertexCoverage.begin(), vertexCoverage.end(), 0);
-        CountOccurrencies(RRRsets.begin(), itr, vertexCoverage.begin(),
+        CountOccurrencies(rrr_begin, itr, vertexCoverage.begin(),
                           vertexCoverage.end(),
                           std::forward<sequential_tag>(ex_tag));
       }
@@ -158,7 +158,7 @@ auto FindMostInfluentialSet(const GraphTy &G, const ConfTy &CFG,
     result.push_back(element.first);
   }
 
-  double f = double(RRRsets.size() - uncovered) / RRRsets.size();
+  double f = double(std::distance(rrr_begin, rrr_end) - uncovered) / std::distance(rrr_begin, rrr_end);
 
   record.Counting.push_back(
       std::chrono::duration_cast<typename IMMExecutionRecord::ex_time_ms>(
@@ -167,9 +167,9 @@ auto FindMostInfluentialSet(const GraphTy &G, const ConfTy &CFG,
   return std::make_pair(f, result);
 }
 
-template <typename GraphTy, typename ConfTy, typename RRRset>
+template <typename GraphTy, typename ConfTy, typename RRRsetsItr>
 auto FindMostInfluentialSet(const GraphTy &G, const ConfTy &CFG,
-                            std::vector<RRRset> &RRRsets,
+                            RRRsetsItr rrr_begin, RRRsetsItr rrr_end,
                             IMMExecutionRecord &record, bool enableGPU,
                             omp_parallel_tag &&ex_tag) {
   size_t num_gpu = 0;
@@ -184,7 +184,7 @@ auto FindMostInfluentialSet(const GraphTy &G, const ConfTy &CFG,
     num_gpu = std::min(cuda_num_devices(), CFG.seed_select_max_gpu_workers);
   }
 #endif
-  StreamingFindMostInfluential<GraphTy> SE(G, RRRsets, num_max_cpu, num_gpu);
+  StreamingFindMostInfluential<GraphTy> SE(G, rrr_begin, rrr_end, num_max_cpu, num_gpu);
   return SE.find_most_influential_set(CFG.k);
 }
 

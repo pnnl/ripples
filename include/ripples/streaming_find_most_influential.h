@@ -393,15 +393,17 @@ class StreamingFindMostInfluential {
                           decltype(cmpHeap)>;
 
  public:
-  StreamingFindMostInfluential(const GraphTy &G, RRRsets<GraphTy> &RRRsets,
-                               size_t num_max_cpus, size_t num_gpus)
+  StreamingFindMostInfluential(const GraphTy &G, rrr_set_iterator begin,
+                               rrr_set_iterator end, ssize_t num_max_cpus,
+                               size_t num_gpus)
       : num_cpu_workers_(num_max_cpus),
         num_gpu_workers_(num_gpus),
         workers_(),
         vertex_coverage_(G.num_nodes()),
         queue_storage_(G.num_nodes()),
         d_counters_(num_gpus, 0),
-        RRRsets_(RRRsets),
+        begin_(begin),
+        end_(end),
         reduction_steps_(1),
         d_cpu_counters_(nullptr) {
 #ifdef RIPPLES_ENABLE_CUDA
@@ -429,7 +431,7 @@ class StreamingFindMostInfluential {
 #endif
 
     workers_.push_back(new CPUFindMostInfluentialWorker<GraphTy>(
-        vertex_coverage_, queue_storage_, RRRsets_.begin(), RRRsets_.end(),
+        vertex_coverage_, queue_storage_, begin_, end_,
         num_cpu_workers_, d_cpu_counters_));
 #ifdef RIPPLES_ENABLE_CUDA
     if (num_gpu_workers_ == 0) return;
@@ -538,12 +540,12 @@ class StreamingFindMostInfluential {
       if (rank != 0) {
         size_t threadnum = omp_get_thread_num() - 1,
                numthreads = omp_get_num_threads() - 1;
-        size_t low = RRRsets_.size() * threadnum / numthreads,
-               high = RRRsets_.size() * (threadnum + 1) / numthreads;
+        size_t low = std::distance(begin_, end_) * threadnum / numthreads,
+               high = std::distance(begin_, end_) * (threadnum + 1) / numthreads;
 
         indices[threadnum] = workers_[rank]->LoadData(
-            RRRsets_.begin() + low,
-            std::min(RRRsets_.end(), RRRsets_.begin() + high));
+            begin_ + low,
+            std::min(end_, begin_ + high));
       }
     }
 
@@ -572,7 +574,7 @@ class StreamingFindMostInfluential {
 
     std::vector<vertex_type> result;
     result.reserve(k);
-    size_t uncovered = RRRsets_.size();
+    size_t uncovered = std::distance(begin_, end_);
 
     std::chrono::duration<double, std::milli> seedSelection(0);
     while (uncovered != 0) {
@@ -590,7 +592,7 @@ class StreamingFindMostInfluential {
       UpdateCounters(element.first);
     }
 
-    double f = double(RRRsets_.size() - uncovered) / RRRsets_.size();
+    double f = double(std::distance(begin_, end_) - uncovered) / std::distance(begin_, end_);
 
     omp_set_max_active_levels(1);
 
@@ -600,7 +602,8 @@ class StreamingFindMostInfluential {
  private:
   size_t num_cpu_workers_, num_gpu_workers_;
   ssize_t reduction_steps_;
-  RRRsets<GraphTy> &RRRsets_;
+  rrr_set_iterator begin_;
+  rrr_set_iterator end_;
   std::vector<worker_type *> workers_;
   std::vector<uint32_t *> d_counters_;
   uint32_t *d_cpu_counters_;

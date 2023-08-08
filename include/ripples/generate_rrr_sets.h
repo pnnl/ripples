@@ -78,10 +78,21 @@ using RRRsetAllocator = libmemkind::pmem::allocator<vertex_type>;
 template<typename vertex_type>
 using RRRsetAllocator = metall::manager::allocator_type<vertex_type>;
 
-metall::manager &metall_manager_instance(std::string path) {
-  static metall::manager manager(metall::create_only, path.c_str());
-  return manager;
-}
+// template<typename vertex_type>
+// metall::manager &metall_manager_instance(std::string path) {
+//   bool exists = metall::manager::consistent(path.c_str());
+//   metall::manager manager =
+//       (exists ? metall::manager(metall::open_only, path.c_str())
+//               : metall::manager(metall::create_only, path.c_str()));
+//   if (exists) {
+//     std::cout << "Metall: " << path << " exists. Reloading." << std::endl;
+//   } else {
+//     std::cout << "Metall: " << path << " does not exist. Creating New." << std::endl;
+//     manager.construct<std::vector<vertex_type>>("graph")(std::vector<vertex_type>(0));
+//   }
+//   // static metall::manager manager(metall::create_only, path.c_str());
+//   return manager;
+// }
 
 #else
 template <typename vertex_type>
@@ -94,12 +105,19 @@ using RRRset =
 #ifdef  ENABLE_METALL_RRRSETS
     metall::container::vector<typename GraphTy::vertex_type,
                               RRRsetAllocator<typename GraphTy::vertex_type>>;
+    template<typename GraphTy>
+using RRRsetsAllocator = metall::container::scoped_allocator_adaptor<
+    metall::manager::allocator_type<RRRset<GraphTy>>>;
+    template <typename GraphTy>
+    using RRRsets = metall::container::vector<RRRset<GraphTy>, RRRsetsAllocator<GraphTy>>;
 #else
     std::vector<typename GraphTy::vertex_type,
                               RRRsetAllocator<typename GraphTy::vertex_type>>;
+    template <typename GraphTy>
+    using RRRsets = std::vector<RRRset<GraphTy>>;
 #endif
-template <typename GraphTy>
-using RRRsets = std::vector<RRRset<GraphTy>>;
+// template <typename GraphTy>
+// using RRRsets = std::vector<RRRset<GraphTy>>;
 
 //! \brief Execute a randomize BFS to generate a Random RR Set.
 //!
