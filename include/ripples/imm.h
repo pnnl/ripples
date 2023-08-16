@@ -195,7 +195,7 @@ void Sampling(const GraphTy &G, const ConfTy &CFG, double l,
       size_t delta = thetaPrime - thetaPrimePrev;
       thetaPrimePrev = thetaPrime;
       record.ThetaPrimeDeltas.push_back(delta);
-      RRend = RR.begin() + thetaPrime + 1;
+      RRend = RR.begin() + thetaPrime;
     }
     else{
       size_t delta = thetaPrime - RR.size();
@@ -206,8 +206,8 @@ void Sampling(const GraphTy &G, const ConfTy &CFG, double l,
       GenerateRRRSets(G, generator, begin, RR.end(), record,
                       std::forward<diff_model_tag>(model_tag),
                       std::forward<execution_tag>(ex_tag));
-      }
       RRend = RR.end();
+      }
     });
     record.ThetaEstimationGenerateRRR.push_back(timeRRRSets);
 
@@ -329,7 +329,7 @@ auto Sampling(const GraphTy &G, const ConfTy &CFG, double l,
       size_t delta = thetaPrime - thetaPrimePrev;
       thetaPrimePrev = thetaPrime;
       record.ThetaPrimeDeltas.push_back(delta);
-      RRend = RR.begin() + thetaPrime + 1;
+      RRend = RR.begin() + thetaPrime;
     }
     else{
       size_t delta = thetaPrime - RR.size();
@@ -340,8 +340,8 @@ auto Sampling(const GraphTy &G, const ConfTy &CFG, double l,
       GenerateRRRSets(G, generator, begin, RR.end(), record,
                       std::forward<diff_model_tag>(model_tag),
                       std::forward<execution_tag>(ex_tag));
-      }
       RRend = RR.end();
+      }
     });
     record.ThetaEstimationGenerateRRR.push_back(timeRRRSets);
 
@@ -423,7 +423,7 @@ void Sampling(const GraphTy &G, const ConfTy &CFG, double l,
       size_t delta = thetaPrime - thetaPrimePrev;
       thetaPrimePrev = thetaPrime;
       record.ThetaPrimeDeltas.push_back(delta);
-      RRend = RR.begin() + thetaPrime + 1;
+      RRend = RR.begin() + thetaPrime;
     }
     else{
       size_t delta = thetaPrime - RR.size();
@@ -434,8 +434,8 @@ void Sampling(const GraphTy &G, const ConfTy &CFG, double l,
       GenerateRRRSets(G, generator, begin, RR.end(), record,
                       std::forward<diff_model_tag>(model_tag),
                       std::forward<sequential_tag>(ex_tag));
-      }
       RRend = RR.end();
+      }
     });
     record.ThetaEstimationGenerateRRR.push_back(timeRRRSets);
 
@@ -534,7 +534,7 @@ auto Sampling(const GraphTy &G, const ConfTy &CFG, double l,
       size_t delta = thetaPrime - thetaPrimePrev;
       thetaPrimePrev = thetaPrime;
       record.ThetaPrimeDeltas.push_back(delta);
-      RRend = RR.begin() + thetaPrime + 1;
+      RRend = RR.begin() + thetaPrime;
     }
     else{
       size_t delta = thetaPrime - RR.size();
@@ -545,8 +545,8 @@ auto Sampling(const GraphTy &G, const ConfTy &CFG, double l,
       GenerateRRRSets(G, generator, begin, RR.end(), record,
                       std::forward<diff_model_tag>(model_tag),
                       std::forward<sequential_tag>(ex_tag));
-      }
       RRend = RR.end();
+      }
     });
     record.ThetaEstimationGenerateRRR.push_back(timeRRRSets);
 

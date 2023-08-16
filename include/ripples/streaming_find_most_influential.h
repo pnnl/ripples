@@ -399,19 +399,18 @@ class StreamingFindMostInfluential {
       : num_cpu_workers_(num_max_cpus),
         num_gpu_workers_(num_gpus),
         workers_(),
-        vertex_coverage_(G.num_nodes()),
+        vertex_coverage_(G.num_nodes(), 0),
         queue_storage_(G.num_nodes()),
         d_counters_(num_gpus, 0),
         begin_(begin),
         end_(end),
         reduction_steps_(1),
         d_cpu_counters_(nullptr) {
+// std::fill(vertex_coverage_.begin(), vertex_coverage_.end(), 0);
 #ifdef RIPPLES_ENABLE_CUDA
     // Get Number of device and allocate 1 thread each.
     // num_gpu_workers_ = cuda_num_devices();
     num_cpu_workers_ -= num_gpu_workers_;
-
-    std::fill(vertex_coverage_.begin(), vertex_coverage_.end(), 0);
 
     // Allocate Counters
     if (num_gpu_workers_ > 0) {
@@ -578,6 +577,8 @@ class StreamingFindMostInfluential {
 
     std::chrono::duration<double, std::milli> seedSelection(0);
     while (uncovered != 0) {
+      // Print uncovered
+      std::cout << "Uncovered: " << uncovered << std::endl;
       auto start = std::chrono::high_resolution_clock::now();
       auto element = getNextSeed(queue);
       auto end = std::chrono::high_resolution_clock::now();
