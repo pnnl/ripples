@@ -163,8 +163,7 @@ int main(int argc, char *argv[]) {
   }
   GraphBwd &G(*Gr);
 #else
-  std::allocator<char> = GraphAllocator;
-  GraphFwd Gf = ripples::loadGraph<GraphFwd>(CFG, weightGen, GraphAllocator);
+  GraphFwd Gf = ripples::loadGraph<GraphFwd>(CFG, weightGen);
   GraphBwd G = Gf.get_transpose();
 #endif
   console->info("Loading Done!");
