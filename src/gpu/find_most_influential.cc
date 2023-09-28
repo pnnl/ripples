@@ -40,97 +40,81 @@
 //
 //===----------------------------------------------------------------------===//
 
-#ifndef RIPPLES_IMM_EXECUTION_RECORD_H
-#define RIPPLES_IMM_EXECUTION_RECORD_H
+#include "ripples/gpu/find_most_influential.h"
 
-#include <chrono>
+#include <algorithm>
 #include <vector>
+
+#include "ripples/gpu/gpu_runtime_trait.h"
+
+#include "thrust/device_ptr.h"
+#include "thrust/extrema.h"
 
 namespace ripples {
 
-//! IMM execution record.
-struct IMMExecutionRecord {
-  using ex_time_ms = std::chrono::duration<double, std::milli>;
-  using ex_time_ns = std::chrono::nanoseconds;
+__global__ void kernel_count(size_t batch_size, size_t num_nodes,
+                             uint32_t *d_counters, uint32_t *d_rrr_sets) {
+  int pos = threadIdx.x + blockDim.x * blockIdx.x;
+  if (pos < batch_size) {
+    uint32_t v = d_rrr_sets[pos];
+    atomicAdd(d_counters + v, 1);
+  }
+}
 
-  struct cpu_walk_prof {
-    size_t NumSets;
-    ex_time_ms Total;
+std::pair<uint32_t, size_t> GPUMaxElement(uint32_t *b, size_t N) {
+  thrust::device_ptr<uint32_t> dev_ptr(b);
 
-    cpu_walk_prof()
-      : NumSets()
-      , Total() {}
-  };
+  thrust::device_ptr<uint32_t> min_ptr =
+      thrust::max_element(thrust::device, dev_ptr, dev_ptr + N);
+  uint32_t v = thrust::distance(dev_ptr, min_ptr);
+  return std::make_pair(v, size_t(dev_ptr[v]));
+}
 
-  struct gpu_walk_prof {
-    size_t NumSets;
-    ex_time_ms Total;
-    ex_time_ns Kernel, D2H, Post;
+__global__ void count_uncovered_kernel(size_t batch_size, size_t num_nodes,
+                                       uint32_t *d_rrr_index,
+                                       uint32_t *d_rrr_sets, uint32_t *d_mask,
+                                       uint32_t *d_counters) {
+  int pos = threadIdx.x + blockDim.x * blockIdx.x;
 
-    gpu_walk_prof()
-      : NumSets()
-      , Total(), Kernel(), D2H(), Post()
-    {}
-  };
+  if (pos < batch_size) {
+    uint32_t set = d_rrr_index[pos];
+    if (d_mask[set] != 1) {
+      uint32_t v = d_rrr_sets[pos];
+      atomicAdd(d_counters + v, 1);
+    }
+  }
+}
 
-  struct walk_iteration_prof {
-    std::vector<cpu_walk_prof> CPUWalks{};
-    std::vector<gpu_walk_prof> GPUWalks{};
-    size_t NumSets{0};
-    ex_time_ms Total{0};
+__global__ void update_mask_kernel(size_t batch_size, uint32_t *d_rrr_index,
+                                   uint32_t *d_rrr_sets, uint32_t *d_mask,
+                                   uint32_t last_seed) {
+  size_t pos = threadIdx.x + blockDim.x * blockIdx.x;
 
-    walk_iteration_prof()
-      : CPUWalks(), GPUWalks(), NumSets(), Total() {}
-  };
+  if (pos < batch_size && d_rrr_sets[pos] == last_seed) {
+    uint32_t set = d_rrr_index[pos];
+    d_mask[set] = 1;
+  }
+}
 
-  IMMExecutionRecord()
-    : NumThreads()
-    , Theta()
-    , ThetaPrimeDeltas()
-    , ThetaEstimationTotal()
-    , ThetaEstimationMostInfluential()
-    , Counting()
-    , Pivoting()
-    , Microbenchmarking()
-    , CPUBatchSize(64)
-    , GPUBatchSize(64)
-    , GenerateRRRSets()
-    , FindMostInfluentialSet()
-    , Total()
-    , RRRSetSize()
-    , WalkIterations() {}
+size_t CountZeros(char *d_rr_mask, size_t N) {
+  thrust::device_ptr<char> dev_ptr = thrust::device_pointer_cast(d_rr_mask);
+  char zero = 0;
+  return thrust::count(dev_ptr, dev_ptr + N, zero);
+}
 
-  //! Number of threads used during the execution.
-  size_t NumThreads;
-  //! Number of RRR sets generated.
-  size_t Theta;
-  //! The list of how many RRR sets are produced during the estimation phase.
-  std::vector<size_t> ThetaPrimeDeltas;
-  //! Execution time of the Theta estimation phase.
-  ex_time_ms ThetaEstimationTotal;
-  //! Execution times of the GenerateRRRSets steps in Theta estimation.
-  std::vector<ex_time_ms> ThetaEstimationGenerateRRR;
-  //! Execution times of the FindMostInfluentialSet steps in Theta estimation.
-  std::vector<ex_time_ms> ThetaEstimationMostInfluential;
-  std::vector<ex_time_ms> Counting;
-  std::vector<ex_time_ms> Pivoting;
-  //! Total microbenchmarking time.
-  ex_time_ms Microbenchmarking;
-  //! CPU Batch Size
-  size_t CPUBatchSize;
-  //! GPU Batch Size
-  size_t GPUBatchSize;
-  //! Execution time of the RRR sets generation phase.
-  ex_time_ms GenerateRRRSets;
-  //! Execution time of the maximum coverage phase.
-  ex_time_ms FindMostInfluentialSet;
-  //! Total execution time.
-  ex_time_ms Total;
-  size_t RRRSetSize;
-  //! Iterations breakdown
-  std::vector<walk_iteration_prof> WalkIterations;
-};
+size_t CountOnes(char *d_rr_mask, size_t N) {
+  thrust::device_ptr<char> dev_ptr = thrust::device_pointer_cast(d_rr_mask);
+  char one = 1;
+  return thrust::count(dev_ptr, dev_ptr + N, one);
+}
+
+__global__ void sum_vectors(uint32_t *src, uint32_t *dst, size_t N) {
+  size_t pos = threadIdx.x + blockDim.x * blockIdx.x;
+  if (pos < N) {
+    if (src[pos]) {
+      atomicAdd(dst + pos, src[pos]);
+    }
+  }
+}
 
 }  // namespace ripples
-
-#endif  // RIPPLES_IMM_EXECUTION_RECORD_H

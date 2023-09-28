@@ -40,20 +40,17 @@
 //
 //===----------------------------------------------------------------------===//
 
+#ifndef RIPPLES_CUDA_CUDA_SUPPORTED_GRAPHS_H
+#define RIPPLES_CUDA_CUDA_SUPPORTED_GRAPHS_H
 
 #include "ripples/graph.h"
-#include "ripples/cuda/cuda_lt_kernel.cuh"
-#include "ripples/cuda/cuda_generate_rrr_sets.h"
-#include "ripples/cuda/cuda_supported_graphs.h"
-
-#include "trng/lcg64.hpp"
-
 
 namespace ripples {
+using IMMGraphTy =
+  Graph<uint32_t, WeightedDestination<uint32_t, float>, BackwardDirection<uint32_t>>;
 
-
-template void cuda_lt_kernel<IMMGraphTy, trng::lcg64>(size_t n_blocks, size_t block_size, size_t batch_size,
-                                                      size_t num_nodes, trng::lcg64 *d_trng_states,
-                                                      mask_word_t *d_res_masks, size_t num_mask_words,
-                                                      cuda_ctx<IMMGraphTy> *ctx, cudaStream_t stream);
+using HCGraphTy =
+  Graph<uint32_t, WeightedDestination<uint32_t, float>, ForwardDirection<uint32_t>>;
 }
+
+#endif

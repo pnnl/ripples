@@ -60,6 +60,10 @@ def options(opt):
         '--enable-cuda', action='store_true', default=False,
         help='enable cuda implementation')
 
+    cfg_options.add_option(
+        '--enable-hip', action='store_true', default=False,
+        help='enable cuda implementation')
+
     opt.load('mpi', tooldir='waftools')
     opt.load('cuda', tooldir='waftools')
     opt.load('memkind', tooldir='waftools')
@@ -102,6 +106,14 @@ def configure(conf):
         conf.env.ENABLE_CUDA = True
         conf.env.CUDAFLAGS = ['--expt-relaxed-constexpr']
 
+    conf.env.ENABLE_HIP = False
+    if conf.options.enable_hip:
+        conf.env.ENABLE_HIP = True
+        conf.env.append_value('CXXFLAGS', ['--amdgpu-target=gfx90a'])
+
+    if conf.env.ENABLE_HIP and conf.env.ENABLE_CUDA:
+        conf.fatal('We are not currently supporting HIP and CUDA at the same time.')
+
     if conf.options.enable_memkind and conf.options.enable_metall:
         conf.error('Metall and Memkind are mutually exclusive')
 
@@ -117,7 +129,7 @@ def configure(conf):
 
     env = conf.env
     conf.setenv('release', env)
-    conf.env.append_value('CXXFLAGS', ['-O3', '-mtune=native'])
+    conf.env.append_value('CXXFLAGS', ['-O3', '-march=native', '-mtune=native', '-DNDEBUG'])
 
     conf.setenv('debug', env)
     conf.env.append_value('CXXFLAGS', ['-g', '-DDEBUG'])
@@ -129,7 +141,8 @@ def configure(conf):
 def build(bld):
     if not bld.variant:
         bld.fatal('call "./waf build_release" or "./waf build_debug", and try "./waf --help"')
-    directories = ['include', 'tools', 'test']
+    # directories = ['include', 'src', 'tools', 'test']
+    directories = ['include', 'src', 'tools']
 
     bld.recurse(directories)
 

@@ -55,7 +55,10 @@ def configure(self):
     """
     if self.check_builtin_support():
         return
-    self.check_using_mpi_compiler_wrapper()
+    elif self.check_using_mpi_compiler_wrapper():
+        return
+    else:
+        self.check_using_cray_compiler_wrapper()
 
 
 mpi_cc_sample_snippet = """#include <mpi.h>
@@ -107,3 +110,14 @@ def check_using_mpi_compiler_wrapper(self):
             found = found and check
         if found:
             break
+    return found
+
+@conf
+def check_using_cray_compiler_wrapper(self):
+    self.find_program('CC', var='MPICC', mandatory=False)
+    msg = 'Checking for MPI using the CC compiler wrapper'
+    self.check_cfg(path=self.env.MPICC,
+                   args='--cray-print-opts=all',
+                   msg=msg,
+                   package='', uselib_store='MPI',
+                   mandatory=False)

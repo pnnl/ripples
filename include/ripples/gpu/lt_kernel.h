@@ -40,23 +40,30 @@
 //
 //===----------------------------------------------------------------------===//
 
-#ifndef RIPPLES_CUDA_CUDA_LT_KERNEL_CUH
-#define RIPPLES_CUDA_CUDA_LT_KERNEL_CUH
+#ifndef RIPPLES_GPU_LT_KERNEL_H
+#define RIPPLES_GPU_LT_KERNEL_H
 
+#include "ripples/gpu/generate_rrr_sets.h"
+#include "ripples/gpu/gpu_graph.h"
+#include "ripples/gpu/gpu_runtime_trait.h"
+
+#include "trng/uniform01_dist.hpp"
+#include "trng/uniform_int_dist.hpp"
+
+#if defined(RIPPLES_ENABLE_CUDA)
 #include "ripples/cuda/cuda_utils.h"
-#include "ripples/cuda/cuda_graph.cuh"
-#include "ripples/cuda/cuda_generate_rrr_sets.h"
+#endif
 
 namespace ripples {
 
-template <typename GraphTy, typename cuda_PRNGeneratorTy>
+template <GPURuntime R, typename GraphTy, typename gpu_PRNGeneratorTy>
 __global__ void kernel_lt_per_thread(
-                                     size_t bs, typename cuda_device_graph<GraphTy>::vertex_t *index,
-    typename cuda_device_graph<GraphTy>::vertex_t *edges,
-    typename cuda_device_graph<GraphTy>::weight_t *weights, size_t num_nodes,
-    cuda_PRNGeneratorTy *d_trng_states, mask_word_t *d_res_masks,
+    size_t bs, typename gpu_graph<R, GraphTy>::vertex_t *index,
+    typename gpu_graph<R, GraphTy>::vertex_t *edges,
+    typename gpu_graph<R, GraphTy>::weight_t *weights, size_t num_nodes,
+    gpu_PRNGeneratorTy *d_trng_states, mask_word_t *d_res_masks,
     size_t num_mask_words) {
-  using vertex_type = typename cuda_device_graph<GraphTy>::vertex_t;
+  using vertex_type = typename gpu_graph<R, GraphTy>::vertex_t;
 
   int tid = blockIdx.x * blockDim.x + threadIdx.x;
   if (tid < bs) {
@@ -64,7 +71,7 @@ __global__ void kernel_lt_per_thread(
     trng::uniform_int_dist root_dist(0, num_nodes);
 
     // init res memory
-    mask_word_t dr_res_mask[CUDA_WALK_SIZE];
+    mask_word_t dr_res_mask[GPU_WALK_SIZE];
     size_t res_size = 0;
 
     // cache rng state
@@ -117,21 +124,29 @@ __global__ void kernel_lt_per_thread(
 
     // write back to global memory
     auto d_res_mask = d_res_masks + tid * num_mask_words;
-    memcpy(d_res_mask, dr_res_mask, CUDA_WALK_SIZE * sizeof(mask_word_t));
+    memcpy(d_res_mask, dr_res_mask, GPU_WALK_SIZE * sizeof(mask_word_t));
   }  // end if active thread
 }
 
-template <typename GraphTy, typename cuda_PRNGeneratorTy>
-void cuda_lt_kernel(size_t n_blocks, size_t block_size, size_t batch_size,
-                    size_t num_nodes, cuda_PRNGeneratorTy *d_trng_states,
-                    mask_word_t *d_res_masks, size_t num_mask_words,
-                    cuda_ctx<GraphTy> *ctx, cudaStream_t stream) {
-  kernel_lt_per_thread<GraphTy><<<n_blocks, block_size, 0, stream>>>(
+template <GPURuntime R, typename GraphTy, typename gpu_PRNGeneratorTy>
+void gpu_lt_kernel(size_t n_blocks, size_t block_size, size_t batch_size,
+                   size_t num_nodes, gpu_PRNGeneratorTy *d_trng_states,
+                   mask_word_t *d_res_masks, size_t num_mask_words,
+                   gpu_ctx<R, GraphTy> *ctx,
+                   typename GPU<R>::stream_type stream) {
+#if defined(RIPPLES_ENABLE_CUDA)
+  kernel_lt_per_thread<R, GraphTy><<<n_blocks, block_size, 0, stream>>>(
       batch_size, ctx->d_graph->d_index_, ctx->d_graph->d_edges_,
       ctx->d_graph->d_weights_, num_nodes, d_trng_states, d_res_masks,
       num_mask_words);
-  cuda_check(__FILE__, __LINE__);
+#elif defined(RIPPLES_ENABLE_HIP)
+  hipLaunchKernelGGL((kernel_lt_per_thread<R, GraphTy>), n_blocks, block_size,
+                     0, stream, batch_size, ctx->d_graph->d_index_,
+                     ctx->d_graph->d_edges_, ctx->d_graph->d_weights_,
+                     num_nodes, d_trng_states, d_res_masks, num_mask_words);
+#else
+#error "Unsupported GPU runtime"
+#endif
 }
-
-}
+}  // namespace ripples
 #endif

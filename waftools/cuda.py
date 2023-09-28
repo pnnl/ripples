@@ -4,13 +4,13 @@
 
 "cuda"
 
-from waflib import Task
-from waflib.TaskGen import extension
+from waflib import Task, TaskGen
+from waflib.TaskGen import extension, feature
 from waflib.Tools import ccroot, c_preproc
 from waflib.Configure import conf
 
 class cuda(Task.Task):
-        run_str = '${NVCC} ${CUDAFLAGS} -ccbin ${CXX} ${CUDA_CXX_FLAGS} ${FRAMEWORKPATH_ST:FRAMEWORKPATH} ${CPPPATH_ST:INCPATHS} ${DEFINES_ST:DEFINES} ${CXX_SRC_F}${SRC} ${CXX_TGT_F} ${TGT}'
+        run_str = '${NVCC} -x cu ${CUDAFLAGS} -ccbin ${CXX} ${CUDA_CXX_FLAGS} ${FRAMEWORKPATH_ST:FRAMEWORKPATH} ${CPPPATH_ST:INCPATHS} ${DEFINES_ST:DEFINES} ${CXX_SRC_F}${SRC} ${CXX_TGT_F} ${TGT}'
         color   = 'GREEN'
         ext_in  = ['.h', '.cuh']
         vars    = ['CCDEPS']
@@ -21,13 +21,17 @@ class cuda(Task.Task):
 def c_hook(self, node):
         return self.create_compiled_task('cuda', node)
 
-@extension('.cpp','.cc','.cxx','.C','.c++')
-def cxx_hook(self, node):
+def cxx_cuda_hook(self, node):
         # override processing for one particular type of file
         if getattr(self, 'cuda', False):
                 return self.create_compiled_task('cuda', node)
         else:
                 return self.create_compiled_task('cxx', node)
+
+@feature('cuda')
+def cuda_hook(self):
+        for ext in ['.cpp','.cc','.cxx','.C','.c++']:
+                TaskGen.task_gen.mappings[ext] = cxx_cuda_hook
 
 def configure(conf):
         conf.find_program('nvcc', var='NVCC')

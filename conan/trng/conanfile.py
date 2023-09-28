@@ -7,7 +7,7 @@ class LibtrngConan(ConanFile):
     license = "BSD"
     version = "4.22"
     author = "Heiko Bauke"
-    url = "https://www.numbercrunch.de/trng/"
+    version= "basic_hip_support"
     description = "Tina's Random Number Generator Library"
     topics = ("Pseudo-Random Number Generator")
     settings = "os", "compiler", "build_type", "arch"
@@ -27,7 +27,9 @@ class LibtrngConan(ConanFile):
 
     def build(self):
         cmake = CMake(self)
-        cmake.configure(source_folder='trng4-' + self.version)
+        cmake.definitions['TRNG_ENABLE_EXAMPLES'] = False
+        cmake.definitions['TRNG_ENABLE_TESTS'] = False
+        cmake.configure(source_folder='trng')
         cmake.parallel = False
         cmake.build()
         cmake.install()

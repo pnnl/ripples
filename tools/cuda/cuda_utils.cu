@@ -202,6 +202,8 @@ void cuda_memset(void *dst, int val, size_t size) {
 
 void cuda_sync(cudaStream_t stream) { cudaStreamSynchronize(stream); }
 
+void cuda_device_sync() { cudaDeviceSynchronize(); }
+
 void cuda_enable_p2p(size_t dev_number) {
   cudaDeviceEnablePeerAccess(dev_number, 0);
 }

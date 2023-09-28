@@ -245,8 +245,6 @@ GraphTy loadGraph_helper(ConfTy &CFG, PrngTy &PRNG, allocator_t allocator = allo
     G = std::move(tmpG);
   } else {
     std::ifstream binaryDump(CFG.IFileName, std::ios::binary);
-    // GraphTy tmpG(binaryDump, allocator);
-    // G = std::move(tmpG);
     G.load_binary(binaryDump);
   }
 

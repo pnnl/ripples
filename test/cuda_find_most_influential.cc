@@ -45,8 +45,8 @@
 
 #include "catch2/catch.hpp"
 
-#include "ripples/cuda/cuda_generate_rrr_sets.h"
-#include "ripples/cuda/find_most_influential.h"
+#include "ripples/gpu/generate_rrr_sets.h"
+#include "ripples/gpu/find_most_influential.h"
 #include "ripples/find_most_influential.h"
 
 using namespace ripples;
@@ -98,7 +98,7 @@ SCENARIO("Count vertex occurrencies on GPU", "[count]") {
           for (auto v : rrr_sets2)
             REQUIRE((v == 1 || v == 2 || v == 3 || v == 4 || v == 5));
 
-          CudaCountOccurrencies(d_Counters, d_rrr_sets, 2000 + 66 * 2 + 33 * 3, 6);
+          GPUCountOccurrencies(d_Counters, d_rrr_sets, 2000 + 66 * 2 + 33 * 3, 6);
 
           std::vector<uint32_t> counters(6);
 

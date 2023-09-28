@@ -4,6 +4,14 @@
 build/
 /.waf*
 *~
+Pipfile.lock
+*.csv
+output.json
+*.png
+hpc*/
+results*
+scripts/
+core
 
 docs/api
 
