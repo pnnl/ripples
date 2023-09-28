@@ -103,6 +103,8 @@ using RRRset =
 template <typename GraphTy>
 using RRRsets = std::vector<RRRset<GraphTy>>;
 
+#if 0
+
 //! \brief Execute a randomize BFS to generate a Random RR Set.
 //!
 //! \tparam GraphTy The type of the graph.
@@ -163,6 +165,7 @@ void AddRRRSet(const GraphTy &G, typename GraphTy::vertex_type r,
 
   std::stable_sort(result.begin(), result.end());
 }
+#endif
 
 //! \brief Generate Random Reverse Reachability Sets - sequential.
 //!

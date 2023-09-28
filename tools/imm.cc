@@ -229,14 +229,16 @@ int main(int argc, char **argv) {
       ripples::ICStreamingGenerator se(G, generator, workers - gpu_workers, cpu_teams, gpu_workers,
              CFG.gpu_batch_size, CFG.cpu_batch_size, CFG.worker_to_gpu, CFG.pause_threshold);
       R.GPUBatchSize = CFG.gpu_batch_size;
-      if(CFG.cpu_batch_size){
+      if (CFG.cpu_batch_size) {
         R.CPUBatchSize = CFG.cpu_batch_size;
       }
-      else{
-        if(se.isGpuEnabled() && cpu_teams){
+#if defined(RIPPLES_ENABLE_CUDA) || defined(RIPPLES_ENABLE_HIP)
+      else {
+        if (se.isGpuEnabled() && cpu_teams) {
           se.benchmark(2, 4, R);
         }
       }
+#endif
 
       auto start = std::chrono::high_resolution_clock::now();
       if(CFG.num_rr_sets){

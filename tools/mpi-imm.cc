@@ -195,12 +195,15 @@ int main(int argc, char *argv[]) {
     R.GPUBatchSize = CFG.gpu_batch_size;
     if(CFG.cpu_batch_size){
         R.CPUBatchSize = CFG.cpu_batch_size;
+    }
+#if defined(RIPPLES_ENABLE_CUDA) || defined(RIPPLES_ENABLE_HIP)
+    else {
+      if(se.isGpuEnabled() && cpu_teams){
+        se.benchmark(4, 4, R);
       }
-      else{
-        if(se.isGpuEnabled() && cpu_teams){
-          se.benchmark(4, 4, R);
-        }
-      }
+    }
+#endif
+
     auto start = std::chrono::high_resolution_clock::now();
     seeds = ripples::mpi::IMM(
         G, CFG, 1.0, se, R, ripples::independent_cascade_tag{},
