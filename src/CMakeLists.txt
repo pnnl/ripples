@@ -4,8 +4,8 @@ endif()
 
 add_library(infmax STATIC imm.cc)
 target_link_libraries(infmax
-                      CONAN_PKG::cli11 CONAN_PKG::libtrng CONAN_PKG::fmt
-                      CONAN_PKG::spdlog CONAN_PKG::nlohmann_json)
+                      CLI11::CLI11 libtrng::libtrng fmt::fmt
+                      spdlog::spdlog nlohmann_json::nlohmann_json)
 if(RIPPLES_ENABLE_CUDA OR RIPPLES_ENABLE_HIP)
   target_link_libraries(infmax gpu_ripples)
 endif()

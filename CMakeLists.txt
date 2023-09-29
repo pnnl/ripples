@@ -4,8 +4,8 @@ project(ripples VERSION 3.0.0 LANGUAGES CXX)
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
-include(${CMAKE_BINARY_DIR}/conanbuildinfo.cmake)
-conan_basic_setup(TARGETS KEEP_RPATHS)
+# include(${CMAKE_BINARY_DIR}/conanbuildinfo.cmake)
+# conan_basic_setup(TARGETS KEEP_RPATHS)
 
 set(CMAKE_EXPORT_COMPILE_COMMANDS 1)
 
@@ -45,6 +45,11 @@ set(CMAKE_CXX_FLAGS_RELWITHDEBINFO "${CMAKE_CXX_FLAGS_RELEASE} ${CMAKE_CXX_FLAGS
 
 find_package(MPI)
 find_package(OpenMP)
+find_package(spdlog REQUIRED)
+find_package(nlohmann_json REQUIRED)
+find_package(libtrng REQUIRED)
+find_package(CLI11 REQUIRED)
+find_package(Catch2 REQUIRED)
 
 if (RIPPLES_ENABLE_CUDA)
   find_package(CUDA)
