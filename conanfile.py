@@ -1,4 +1,5 @@
-from conans import ConanFile, tools
+from conan import ConanFile
+from conan.tools.cmake import CMakeDeps, CMakeToolchain, CMake, cmake_layout
 
 
 class RipplesConan(ConanFile):
@@ -10,22 +11,29 @@ class RipplesConan(ConanFile):
                        'nvidia_cub' : False,
                        'metal': False,
                        'gpu' : None}
-    generators = 'Waf'
     settings = "os", "compiler", "build_type", "arch"
 
     def configure(self):
         self.options['fmt'].shared = False
         self.options['spdlog'].shared = False
 
+    def layout(self):
+        cmake_layout(self)
+
+    def generate(self):
+        tc = CMakeToolchain(self)
+        tc.generate()
+        deps = CMakeDeps(self)
+        deps.generate()
+
     def requirements(self):
         self.requires('spdlog/1.11.0')
         self.requires('nlohmann_json/3.9.1')
-        self.requires('catch2/2.13.3')
+        self.requires('catch2/2.13.10')
         self.requires('cli11/2.1.1')
-        self.requires('libtrng/4.22@user/stable')
-        self.requires('WafGen/0.1@user/stable')
+        self.requires('libtrng/4.23.1')
         if self.options.gpu == 'nvidia' and self.options.nvidia_cub:
-            self.requires('nvidia-cub/1.12.0@user/stable')
+            self.requires('nvidia-cub/1.12.0user/stable')
 
         if self.options.gpu == 'amd':
             self.requires('rocThrust/5.1.0@user/stable')
@@ -33,9 +41,20 @@ class RipplesConan(ConanFile):
         if self.options.memkind and self.options.metal:
             self.output.error("Metal and Memkind are mutually exclusive")
 
-        if tools.os_info.is_linux:
+        if self.settings.os == "Linux":
             if self.options.memkind:
                 self.requires('memkind/1.10.1-rc1@memkind/stable')
 
         if self.options.metal:
             self.requires('metall/master@user/stable')
+
+    def build(self):
+        cmake = CMake(self)
+        cmake.configure()
+        cmake.build()
+
+    def package(self):
+        pass
+
+    def package_info(self):
+        pass
