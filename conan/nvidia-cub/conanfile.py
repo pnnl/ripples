@@ -1,6 +1,8 @@
 #!/usr/bin/env python
 
-from conans import ConanFile, CMake, tools
+from conan import ConanFile
+from conan.tools.cmake import CMakeToolchain, CMake, cmake_layout
+from conan.tools.files import get
 
 class NvidaCubConan(ConanFile):
     name = "nvidia-cub"
@@ -14,20 +16,27 @@ class NvidaCubConan(ConanFile):
     generators = "cmake"
 
     def source(self):
-        tools.download('https://github.com/NVIDIA/cub/archive/1.12.0.tar.gz', 'v1.12.0.tar.gz')
-        tools.unzip('v1.12.0.tar.gz')
-        return 'cub-1.12.0'
+        get(self, 'https://github.com/NVIDIA/cub/archive/1.12.0.tar.gz',
+            strip_root=True)
+
+    def layout(self):
+        cmake_layout(self)
+
+    def generate(self):
+        tc = CMakeToolchain(self)
+        tc.generate()
 
     def build(self):
         cmake = CMake(self)
-        cmake.definitions['CMAKE_CUDA_FLAGS'] = '-std=c++14'
-        cmake.definitions['CUB_ENABLE_HEADER_TESTING'] = 'OFF'
-        cmake.definitions['CUB_ENABLE_TESTING'] = 'OFF'
-        cmake.definitions['CUB_ENABLE_THOROUGH_TESTING'] = 'OFF'
-        cmake.definitions['CUB_ENABLE_MINIMAL_TESTING'] = 'OFF'
-        cmake.definitions['CUB_ENABLE_EXAMPLES'] = 'OFF'
-        cmake.set_cmake_flags = True
-        cmake.configure(source_folder='cub-1.12.0')
+        cmake.variables['CMAKE_CUDA_FLAGS'] = '-std=c++14'
+        cmake.variables['CUB_ENABLE_HEADER_TESTING'] = False
+        cmake.variables['CUB_ENABLE_TESTING'] = False
+        cmake.variables['CUB_ENABLE_THOROUGH_TESTING'] = False
+        cmake.variables['CUB_ENABLE_MINIMAL_TESTING'] = False
+        cmake.variables['CUB_ENABLE_EXAMPLES'] = False
+        cmake.configure()
         cmake.build()
-        cmake.install()
 
+    def package(self):
+        cmake = CMake(self)
+        cmake.install()
