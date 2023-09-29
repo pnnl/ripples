@@ -1,4 +1,8 @@
-from conans import ConanFile, AutoToolsBuildEnvironment, tools
+#!/usr/bin/env python
+
+from conan import ConanFile
+from conan.tools.gnu import AutotoolsToolchain, Autotools
+from conan.tools.files import get
 
 
 class MemkindConan(ConanFile):
@@ -15,19 +19,21 @@ class MemkindConan(ConanFile):
     generators = "cmake"
 
     def source(self):
-        tools.download('https://github.com/memkind/memkind/archive/v1.10.1-rc1.tar.gz', 'memkind-1.10.1-rc1.tar.gz')
-        tools.unzip('memkind-1.10.1-rc1.tar.gz')
-        return 'memkind-1.10.1-rc1'
+        get(self, 'https://github.com/memkind/memkind/archive/v1.10.1-rc1.tar.gz',
+            strip_root=True)
+
+    def generate(self):
+        autotools = AutotoolsToolchain(self)
+        autotools.generate()
 
     def build(self):
-        with tools.chdir('memkind-1.10.1-rc1'):
-            self.run("./autogen.sh")
-            autotools = AutoToolsBuildEnvironment(self)
-            env_build_vars = autotools.vars
-            env_build_vars['CXXFLAGS'] = '-U NDEBUG'
-            autotools.configure(vars=env_build_vars)
-            autotools.make()
-            autotools.install()
+        autotools = Autotools(self)
+        autotools.configure()
+        autotools.make()
+
+    def package(self):
+        autotools = Autotools(self)
+        autotools.install()
 
 
     def package_info(self):
