@@ -1,6 +1,9 @@
 #!/usr/bin/env python
 
-from conans import ConanFile, CMake, tools
+from conan import ConanFile
+from conan.tools.cmake import CMakeToolchain, CMake, cmake_layout
+from conan.tools.files import get
+
 
 class rocThrustConan(ConanFile):
     name = "rocThrust"
@@ -14,12 +17,21 @@ class rocThrustConan(ConanFile):
     generators = "cmake"
 
     def source(self):
-        tools.download('https://github.com/ROCmSoftwarePlatform/rocThrust/archive/refs/tags/rocm-5.1.0.tar.gz', 'rocm-5.1.0.tar.gz')
-        tools.unzip('rocm-5.1.0.tar.gz')
-        return 'rocThrust-rocm-5.1.0'
+        get(self, 'https://github.com/ROCmSoftwarePlatform/rocThrust/archive/refs/tags/rocm-5.1.0.tar.gz',
+            strip_root=True)
+
+    def layout(self):
+        cmake_layout(self)
+
+    def generate(self):
+        tc = CMakeToolchain(self)
+        tc.generate()
 
     def build(self):
         cmake = CMake(self)
-        cmake.configure(source_folder='rocThrust-rocm-5.1.0')
+        cmake.configure()
         cmake.build()
+
+    def package(self):
+        cmake = CMake(self)
         cmake.install()
