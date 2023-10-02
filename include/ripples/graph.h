@@ -48,7 +48,6 @@
 #include <unordered_map>
 #include <numeric>
 #include <vector>
-#include <execution>
 #include <cassert>
 
 #include <ripples/utility.h>

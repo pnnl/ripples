@@ -33,20 +33,20 @@ class RipplesConan(ConanFile):
         self.requires('cli11/2.1.1')
         self.requires('libtrng/4.23.1')
         if self.options.gpu == 'nvidia' and self.options.nvidia_cub:
-            self.requires('nvidia-cub/1.12.0user/stable')
+            self.requires('nvidia-cub/1.12.0')
 
         if self.options.gpu == 'amd':
-            self.requires('rocThrust/5.1.0@user/stable')
+            self.requires('rocThrust/5.1.0')
 
         if self.options.memkind and self.options.metal:
             self.output.error("Metal and Memkind are mutually exclusive")
 
         if self.settings.os == "Linux":
             if self.options.memkind:
-                self.requires('memkind/1.10.1-rc1@memkind/stable')
+                self.requires('memkind/1.10.1-rc1')
 
         if self.options.metal:
-            self.requires('metall/master@user/stable')
+            self.requires('metall/master')
 
     def build(self):
         cmake = CMake(self)

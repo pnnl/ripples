@@ -2,6 +2,10 @@ add_executable(imm imm.cc)
 target_link_libraries(imm
                       spdlog::spdlog fmt::fmt libtrng::libtrng
                       nlohmann_json::nlohmann_json CLI11::CLI11 OpenMP::OpenMP_CXX)
+if (metall_FOUND)
+  target_compile_definitions(imm PRIVATE ENABLE_METAL=1)
+  target_link_libraries(imm metall::metall)
+endif()
 
 add_executable(simulator simulator.cc)
 target_link_libraries(simulator
@@ -24,6 +28,10 @@ target_link_libraries(mpi-imm
                       spdlog::spdlog fmt::fmt libtrng::libtrng
                       nlohmann_json::nlohmann_json CLI11::CLI11 OpenMP::OpenMP_CXX
                       MPI::MPI_CXX)
+if (metall_FOUND)
+  target_compile_definitions(mpi-imm PRIVATE ENABLE_METAL=1)
+  target_link_libraries(mpi-imm metall::metall)
+endif()
 
 add_executable(mpi-hill-climbing mpi-hill-climbing.cc)
 target_link_libraries(mpi-hill-climbing

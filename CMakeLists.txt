@@ -50,6 +50,7 @@ find_package(nlohmann_json REQUIRED)
 find_package(libtrng REQUIRED)
 find_package(CLI11 REQUIRED)
 find_package(Catch2 REQUIRED)
+find_package(metall)
 
 if (RIPPLES_ENABLE_CUDA)
   find_package(CUDA)

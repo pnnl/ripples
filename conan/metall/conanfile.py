@@ -13,7 +13,6 @@ class MetallConan(ConanFile):
     description = "A Persistent Memory Allocator For Data-Centric Analytics"
     topics = ("Memory Allocation")
     settings = "os", "compiler", "build_type", "arch"
-    generators = "cmake"
 
     def requirements(self):
         self.requires("boost/1.75.0")
