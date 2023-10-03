@@ -3,13 +3,11 @@ from conan.tools.cmake import CMakeDeps, CMakeToolchain, CMake, cmake_layout
 
 
 class RipplesConan(ConanFile):
-    options = {'memkind' : [ True, False],
-               'metal' : [True, False],
+    options = {'metall' : [True, False],
                'nvidia_cub' : [True, False],
                'gpu' : [None, 'amd', 'nvidia']}
-    default_options = {'memkind' : False,
-                       'nvidia_cub' : False,
-                       'metal': False,
+    default_options = {'nvidia_cub' : False,
+                       'metall': False,
                        'gpu' : None}
     settings = "os", "compiler", "build_type", "arch"
 
@@ -22,6 +20,12 @@ class RipplesConan(ConanFile):
 
     def generate(self):
         tc = CMakeToolchain(self)
+        if self.options.gpu == 'amd':
+            tc.variables['RIPPLES_ENABLE_HIP'] = True
+        if self.options.gpu == 'nvidia':
+            tc.variables['RIPPLES_ENABLE_CUDA'] = True
+        if self.options.metall:
+            tc.variables['RIPPLES_ENABLE_METALL'] = True
         tc.generate()
         deps = CMakeDeps(self)
         deps.generate()
@@ -38,14 +42,7 @@ class RipplesConan(ConanFile):
         if self.options.gpu == 'amd':
             self.requires('rocThrust/5.1.0')
 
-        if self.options.memkind and self.options.metal:
-            self.output.error("Metal and Memkind are mutually exclusive")
-
-        if self.settings.os == "Linux":
-            if self.options.memkind:
-                self.requires('memkind/1.10.1-rc1')
-
-        if self.options.metal:
+        if self.options.metall:
             self.requires('metall/master')
 
     def build(self):

@@ -36,6 +36,7 @@ endif()
 # Build Options
 option(RIPPLES_ENABLE_CUDA "Enable the NVIDIA GPU acceleration" OFF)
 option(RIPPLES_ENABLE_HIP  "Enable the HIP GPU acceleration" OFF)
+option(RIPPLES_ENABLE_METALL "Enable support for the Metall library" OFF)
 
 include_directories(${CMAKE_CURRENT_SOURCE_DIR}/include)
 
@@ -50,10 +51,11 @@ find_package(nlohmann_json REQUIRED)
 find_package(libtrng REQUIRED)
 find_package(CLI11 REQUIRED)
 find_package(Catch2 REQUIRED)
-find_package(metall)
-
+if (RIPPLES_ENABLE_METALL)
+  find_package(metall REQUIRED)
+endif()
 if (RIPPLES_ENABLE_CUDA)
-  find_package(CUDA)
+  find_package(CUDA REQUIRED)
 endif()
 
 add_subdirectory(src)
