@@ -20,12 +20,9 @@ class RipplesConan(ConanFile):
 
     def generate(self):
         tc = CMakeToolchain(self)
-        if self.options.gpu == 'amd':
-            tc.variables['RIPPLES_ENABLE_HIP'] = True
-        if self.options.gpu == 'nvidia':
-            tc.variables['RIPPLES_ENABLE_CUDA'] = True
-        if self.options.metall:
-            tc.variables['RIPPLES_ENABLE_METALL'] = True
+        tc.cache_variables['RIPPLES_ENABLE_HIP'] = self.options.gpu == 'amd'
+        tc.cache_variables['RIPPLES_ENABLE_CUDA'] = self.options.gpu == 'nvidia'
+        tc.cache_variables['RIPPLES_ENABLE_METALL'] = self.options.metall
         tc.generate()
         deps = CMakeDeps(self)
         deps.generate()
