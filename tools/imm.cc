@@ -249,9 +249,7 @@ int main(int argc, char **argv) {
         R.Theta = CFG.num_rr_sets;
 
         using vertex_type = typename ripples::GraphBwd::vertex_type;
-#if defined ENABLE_MEMKIND
-        ripples::RRRsetAllocator<vertex_type> allocator(libmemkind::kinds::DEFAULT);
-#elif defined ENABLE_METALL_RRRSETS
+#if defined ENABLE_METALL_RRRSETS
         ripples::RRRsetAllocator<vertex_type> allocator =  metall_manager_instance(CFG.rr_dir).get_allocator();
 #else
         ripples::RRRsetAllocator<vertex_type> allocator;

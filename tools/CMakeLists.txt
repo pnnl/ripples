@@ -6,10 +6,6 @@ if (metall_FOUND)
   target_compile_definitions(imm PRIVATE ENABLE_METAL=1)
   target_link_libraries(imm metall::metall)
 endif()
-if (memkind_FOUND)
-  target_compile_definitions(imm PRIVATE ENABLE_MEMKIND=1)
-  target_link_libraries(imm memkind::memkind)
-endif()
 
 add_executable(simulator simulator.cc)
 target_link_libraries(simulator
@@ -35,11 +31,6 @@ target_link_libraries(mpi-imm
 if (metall_FOUND)
   target_compile_definitions(mpi-imm PRIVATE ENABLE_METAL=1)
   target_link_libraries(mpi-imm metall::metall)
-endif()
-
-if (memkind_FOUND)
-  target_compile_definitions(mpi-imm PRIVATE ENABLE_MEMKIND=1)
-  target_link_libraries(mpi-imm memkind::memkind)
 endif()
 
 add_executable(mpi-hill-climbing mpi-hill-climbing.cc)

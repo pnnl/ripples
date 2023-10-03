@@ -51,7 +51,6 @@ find_package(libtrng REQUIRED)
 find_package(CLI11 REQUIRED)
 find_package(Catch2 REQUIRED)
 find_package(metall)
-find_package(memkind)
 
 if (RIPPLES_ENABLE_CUDA)
   find_package(CUDA)
