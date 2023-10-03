@@ -247,7 +247,15 @@ int main(int argc, char **argv) {
         size_t delta = thetaPrime;
         R.ThetaPrimeDeltas.push_back(delta);
         R.Theta = CFG.num_rr_sets;
-        ripples::RRRsetAllocator<typename ripples::GraphBwd::vertex_type> allocator;
+
+        using vertex_type = typename ripples::GraphBwd::vertex_type;
+#if defined ENABLE_MEMKIND
+        ripples::RRRsetAllocator<vertex_type> allocator(libmemkind::kinds::DEFAULT);
+#elif defined ENABLE_METALL_RRRSETS
+        ripples::RRRsetAllocator<vertex_type> allocator =  metall_manager_instance(CFG.rr_dir).get_allocator();
+#else
+        ripples::RRRsetAllocator<vertex_type> allocator;
+#endif
         std::vector<ripples::RRRset<ripples::GraphBwd>> RR;
         auto timeRRRSets = ripples::measure<>::exec_time([&]() {
           RR.insert(RR.end(), delta, ripples::RRRset<ripples::GraphBwd>(allocator));

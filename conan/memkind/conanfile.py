@@ -2,7 +2,7 @@
 
 from conan import ConanFile
 from conan.tools.gnu import AutotoolsToolchain, Autotools
-from conan.tools.files import get
+from conan.tools.files import get, replace_in_file
 
 
 class MemkindConan(ConanFile):
@@ -15,12 +15,12 @@ class MemkindConan(ConanFile):
     topics = ("<Put some tag here>", "<here>", "<and here>")
     settings = "os", "compiler", "build_type", "arch"
     options = {"shared": [True, False]}
-    default_options = "shared=False"
-    generators = "cmake"
+    default_options = {"shared": False}
 
     def source(self):
         get(self, 'https://github.com/memkind/memkind/archive/v1.10.1-rc1.tar.gz',
             strip_root=True)
+        replace_in_file(self, 'Makefile.am', 'include examples/Makefile.mk', '')
 
     def generate(self):
         autotools = AutotoolsToolchain(self)
@@ -28,6 +28,7 @@ class MemkindConan(ConanFile):
 
     def build(self):
         autotools = Autotools(self)
+        autotools.autoreconf()
         autotools.configure()
         autotools.make()
 

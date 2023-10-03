@@ -49,10 +49,24 @@
 #include "memkind_allocator.h"
 #endif
 
+#ifdef ENABLE_METALL_RRRSETS
+#include "metall/metall.hpp"
+#include "metall/container/vector.hpp"
+#endif
+
 namespace ripples {
-#ifdef ENABLE_MEMKIND
+#if defined ENABLE_MEMKIND
   template<typename vertex_type>
   using RRRsetAllocator = libmemkind::static_kind::allocator<vertex_type>;
+#elif defined ENABLE_METALL_RRRSETS
+  template<typename vertex_type>
+  using RRRsetAllocator = metall::manager::allocator_type<vertex_type>;
+
+  metall::manager &metall_manager_instance(std::string path) {
+    static metall::manager manager(metall::create_only, path.c_str());
+    return manager;
+  }
+
 #else
   template <typename vertex_type>
   using RRRsetAllocator = std::allocator<vertex_type>;
@@ -60,7 +74,14 @@ namespace ripples {
 
   //! \brief The Random Reverse Reachability Sets type
   template <typename GraphTy>
-  using RRRset = std::vector<typename GraphTy::vertex_type, RRRsetAllocator<typename GraphTy::vertex_type>>;
+  using RRRset =
+#ifdef  ENABLE_METALL_RRRSETS
+    metall::container::vector<typename GraphTy::vertex_type,
+                              RRRsetAllocator<typename GraphTy::vertex_type>>;
+#else
+  std::vector<typename GraphTy::vertex_type,
+              RRRsetAllocator<typename GraphTy::vertex_type>>;
+#endif
   template <typename GraphTy>
   using RRRsets = std::vector<RRRset<GraphTy>>;
 }
