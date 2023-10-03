@@ -21,6 +21,8 @@ class LibtrngConan(ConanFile):
             'https://github.com/rabauke/trng4/archive/refs/tags/v' + self.version + '.tar.gz',
             strip_root=True)
         replace_in_file(self, os.path.join(self.source_folder, "CMakeLists.txt"),
+                        "add_subdirectory(tests)", "")
+        replace_in_file(self, os.path.join(self.source_folder, "CMakeLists.txt"),
                         "add_subdirectory(examples)", "")
     def layout(self):
         cmake_layout(self)
