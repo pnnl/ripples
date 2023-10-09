@@ -3,7 +3,7 @@
 import os
 from conan import ConanFile
 from conan.tools.cmake import CMakeToolchain, CMake, cmake_layout
-from conan.tools.files import get, replace_in_file
+from conan.tools.scm import Git
 
 class LibtrngConan(ConanFile):
     name = "libtrng"
@@ -17,18 +17,18 @@ class LibtrngConan(ConanFile):
     default_options = {"shared" : True}
 
     def source(self):
-        get(self,
-            'https://github.com/rabauke/trng4/archive/refs/tags/v' + self.version + '.tar.gz',
-            strip_root=True)
-        replace_in_file(self, os.path.join(self.source_folder, "CMakeLists.txt"),
-                        "add_subdirectory(tests)", "")
-        replace_in_file(self, os.path.join(self.source_folder, "CMakeLists.txt"),
-                        "add_subdirectory(examples)", "")
+        git = Git(self)
+        clone_args = ['--depth', '1', '--branch', 'basic_hip_support']
+        git.clone(url='https://github.com/mminutoli/trng4.git',
+                  args=clone_args, target='.')
+
     def layout(self):
         cmake_layout(self)
 
     def generate(self):
         tc = CMakeToolchain(self)
+        tc.cache_variables['TRNG_ENABLE_EXAMPLES'] = False
+        tc.cache_variables['TRNG_ENABLE_TESTS'] = False
         tc.generate()
 
     def build(self):
