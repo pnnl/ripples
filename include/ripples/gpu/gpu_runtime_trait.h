@@ -52,7 +52,6 @@
 #error "Unsupported Runtime"
 #endif
 
-
 namespace ripples {
 enum GPURuntime { CUDA, HIP };
 
@@ -134,7 +133,8 @@ class GPURuntimeTrait<CUDA> {
   static void memset(void *const ptr, int value, size_type size) {
     cuda_memset(ptr, value, size);
   }
-  static void memset(void *const ptr, int value, size_type size, stream_type S) {
+  static void memset(void *const ptr, int value, size_type size,
+                     stream_type S) {
     cuda_memset(ptr, value, size, S);
   }
 
@@ -159,66 +159,82 @@ class GPURuntimeTrait<HIP> {
   using device_id_type = int;
   using stream_type = hipStream_t;
 
-  static void set_device(device_id_type ID) { hipSetDevice(ID); }
+  static void set_device(device_id_type ID) {
+    static_cast<void>(hipSetDevice(ID));
+  }
   static device_id_type num_devices() {
     device_id_type res;
-    hipGetDeviceCount(&res);
+    static_cast<void>(hipGetDeviceCount(&res));
     return res;
   }
   static size_type max_blocks() {
     hipDeviceProp_t prop;
-    hipGetDeviceProperties(&prop, 0);
+    static_cast<void>(hipGetDeviceProperties(&prop, 0));
     return prop.maxGridSize[0];
   }
 
   static size_type max_threads() {
     hipDeviceProp_t prop;
-    hipGetDeviceProperties(&prop, 0);
+    static_cast<void>(hipGetDeviceProperties(&prop, 0));
     return prop.maxThreadsPerBlock;
   }
 
   static stream_type create_stream() {
     stream_type S;
-    hipStreamCreate(&S);
+    static_cast<void>(hipStreamCreate(&S));
     return S;
   }
-  static void destroy_stream(stream_type &S) { hipStreamDestroy(S); }
-  static void stream_sync(stream_type &S) { hipStreamSynchronize(S); }
-  static void device_sync() { hipDeviceSynchronize(); }
-  static void device_malloc(void **P, size_t size) { hipMalloc(P, size); }
-  static void device_free(void *P) { hipFree(P); }
+  static void destroy_stream(stream_type &S) {
+    static_cast<void>(hipStreamDestroy(S));
+  }
+  static void stream_sync(stream_type &S) {
+    static_cast<void>(hipStreamSynchronize(S));
+  }
+  static void device_sync() { static_cast<void>(hipDeviceSynchronize()); }
+  static void device_malloc(void **P, size_t size) {
+    static_cast<void>(hipMalloc(P, size));
+  }
+  static void device_free(void *P) { static_cast<void>(hipFree(P)); }
   static size_t available_memory() {
     size_t total, free;
-    hipMemGetInfo(&free, &total);
+    static_cast<void>(hipMemGetInfo(&free, &total));
     return free;
   }
   static void d2h(void *const D, void *const S, size_type size) {
-    hipMemcpy(D, S, size, hipMemcpyDeviceToHost);
+    static_cast<void>(hipMemcpy(D, S, size, hipMemcpyDeviceToHost));
   }
-  static void d2h(void *const D, void *const S, size_type size, stream_type stream) {
-    hipMemcpyWithStream(D, S, size, hipMemcpyDeviceToHost, stream);
+  static void d2h(void *const D, void *const S, size_type size,
+                  stream_type stream) {
+    static_cast<void>(
+        hipMemcpyWithStream(D, S, size, hipMemcpyDeviceToHost, stream));
   }
   static void h2d(void *const D, void *const S, size_type size) {
-    hipMemcpy(D, S, size, hipMemcpyHostToDevice);
+    static_cast<void>(hipMemcpy(D, S, size, hipMemcpyHostToDevice));
   }
-  static void h2d(void *const D, void *const S, size_type size, stream_type stream) {
-    hipMemcpyWithStream(D, S, size, hipMemcpyHostToDevice, stream);
+  static void h2d(void *const D, void *const S, size_type size,
+                  stream_type stream) {
+    static_cast<void>(
+        hipMemcpyWithStream(D, S, size, hipMemcpyHostToDevice, stream));
   }
   static bool p2p_atomics(device_id_type I, device_id_type J) {
     int atomics = 0;
-    hipDeviceGetP2PAttribute(&atomics, hipDevP2PAttrNativeAtomicSupported, I,
-                             J);
+    static_cast<void>(hipDeviceGetP2PAttribute(
+        &atomics, hipDevP2PAttrNativeAtomicSupported, I, J));
     return atomics == 1;
   }
   static void memset(void *const ptr, int value, size_type size) {
-    hipMemset(ptr, value, size);
+    static_cast<void>(hipMemset(ptr, value, size));
   }
   static void memset(void *const ptr, int value, size_type size,
                      stream_type S) {
-    hipMemsetAsync(ptr, value, size, S);
+    static_cast<void>(hipMemsetAsync(ptr, value, size, S));
   }
-  static void enable_p2p(device_id_type D) { hipDeviceEnablePeerAccess(D, USE_PEER_NON_UNIFIED); }
-  static void disable_p2p(device_id_type D) { hipDeviceDisablePeerAccess(D); }
+  static void enable_p2p(device_id_type D) {
+    static_cast<void>(hipDeviceEnablePeerAccess(D, USE_PEER_NON_UNIFIED));
+  }
+  static void disable_p2p(device_id_type D) {
+    static_cast<void>(hipDeviceDisablePeerAccess(D));
+  }
 };
 #endif
 
