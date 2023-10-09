@@ -10,8 +10,7 @@ class rocThrustConan(ConanFile):
     version = "5.3.0"
     license = "APACHE 2.0"
     author = "ROCm Software Platform Repository"
-    # url = "https://nvlabs.github.io/cub/index.html"
-    description = "The hipThrust Library"
+    description = "The rocThrust Library"
     topics = ("")
     settings = "os", "compiler", "build_type", "arch"
 
