@@ -58,6 +58,7 @@ if (RIPPLES_ENABLE_CUDA)
   find_package(CUDA REQUIRED)
 endif()
 if (RIPPLES_ENABLE_HIP)
+  find_package(hip REQUIRED)
   find_package(rocthrust REQUIRED)
 endif()
 
