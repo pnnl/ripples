@@ -6,18 +6,17 @@ from conan.tools.files import get
 
 
 class rocThrustConan(ConanFile):
-    name = "rocThrust"
-    version = "5.1.0"
+    name = "rocthrust"
+    version = "5.3.0"
     license = "APACHE 2.0"
     author = "ROCm Software Platform Repository"
     # url = "https://nvlabs.github.io/cub/index.html"
     description = "The hipThrust Library"
     topics = ("")
     settings = "os", "compiler", "build_type", "arch"
-    generators = "cmake"
 
     def source(self):
-        get(self, 'https://github.com/ROCmSoftwarePlatform/rocThrust/archive/refs/tags/rocm-5.1.0.tar.gz',
+        get(self, 'https://github.com/ROCmSoftwarePlatform/rocThrust/archive/refs/tags/rocm-5.3.0.tar.gz',
             strip_root=True)
 
     def layout(self):

@@ -37,7 +37,7 @@ class RipplesConan(ConanFile):
             self.requires('nvidia-cub/1.12.0')
 
         if self.options.gpu == 'amd':
-            self.requires('rocThrust/5.1.0')
+            self.requires('rocthrust/5.3.0')
 
         if self.options.metall:
             self.requires('metall/master')
