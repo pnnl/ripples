@@ -43,12 +43,16 @@
 #if defined(RIPPLES_ENABLE_CUDA) || defined(RIPPLES_ENABLE_HIP)
 #include "ripples/gpu/gpu_graph.h"
 #include "ripples/gpu/gpu_runtime_trait.h"
+#include "thrust/count.h"
 #include "thrust/device_vector.h"
 #include "thrust/for_each.h"
 #include "thrust/host_vector.h"
+#include "thrust/iterator/constant_iterator.h"
 #include "thrust/inner_product.h"
+#include "thrust/partition.h"
 #include "thrust/random.h"
 #include "thrust/reduce.h"
+#include "thrust/sort.h"
 #include "thrust/transform_scan.h"
 
 #if defined(RIPPLES_ENABLE_CUDA)

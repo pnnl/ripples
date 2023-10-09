@@ -47,6 +47,7 @@
 
 #include "ripples/gpu/gpu_runtime_trait.h"
 
+#include "thrust/count.h"
 #include "thrust/device_ptr.h"
 #include "thrust/extrema.h"
 
