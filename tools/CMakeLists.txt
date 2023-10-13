@@ -1,4 +1,8 @@
 add_executable(imm imm.cc)
+if (RIPPLES_ENABLE_CUDA)
+  set_source_files_properties(imm.cc PROPERTIES LANGUAGE CUDA)
+  target_link_libraries(imm CUDA::cudart)
+endif()
 target_link_libraries(imm
                       spdlog::spdlog fmt::fmt libtrng::libtrng
                       nlohmann_json::nlohmann_json CLI11::CLI11 OpenMP::OpenMP_CXX)

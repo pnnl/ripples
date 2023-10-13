@@ -111,7 +111,7 @@ class GPURuntimeTrait<CUDA> {
   }
   static void destroy_stream(stream_type &S) { cuda_stream_destroy(S); }
   static void stream_sync(stream_type &S) { cuda_sync(S); }
-  static void device_sync(stream_type &S) { cuda_device_sync(); }
+  static void device_sync() { cuda_device_sync(); }
   static void device_malloc(void **P, size_t size) { cuda_malloc(P, size); }
   static void device_free(void *P) { cuda_free(P); }
   static size_type available_memory() { return cuda_available_memory(); }

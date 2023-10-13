@@ -52,6 +52,7 @@
 #include "ripples/imm_interface.h"
 #include "ripples/imm.h"
 
+#include "nlohmann/json.hpp"
 #include "spdlog/fmt/ostr.h"
 #include "spdlog/sinks/stdout_color_sinks.h"
 #include "spdlog/spdlog.h"
