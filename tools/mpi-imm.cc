@@ -63,6 +63,16 @@
 
 namespace ripples {
 
+template <typename TimeTy>
+std::vector<double> ConvertToCounts(const TimeTy &times){
+  std::vector<double> counts;
+  counts.reserve(times.size());
+  for(auto time : times){
+    counts.push_back(time.count());
+  }
+  return counts;
+}
+
 template <typename SeedSet>
 auto GetExperimentRecord(const ToolConfiguration<IMMConfiguration> &CFG,
                          const IMMExecutionRecord &R, const SeedSet &seeds) {
@@ -86,17 +96,17 @@ auto GetExperimentRecord(const ToolConfiguration<IMMConfiguration> &CFG,
       {"NumWalkWorkers", CFG.streaming_workers},
       {"NumCPUTeams", CFG.streaming_cpu_teams},
       {"NumGPUWalkWorkers", CFG.streaming_gpu_workers},
-      {"Total", R.Total},
+      {"Total", R.Total.count()},
       {"ThetaPrimeDeltas", R.ThetaPrimeDeltas},
-      {"ThetaEstimation", R.ThetaEstimationTotal},
-      {"ThetaEstimationGenerateRRR", R.ThetaEstimationGenerateRRR},
-      {"ThetaEstimationMostInfluential", R.ThetaEstimationMostInfluential},
+      {"ThetaEstimation", R.ThetaEstimationTotal.count()},
+      {"ThetaEstimationGenerateRRR", ConvertToCounts(R.ThetaEstimationGenerateRRR)},
+      {"ThetaEstimationMostInfluential", ConvertToCounts(R.ThetaEstimationMostInfluential)},
       {"Theta", R.Theta},
-      {"Microbenchmarking", R.Microbenchmarking},
+      {"Microbenchmarking", R.Microbenchmarking.count()},
       {"CPUBatchSize", R.CPUBatchSize},
       {"GPUBatchSize", R.GPUBatchSize},
-      {"GenerateRRRSets", R.GenerateRRRSets},
-      {"FindMostInfluentialSet", R.FindMostInfluentialSet},
+      {"GenerateRRRSets", R.GenerateRRRSets.count()},
+      {"FindMostInfluentialSet", R.FindMostInfluentialSet.count()},
       {"Seeds", seeds}};
   return experiment;
 }

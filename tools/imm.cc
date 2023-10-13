@@ -82,6 +82,16 @@ auto GetWalkIterationRecord(
   return res;
 }
 
+template <typename TimeTy>
+std::vector<double> ConvertToCounts(const TimeTy &times){
+  std::vector<double> counts;
+  counts.reserve(times.size());
+  for(auto time : times){
+    counts.push_back(time.count());
+  }
+  return counts;
+}
+
 template <typename SeedSet>
 auto GetExperimentRecord(const ToolConfiguration<IMMConfiguration> &CFG,
                          const IMMExecutionRecord &R, const SeedSet &seeds) {
@@ -101,11 +111,11 @@ auto GetExperimentRecord(const ToolConfiguration<IMMConfiguration> &CFG,
       {"Total", R.Total.count()},
       {"ThetaPrimeDeltas", R.ThetaPrimeDeltas},
       {"ThetaEstimation", R.ThetaEstimationTotal.count()},
-      // {"ThetaEstimationGenerateRRR", R.ThetaEstimationGenerateRRR},
-      // {"ThetaEstimationMostInfluential", R.ThetaEstimationMostInfluential},
+      {"ThetaEstimationGenerateRRR", ConvertToCounts(R.ThetaEstimationGenerateRRR)},
+      {"ThetaEstimationMostInfluential", ConvertToCounts(R.ThetaEstimationMostInfluential)},
       {"Theta", R.Theta},
-      // {"Counting", R.Counting},
-      // {"Pivoting", R.Pivoting},
+      {"Counting", ConvertToCounts(R.Counting)},
+      {"Pivoting", ConvertToCounts(R.Pivoting)},
       {"Microbenchmarking", R.Microbenchmarking.count()},
       {"CPUBatchSize", R.CPUBatchSize},
       {"GPUBatchSize", R.GPUBatchSize},
