@@ -48,8 +48,8 @@
 
 #if defined(RIPPLES_ENABLE_CUDA) || defined(RIPPLES_ENABLE_HIP)
 #include "ripples/gpu/find_most_influential.h"
-#include "ripples/gpu/gpu_graph."
-#include "ripples/gpu_runtime_trait.h"
+#include "ripples/gpu/gpu_graph.h"
+#include "ripples/gpu/gpu_runtime_trait.h"
 #endif
 #include "spdlog/spdlog.h"
 
