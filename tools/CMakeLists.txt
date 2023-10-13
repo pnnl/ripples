@@ -5,11 +5,17 @@ if (RIPPLES_ENABLE_CUDA)
 endif()
 target_link_libraries(imm
                       spdlog::spdlog fmt::fmt libtrng::libtrng
-                      nlohmann_json::nlohmann_json CLI11::CLI11 OpenMP::OpenMP_CXX)
+                      nlohmann_json::nlohmann_json CLI11::CLI11 OpenMP::OpenMP_CXX
+                      infmax)
 if (metall_FOUND)
   target_compile_definitions(imm PRIVATE ENABLE_METAL=1)
   target_link_libraries(imm metall::metall)
 endif()
+
+target_compile_definitions(imm PRIVATE
+                           $<IF:$<BOOL:${RIPPLES_ENABLE_CUDA}>, RIPPLES_ENABLE_CUDA=1,>
+                           $<IF:$<BOOL:${RIPPLES_ENABLE_HIP}>, RIPPLES_ENABLE_HIP=1,>)
+
 
 add_executable(simulator simulator.cc)
 target_link_libraries(simulator

@@ -88,6 +88,33 @@ __device__ __forceinline__ unsigned int ffs(uint64_t x) {
   return __ffsll((unsigned long long int)x);
 }
 
+template <GPURuntime R>
+struct intrinsic;
+
+template<>
+struct intrinsic<CUDA>{
+  template <typename T>
+  __device__ static T shfl_sync(T var, int delta) {
+    return __shfl_sync(0xffffffff, var, delta);
+  }
+  template <typename T>
+  __device__ static T ballot_sync(T var) {
+    return __ballot_sync(0xffffffff, var);
+  }
+};
+
+template<>
+struct intrinsic<HIP>{
+  template <typename T>
+  __device__ static T shfl_sync(T var, int delta) {
+    return __shfl(var, delta);
+  }
+  template <typename T>
+  __device__ static T ballot_sync(T var) {
+    return __ballot(var);
+  }
+};
+
 //! \brief Get a color mask from a color ID.
 template <typename T>
 __device__ __forceinline__ T getColorMask(T color) {
@@ -354,7 +381,7 @@ __global__ void sim_step_block_kernel(
         color_mask = true;
       }
     }
-    color_type newColors = __ballot(color_mask);
+    color_type newColors = intrinsic<R>::ballot_sync(color_mask);
     if(tid % warpSize == 0){
       if(newColors != 0) {
         const vertex_type offset = vertex * NumBlocks + color_set_id;
@@ -484,7 +511,7 @@ __global__ void fused_color_set_scatter_kernel(
 }
 
 // #if defined(RIPPLES_ENABLE_HIP) && (HIP_VERSION <= 5 * 10000000 + 1 * 100000 + 0)
-#if defined(RIPPLES_ENABLE_HIP)
+// #if defined(RIPPLES_ENABLE_HIP)
 // Workaround for HIP 5.1.0 divergent warp lanes
 template <GPURuntime R,
           typename GraphTy,
@@ -528,8 +555,8 @@ __global__ void build_frontier_queues_kernel(
     frontier_colors = old_visited ^ new_visited;
     visited_matrix[global_id] = new_visited;
   }
-  // __warp tid in __ballot returns least significant bit as 0th lane
-  WarpMaskTy frontier_mask = __ballot(frontier_colors != 0);
+  // __warp tid in intrinsic<R>::ballot_sync returns least significant bit as 0th lane
+  WarpMaskTy frontier_mask = intrinsic<R>::ballot_sync(frontier_colors != 0);
   // Create bitmask of 1 values for each color in the warp
   WarpMaskTy warp_color_mask = (((WarpMaskTy)1 << color_dim) - 1) << (color_set * color_dim);
   // Create bitmask of threads in warp that have a frontier vertex
@@ -566,13 +593,13 @@ __global__ void build_frontier_queues_kernel(
   #pragma unroll
   for(int i = 0; i < frontier_bins; i++){
     vertex_type offset;
-    WarpMaskTy active_threads = __ballot(color_id == 0 && frontier_bin == i);
+    WarpMaskTy active_threads = intrinsic<R>::ballot_sync(color_id == 0 && frontier_bin == i);
     uint32_t thread_leader = ffs(active_threads) - 1;
     WarpMaskTy offset_mask = active_threads & warp_offset_mask;
     if(warp_tid == thread_leader){
       offset = atomicAdd(frontier_offsets + i, popcount(active_threads));
     }
-    offset = __shfl(offset, thread_leader);
+    offset = intrinsic<R>::shfl_sync(offset, thread_leader);
     offset += popcount(offset_mask);
     if(frontier_bin == i){
       vertex_frontier[offset] = vertex_id;
@@ -581,123 +608,123 @@ __global__ void build_frontier_queues_kernel(
     }
   }
 }
-#else
-template <GPURuntime R,
-          typename GraphTy,
-          typename ColorTy,
-          typename WarpMaskTy>
-__global__ void build_frontier_queues_kernel(
-    const typename GraphTy::vertex_type * __restrict__ index,
-    const typename GraphTy::vertex_type * __restrict__ edges,
-    typename GraphTy::vertex_type * __restrict__ small_frontier,
-    typename GraphTy::vertex_type * __restrict__ medium_frontier,
-    typename GraphTy::vertex_type * __restrict__ large_frontier,
-    typename GraphTy::vertex_type * __restrict__ extreme_frontier,
-    ColorTy * __restrict__ small_color,
-    ColorTy * __restrict__ medium_color,
-    ColorTy * __restrict__ large_color,
-    ColorTy * __restrict__ extreme_color,
-    ColorTy * __restrict__ visited_matrix,
-    const ColorTy * __restrict__ frontier_matrix,
-    typename GraphTy::vertex_type * __restrict__ frontier_offsets,
-    const size_t num_nodes,
-    const size_t num_colors,
-    const size_t color_dim) {
-  using vertex_type = typename GraphTy::vertex_type;
-  using color_type = ColorTy;
+// #else
+// template <GPURuntime R,
+//           typename GraphTy,
+//           typename ColorTy,
+//           typename WarpMaskTy>
+// __global__ void build_frontier_queues_kernel(
+//     const typename GraphTy::vertex_type * __restrict__ index,
+//     const typename GraphTy::vertex_type * __restrict__ edges,
+//     typename GraphTy::vertex_type * __restrict__ small_frontier,
+//     typename GraphTy::vertex_type * __restrict__ medium_frontier,
+//     typename GraphTy::vertex_type * __restrict__ large_frontier,
+//     typename GraphTy::vertex_type * __restrict__ extreme_frontier,
+//     ColorTy * __restrict__ small_color,
+//     ColorTy * __restrict__ medium_color,
+//     ColorTy * __restrict__ large_color,
+//     ColorTy * __restrict__ extreme_color,
+//     ColorTy * __restrict__ visited_matrix,
+//     const ColorTy * __restrict__ frontier_matrix,
+//     typename GraphTy::vertex_type * __restrict__ frontier_offsets,
+//     const size_t num_nodes,
+//     const size_t num_colors,
+//     const size_t color_dim) {
+//   using vertex_type = typename GraphTy::vertex_type;
+//   using color_type = ColorTy;
 
-  constexpr size_t color_size = sizeof(color_type) * 8;
+//   constexpr size_t color_size = sizeof(color_type) * 8;
 
-  // Warp/block-parallel scatter  
-  const int tid = threadIdx.x;
-  const int bid = blockIdx.x;
-  const int global_id = tid + bid * blockDim.x;
-  const int warp_tid = tid % warpSize;
-  const int color_set = warp_tid / color_dim;
-  const int color_id = warp_tid % color_dim;
-  const vertex_type vertex_id = global_id / color_dim;
-  if (vertex_id < num_nodes){
-    color_type old_visited = visited_matrix[global_id];
-    color_type new_visited = frontier_matrix[global_id];
-    color_type frontier_colors = old_visited ^ new_visited;
-    visited_matrix[global_id] = new_visited | old_visited;
-    // __warp tid in __ballot returns least significant bit as 0th lane
-    WarpMaskTy frontier_mask = __ballot(frontier_colors != 0);
-    // Create bitmask of 1 values for each color in the warp
-    WarpMaskTy warp_color_mask = (((WarpMaskTy)1 << color_dim) - 1) << (color_set * color_dim);
-    // Create bitmask of threads in warp that have a frontier vertex
-    WarpMaskTy frontier_mask_filtered = frontier_mask & warp_color_mask;
-    WarpMaskTy warp_offset_mask = ((WarpMaskTy)1 << color_set * color_dim) - 1;
+//   // Warp/block-parallel scatter  
+//   const int tid = threadIdx.x;
+//   const int bid = blockIdx.x;
+//   const int global_id = tid + bid * blockDim.x;
+//   const int warp_tid = tid % warpSize;
+//   const int color_set = warp_tid / color_dim;
+//   const int color_id = warp_tid % color_dim;
+//   const vertex_type vertex_id = global_id / color_dim;
+//   if (vertex_id < num_nodes){
+//     color_type old_visited = visited_matrix[global_id];
+//     color_type new_visited = frontier_matrix[global_id];
+//     color_type frontier_colors = old_visited ^ new_visited;
+//     visited_matrix[global_id] = new_visited | old_visited;
+//     // __warp tid in intrinsic<R>::ballot_sync returns least significant bit as 0th lane
+//     WarpMaskTy frontier_mask = intrinsic<R>::ballot_sync(frontier_colors != 0);
+//     // Create bitmask of 1 values for each color in the warp
+//     WarpMaskTy warp_color_mask = (((WarpMaskTy)1 << color_dim) - 1) << (color_set * color_dim);
+//     // Create bitmask of threads in warp that have a frontier vertex
+//     WarpMaskTy frontier_mask_filtered = frontier_mask & warp_color_mask;
+//     WarpMaskTy warp_offset_mask = ((WarpMaskTy)1 << color_set * color_dim) - 1;
 
-    if(frontier_mask_filtered){
-      // Retrieve outdegree
-      vertex_type start = index[vertex_id];
-      vertex_type end = index[vertex_id + 1];
-      vertex_type outdegree = end - start;
-      // Find block-wide offsets for each frontier queue
-      vertex_type offset;
-      if(outdegree < 64/color_dim){
-        if(color_id == 0){
-          WarpMaskTy active_threads = __ballot(1);
-          uint32_t thread_leader = ffs(active_threads) - 1;
-          WarpMaskTy offset_mask = active_threads & warp_offset_mask;
-          if(warp_tid == thread_leader){
-            offset = atomicAdd(frontier_offsets, popcount(active_threads));
-          }
-          offset = __shfl(offset, thread_leader);
-          offset += popcount(offset_mask);
-          small_frontier[offset] = vertex_id;
-        }
-        offset = __shfl(offset, color_set * color_dim) * color_dim;
-        small_color[offset + color_id] = frontier_colors;
-      } else if(outdegree < 256/color_dim){
-        if(color_id == 0){
-          WarpMaskTy active_threads = __ballot(1);
-          uint32_t thread_leader = ffs(active_threads) - 1;
-          WarpMaskTy offset_mask = active_threads & warp_offset_mask;
-          if(warp_tid == thread_leader){
-            offset = atomicAdd(frontier_offsets + 1, popcount(active_threads));
-          }
-          offset = __shfl(offset, thread_leader);
-          offset += popcount(offset_mask);
-          medium_frontier[offset] = vertex_id;
-        }
-        offset = __shfl(offset, color_set * color_dim) * color_dim;
-        medium_color[offset + color_id] = frontier_colors;
-      } else if(outdegree < 65536/color_dim){
-        if(color_id == 0){
-          WarpMaskTy active_threads = __ballot(1);
-          uint32_t thread_leader = ffs(active_threads) - 1;
-          WarpMaskTy offset_mask = active_threads & warp_offset_mask;
-          if(warp_tid == thread_leader){
-            offset = atomicAdd(frontier_offsets + 2, popcount(active_threads));
-          }
-          offset = __shfl(offset, thread_leader);
-          offset += popcount(offset_mask);
-          large_frontier[offset] = vertex_id;
-        }
-        offset = __shfl(offset, color_set * color_dim) * color_dim;
-        large_color[offset + color_id] = frontier_colors;
-      } else {
-        if(color_id == 0){
-          WarpMaskTy active_threads = __ballot(1);
-          uint32_t thread_leader = ffs(active_threads) - 1;
-          WarpMaskTy offset_mask = active_threads & warp_offset_mask;
-          if(warp_tid == thread_leader){
-            offset = atomicAdd(frontier_offsets + 3, popcount(active_threads));
-          }
-          offset = __shfl(offset, thread_leader);
-          offset += popcount(offset_mask);
-          extreme_frontier[offset] = vertex_id;
-        }
-        offset = __shfl(offset, color_set * color_dim) * color_dim;
-        extreme_color[offset + color_id] = frontier_colors;
-      }
-      // Share outdegree with warps in warp_color_mask
-    }
-  }
-}
-#endif // HIP_VERSION Check
+//     if(frontier_mask_filtered){
+//       // Retrieve outdegree
+//       vertex_type start = index[vertex_id];
+//       vertex_type end = index[vertex_id + 1];
+//       vertex_type outdegree = end - start;
+//       // Find block-wide offsets for each frontier queue
+//       vertex_type offset;
+//       if(outdegree < 64/color_dim){
+//         if(color_id == 0){
+//           WarpMaskTy active_threads = intrinsic<R>::ballot_sync(1);
+//           uint32_t thread_leader = ffs(active_threads) - 1;
+//           WarpMaskTy offset_mask = active_threads & warp_offset_mask;
+//           if(warp_tid == thread_leader){
+//             offset = atomicAdd(frontier_offsets, popcount(active_threads));
+//           }
+//           offset = intrinsic<R>::shfl_sync(offset, thread_leader);
+//           offset += popcount(offset_mask);
+//           small_frontier[offset] = vertex_id;
+//         }
+//         offset = intrinsic<R>::shfl_sync(offset, color_set * color_dim) * color_dim;
+//         small_color[offset + color_id] = frontier_colors;
+//       } else if(outdegree < 256/color_dim){
+//         if(color_id == 0){
+//           WarpMaskTy active_threads = intrinsic<R>::ballot_sync(1);
+//           uint32_t thread_leader = ffs(active_threads) - 1;
+//           WarpMaskTy offset_mask = active_threads & warp_offset_mask;
+//           if(warp_tid == thread_leader){
+//             offset = atomicAdd(frontier_offsets + 1, popcount(active_threads));
+//           }
+//           offset = intrinsic<R>::shfl_sync(offset, thread_leader);
+//           offset += popcount(offset_mask);
+//           medium_frontier[offset] = vertex_id;
+//         }
+//         offset = intrinsic<R>::shfl_sync(offset, color_set * color_dim) * color_dim;
+//         medium_color[offset + color_id] = frontier_colors;
+//       } else if(outdegree < 65536/color_dim){
+//         if(color_id == 0){
+//           WarpMaskTy active_threads = intrinsic<R>::ballot_sync(1);
+//           uint32_t thread_leader = ffs(active_threads) - 1;
+//           WarpMaskTy offset_mask = active_threads & warp_offset_mask;
+//           if(warp_tid == thread_leader){
+//             offset = atomicAdd(frontier_offsets + 2, popcount(active_threads));
+//           }
+//           offset = intrinsic<R>::shfl_sync(offset, thread_leader);
+//           offset += popcount(offset_mask);
+//           large_frontier[offset] = vertex_id;
+//         }
+//         offset = intrinsic<R>::shfl_sync(offset, color_set * color_dim) * color_dim;
+//         large_color[offset + color_id] = frontier_colors;
+//       } else {
+//         if(color_id == 0){
+//           WarpMaskTy active_threads = intrinsic<R>::ballot_sync(1);
+//           uint32_t thread_leader = ffs(active_threads) - 1;
+//           WarpMaskTy offset_mask = active_threads & warp_offset_mask;
+//           if(warp_tid == thread_leader){
+//             offset = atomicAdd(frontier_offsets + 3, popcount(active_threads));
+//           }
+//           offset = intrinsic<R>::shfl_sync(offset, thread_leader);
+//           offset += popcount(offset_mask);
+//           extreme_frontier[offset] = vertex_id;
+//         }
+//         offset = intrinsic<R>::shfl_sync(offset, color_set * color_dim) * color_dim;
+//         extreme_color[offset + color_id] = frontier_colors;
+//       }
+//       // Share outdegree with warps in warp_color_mask
+//     }
+//   }
+// }
+// #endif // HIP_VERSION Check
 
 template <GPURuntime R,
           typename GraphTy,
@@ -751,8 +778,8 @@ __global__ void build_frontier_queues_kernel_check(
       active_colors |= frontier_colors;
       visited_matrix[global_id] = new_visited;
     }
-    // __warp tid in __ballot returns least significant bit as 0th lane
-    WarpMaskTy frontier_mask = __ballot(frontier_colors != 0);
+    // __warp tid in intrinsic<R>::ballot_sync returns least significant bit as 0th lane
+    WarpMaskTy frontier_mask = intrinsic<R>::ballot_sync(frontier_colors != 0);
     // Create bitmask of 1 values for each color in the warp
     WarpMaskTy warp_color_mask = (((WarpMaskTy)1 << color_dim) - 1) << (color_set * color_dim);
     // Create bitmask of threads in warp that have a frontier vertex
@@ -789,13 +816,13 @@ __global__ void build_frontier_queues_kernel_check(
     #pragma unroll
     for(int i = 0; i < frontier_bins; i++){
       vertex_type offset;
-      WarpMaskTy active_threads = __ballot(color_id == 0 && frontier_bin == i);
+      WarpMaskTy active_threads = intrinsic<R>::ballot_sync(color_id == 0 && frontier_bin == i);
       uint32_t thread_leader = ffs(active_threads) - 1;
       WarpMaskTy offset_mask = active_threads & warp_offset_mask;
       if(warp_tid == thread_leader){
         offset = atomicAdd(frontier_offsets + i, popcount(active_threads));
       }
-      offset = __shfl(offset, thread_leader);
+      offset = intrinsic<R>::shfl_sync(offset, thread_leader);
       offset += popcount(offset_mask);
       if(frontier_bin == i){
         vertex_frontier[offset] = vertex_id;

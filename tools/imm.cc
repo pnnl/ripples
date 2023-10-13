@@ -63,21 +63,21 @@ namespace ripples {
 
 auto GetWalkIterationRecord(
     const typename IMMExecutionRecord::walk_iteration_prof &iter) {
-  nlohmann::json res{{"NumSets", iter.NumSets}, {"Total", iter.Total}};
+  nlohmann::json res{{"NumSets", iter.NumSets}, {"Total", iter.Total.count()}};
   for (size_t wi = 0; wi < iter.CPUWalks.size(); ++wi) {
     std::stringstream wname;
     wname << "CPU Worker " << wi;
     res[wname.str()] = nlohmann::json{{"NumSets", iter.CPUWalks[wi].NumSets},
-                                      {"Total", iter.CPUWalks[wi].Total}};
+                                      {"Total", iter.CPUWalks[wi].Total.count()}};
   }
   for (size_t wi = 0; wi < iter.GPUWalks.size(); ++wi) {
     std::stringstream wname;
     wname << "GPU Worker " << wi;
     res[wname.str()] = nlohmann::json{{"NumSets", iter.GPUWalks[wi].NumSets},
-                                      {"Total", iter.GPUWalks[wi].Total},
-                                      {"Kernel", iter.GPUWalks[wi].Kernel},
-                                      {"D2H", iter.GPUWalks[wi].D2H},
-                                      {"Post", iter.GPUWalks[wi].Post}};
+                                      {"Total", iter.GPUWalks[wi].Total.count()},
+                                      {"Kernel", iter.GPUWalks[wi].Kernel.count()},
+                                      {"D2H", iter.GPUWalks[wi].D2H.count()},
+                                      {"Post", iter.GPUWalks[wi].Post.count()}};
   }
   return res;
 }
@@ -98,20 +98,20 @@ auto GetExperimentRecord(const ToolConfiguration<IMMConfiguration> &CFG,
       {"NumCPUTeams", CFG.streaming_cpu_teams},
       {"NumGPUWalkWorkers", CFG.streaming_gpu_workers},
       {"PauseThreshold", CFG.pause_threshold},
-      {"Total", R.Total},
+      {"Total", R.Total.count()},
       {"ThetaPrimeDeltas", R.ThetaPrimeDeltas},
-      {"ThetaEstimation", R.ThetaEstimationTotal},
-      {"ThetaEstimationGenerateRRR", R.ThetaEstimationGenerateRRR},
-      {"ThetaEstimationMostInfluential", R.ThetaEstimationMostInfluential},
+      {"ThetaEstimation", R.ThetaEstimationTotal.count()},
+      // {"ThetaEstimationGenerateRRR", R.ThetaEstimationGenerateRRR},
+      // {"ThetaEstimationMostInfluential", R.ThetaEstimationMostInfluential},
       {"Theta", R.Theta},
-      {"Counting", R.Counting},
-      {"Pivoting", R.Pivoting},
-      {"Microbenchmarking", R.Microbenchmarking},
+      // {"Counting", R.Counting},
+      // {"Pivoting", R.Pivoting},
+      {"Microbenchmarking", R.Microbenchmarking.count()},
       {"CPUBatchSize", R.CPUBatchSize},
       {"GPUBatchSize", R.GPUBatchSize},
       {"RRRSetSizeBytes", R.RRRSetSize},
-      {"GenerateRRRSets", R.GenerateRRRSets},
-      {"FindMostInfluentialSet", R.FindMostInfluentialSet},
+      {"GenerateRRRSets", R.GenerateRRRSets.count()},
+      {"FindMostInfluentialSet", R.FindMostInfluentialSet.count()},
       {"Seeds", seeds}};
   for (auto &ri : R.WalkIterations) {
     experiment["Iterations"].push_back(GetWalkIterationRecord(ri));

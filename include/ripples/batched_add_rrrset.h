@@ -250,7 +250,7 @@ void BatchedBFSNeighborColorOMP(const GraphTy &G, SItrTy B, SItrTy E, OItrTy O,
                 ColorTy color_type) {
   size_t rank = omp_get_thread_num();
   constexpr ColorTy color_size = sizeof(ColorTy) * 8;
-  assert(std::distance(B, E) <= num_colors && "Only up to 64 BFS are supported");
+  assert(std::distance(B, E) <= color_size && "Only up to 64 BFS are supported");
   // std::cout << "Num threads: " << num_threads << std::endl;
   // std::cout << "omp rank: " << omp_get_thread_num() << std::endl; 
   using vertex_type = typename GraphTy::vertex_type;

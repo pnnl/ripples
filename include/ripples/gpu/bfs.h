@@ -1863,29 +1863,29 @@ void GPUCalculateDegrees(GraphTy &G, const DeviceContextTy &Context, diff_model_
   thrust::transform(thrust::device, thrust::make_counting_iterator<vertex_type>(0),
                     thrust::make_counting_iterator<vertex_type>(G.num_nodes()),
                     numTotalNeighbors.begin(),
-                    [d_index](const vertex_type &FE) {
+                    [d_index] __device__  (const vertex_type &FE) {
                       return d_index[FE + 1] - d_index[FE];
                     });
   small_neighbors = thrust::count_if(
       thrust::device, numTotalNeighbors.begin(), numTotalNeighbors.end(),
-      [small_threshold = SMALL_THRESHOLD](const vertex_type &FE) {
+      [small_threshold = SMALL_THRESHOLD] __device__ (const vertex_type &FE) {
         return FE < small_threshold;
       });
   medium_neighbors = thrust::count_if(
       thrust::device, numTotalNeighbors.begin(), numTotalNeighbors.end(),
       [small_threshold = SMALL_THRESHOLD,
-       medium_threshold = MEDIUM_THRESHOLD](const vertex_type &FE) {
+       medium_threshold = MEDIUM_THRESHOLD] __device__ (const vertex_type &FE) {
         return FE >= small_threshold && FE < medium_threshold;
       });
   large_neighbors = thrust::count_if(
       thrust::device, numTotalNeighbors.begin(), numTotalNeighbors.end(),
       [medium_threshold = MEDIUM_THRESHOLD,
-       large_threshold = LARGE_THRESHOLD](const vertex_type &FE) {
+       large_threshold = LARGE_THRESHOLD] __device__ (const vertex_type &FE) {
         return FE >= medium_threshold && FE < large_threshold;
       });
   extreme_neighbors = thrust::count_if(
       thrust::device, numTotalNeighbors.begin(), numTotalNeighbors.end(),
-      [large_threshold = LARGE_THRESHOLD](const vertex_type &FE) {
+      [large_threshold = LARGE_THRESHOLD] __device__ (const vertex_type &FE) {
         return FE >= large_threshold;
       });
   // Print out the number of vertices with each number of neighbors

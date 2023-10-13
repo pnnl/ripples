@@ -1,7 +1,9 @@
 add_library(gpu_ripples
-            gpu_graph.cc lt_kernel.cc find_most_influential.cc generate_rrr_sets.cc)
+            gpu_graph.cc lt_kernel.cc find_most_influential.cc generate_rrr_sets.cc
+            $<IF:$<BOOL:${RIPPLES_ENABLE_CUDA}>, cuda_utils.cu,>)
 if (RIPPLES_ENABLE_CUDA)
   set_source_files_properties(gpu_graph.cc lt_kernel.cc find_most_influential.cc generate_rrr_sets.cc
+                              $<IF:$<BOOL:${RIPPLES_ENABLE_CUDA}>, cuda_utils.cu,>
                               PROPERTIES LANGUAGE CUDA)
 endif()
 target_compile_definitions(gpu_ripples PUBLIC
