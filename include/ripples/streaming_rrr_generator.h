@@ -854,7 +854,8 @@ class StreamingRRRGenerator {
       cpu_threads_per_team_ = num_cpu_workers_ / num_cpu_teams_;
     }
     else{
-      cpu_threads_per_team_ = 0;
+      cpu_threads_per_team_ = 1;
+      num_cpu_teams_ = num_cpu_workers_;
     }
     for (size_t omp_num = 0; omp_num < num_cpu_teams_ + num_gpu_workers;
          ++omp_num) {
