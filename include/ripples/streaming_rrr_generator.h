@@ -411,7 +411,20 @@ class GPUWalkWorker<GraphTy, PRNGeneratorTy, ItrTy, linear_threshold_tag>
   }
   #ifdef REORDERING
   void svc_loop(std::atomic<size_t> &mpmc_head, ItrTy begin, ItrTy end, typename std::vector<vertex_t>::iterator root_nodes_begin,
-                size_t batch_size = 1 << 15) {}
+                size_t batch_size = 1 << 15) {
+    GPU<RUNTIME>::set_device(gpu_ctx_->gpu_id);
+    size_t offset = 0;
+    auto batch_size_lt = conf_.num_gpu_threads();
+    while ((offset = mpmc_head.fetch_add(batch_size_lt)) <
+           std::distance(begin, end)) {
+      auto first = begin;
+      std::advance(first, offset);
+      auto last = first;
+      std::advance(last, batch_size_lt);
+      if (last > end) last = end;
+      batch(first, last);
+    }
+  }
   #endif
 
   size_t batch_size() const { return conf_.num_gpu_threads(); }
