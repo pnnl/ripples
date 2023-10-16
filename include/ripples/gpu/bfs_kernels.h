@@ -80,7 +80,7 @@ __device__ __forceinline__ int clz(uint64_t x) {
   return __clzll(x);
 }
 
-__device__ __forceinline__ int ffs(uint32_t x) {
+__device__ __forceinline__ unsigned int ffs(uint32_t x) {
   return __ffs((uint32_t)x);
 }
 
@@ -98,8 +98,12 @@ struct intrinsic<CUDA>{
     return __shfl_sync(0xffffffff, var, delta);
   }
   template <typename T>
-  __device__ static T ballot_sync(T var) {
+  __device__ static unsigned int ballot_sync(T var) {
     return __ballot_sync(0xffffffff, var);
+  }
+  template <typename T>
+  __device__ static T shfl_down_sync(T var, int delta, int width=warpSize) {
+    return __shfl_down_sync(0xffffffff, var, delta, width);
   }
 };
 
@@ -110,8 +114,12 @@ struct intrinsic<HIP>{
     return __shfl(var, delta);
   }
   template <typename T>
-  __device__ static T ballot_sync(T var) {
+  __device__ static unsigned long long ballot_sync(T var) {
     return __ballot(var);
+  }
+  template <typename T>
+  __device__ static T shfl_down_sync(T var, int delta, int width=warpSize) {
+    return __shfl_down(var, delta, width);
   }
 };
 
@@ -558,10 +566,10 @@ __global__ void build_frontier_queues_kernel(
   // __warp tid in intrinsic<R>::ballot_sync returns least significant bit as 0th lane
   WarpMaskTy frontier_mask = intrinsic<R>::ballot_sync(frontier_colors != 0);
   // Create bitmask of 1 values for each color in the warp
-  WarpMaskTy warp_color_mask = (((WarpMaskTy)1 << color_dim) - 1) << (color_set * color_dim);
+  WarpMaskTy warp_color_mask = (((WarpMaskTy)1 << (WarpMaskTy)color_dim) - 1) << (WarpMaskTy)(color_set * color_dim);
   // Create bitmask of threads in warp that have a frontier vertex
   WarpMaskTy frontier_mask_filtered = frontier_mask & warp_color_mask;
-  WarpMaskTy warp_offset_mask = ((WarpMaskTy)1 << color_set * color_dim) - 1;
+  WarpMaskTy warp_offset_mask = ((WarpMaskTy)1 << color_set * (WarpMaskTy)color_dim) - 1;
   vertex_type *vertex_frontier;
   ColorTy *color_frontier;
 
@@ -571,7 +579,7 @@ __global__ void build_frontier_queues_kernel(
     vertex_type end = index[vertex_id + 1];
     vertex_type outdegree = end - start;
     // Find block-wide offsets for each frontier queue
-    if(outdegree < 64/color_dim){
+    if(outdegree < warpSize/color_dim){
       vertex_frontier = small_frontier;
       color_frontier = small_color;
       frontier_bin = 0;
@@ -833,7 +841,7 @@ __global__ void build_frontier_queues_kernel_check(
   }
   // bitwise-OR all threads with the same color_id
   for(int offset = warpSize / 2; offset >= color_dim; offset /= 2){
-    active_colors |= __shfl_down(active_colors, offset, warpSize);
+    active_colors |= intrinsic<R>::shfl_down_sync(active_colors, offset, warpSize);
   }
   // Store in shared memory so all colors are contiguous
   // Color 0, Color 0, Color 1, Color 1, ...
@@ -894,7 +902,7 @@ __global__ void build_frontier_matrix_kernel(
   }
   // bitwise-OR all threads with the same color_id
   for(int offset = warpSize / 2; offset >= color_dim; offset /= 2){
-    active_colors |= __shfl_down(active_colors, offset, warpSize);
+    active_colors |= intrinsic<R>::shfl_down_sync(active_colors, offset, warpSize);
   }
   // Store in shared memory so all colors are contiguous
   // Color 0, Color 0, Color 1, Color 1, ...

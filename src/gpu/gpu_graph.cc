@@ -112,6 +112,7 @@ gpu_graph<R, GraphTy> *make_gpu_graph(const GraphTy &hg) {
 #error "Unsupported GPU runtime"
 #endif
 
+  GPU<R>::device_sync();
   GPU<R>::device_free(d_weighted_edges);
   GPU<R>::device_free(d_index);
 

@@ -842,8 +842,11 @@ void GPUBatchedScanBFS(GraphTy &G, const DeviceContextTy &Context, SItrTy B,
 
 #if defined(RIPPLES_ENABLE_CUDA)
 #define SMALL_THRESHOLD 32
-#else
+#elif defined(RIPPLES_ENABLE_HIP)
 #define SMALL_THRESHOLD 64
+#else
+// Unsupported GPU runtime
+#error "Unsupported GPU runtime"
 #endif
 #define MEDIUM_THRESHOLD 256
 #define LARGE_THRESHOLD 65536
@@ -1383,6 +1386,7 @@ void GPUBatchedBFSMultiColorFused(
     finished = true;
     // Set workloads to 0
     thrust::fill(thrust::device.on(streams[0]), workloads.begin(), workloads.end(), 0);
+    GPU<RUNTIME>::stream_sync(streams[0]);
     build_frontier_queues_kernel<RUNTIME, GraphTy, color_type, WarpMaskTy>
         <<<num_build_blocks, num_threads, 0, streams[0]>>>(
             d_index, small_vertices_ptr, medium_vertices_ptr,

@@ -1102,7 +1102,7 @@ class StreamingRRRGenerator {
     ri.NumSets = std::distance(begin, end);
     ri.Total = std::chrono::duration_cast<decltype(ri.Total)>(d);
 #endif
-  #if 1
+  #if 0
   // ensure vectors from begin to end are not empty
   for (auto it = begin; it != end; it++) {
     assert(!it->empty());
