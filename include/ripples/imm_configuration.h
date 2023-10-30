@@ -70,7 +70,7 @@ struct IMMConfiguration : public TIMConfiguration {
   size_t streaming_cpu_teams{0};
   size_t streaming_gpu_workers{0};
   size_t gpu_batch_size{64};
-  size_t cpu_batch_size{0};
+  size_t cpu_batch_size{64};
   float pause_threshold{1.0};
   size_t seed_select_max_workers{std::numeric_limits<size_t>::max()};
   size_t seed_select_max_gpu_workers{0};

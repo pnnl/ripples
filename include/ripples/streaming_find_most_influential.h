@@ -143,8 +143,7 @@ class GPUFindMostInfluentialWorker : public FindMostInfluentialWorker<GraphTy> {
     size_t avail_space = GPU<RUNTIME>::available_memory() >> 1;
     GPU<RUNTIME>::device_malloc(reinterpret_cast<void **>(&d_pool_),
                                 avail_space);
-    bool allocSuccess = d_pool_ != nullptr;
-    assert(allocSuccess &&
+    assert((d_pool_ != nullptr) &&
            "Not enough memory on the GPUs. Our heuristic for acquiring memory"
            "to perferm seed-selection failed.  Please, re-run the application"
            "using --seed-select-max-gpu-workers 0.");

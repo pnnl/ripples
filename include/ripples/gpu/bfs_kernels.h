@@ -544,7 +544,6 @@ __global__ void build_frontier_queues_kernel(
   using vertex_type = typename GraphTy::vertex_type;
   using color_type = ColorTy;
 
-  constexpr size_t color_size = sizeof(color_type) * 8;
   constexpr int frontier_bins = 4;
 
   // Warp/block-parallel scatter  

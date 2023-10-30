@@ -151,7 +151,6 @@ auto Sampling(const GraphTy &G, const ConfTy &CFG, double l,
   std::vector<RRRset<GraphTy>> RR;
 
   auto start = std::chrono::high_resolution_clock::now();
-  size_t thetaPrime = 0;
   for (ssize_t x = 1; x < std::log2(G.num_nodes()); ++x) {
     // Equation 9
     ssize_t thetaPrime = ThetaPrime(x, epsilonPrime, l, k, G.num_nodes(),
@@ -235,7 +234,6 @@ auto Sampling(const GraphTy &G, const ConfTy &CFG, double l,
   std::vector<RRRset<GraphTy>> RR;
 
   auto start = std::chrono::high_resolution_clock::now();
-  size_t thetaPrime = 0;
   for (ssize_t x = 1; x < std::log2(G.num_nodes()); ++x) {
     // Equation 9
     ssize_t thetaPrime = ThetaPrime(x, epsilonPrime, l, k, G.num_nodes(),

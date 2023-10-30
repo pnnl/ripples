@@ -84,8 +84,6 @@ std::vector<EdgeTy> load(const std::string &inputFile, const bool undirected,
   std::ifstream GFS(inputFile);
   size_t lineNumber = 0;
 
-  trng::uniform01_dist<float> probability;
-
   std::vector<EdgeTy> result;
   for (std::string line; std::getline(GFS, line); ++lineNumber) {
     if (line.empty()) continue;
