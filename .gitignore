@@ -12,6 +12,7 @@ hpc*/
 results*
 scripts/
 core
+.venv/
 
 docs/api
 
