@@ -841,8 +841,8 @@ class StreamingRRRGenerator {
     auto num_gpu_threads_per_worker = gpu_conf.num_gpu_threads();
     #ifdef NEIGHBOR_COLOR
     auto num_rng_sequences =
-        num_cpu_workers_ * 64 + num_gpu_workers_ * (num_gpu_threads_per_worker + 1);
-    auto gpu_seq_offset = num_cpu_workers_ * 64 + num_gpu_workers_;
+        num_cpu_workers_ * cpu_batch_size + num_gpu_workers_ * (num_gpu_threads_per_worker + 1);
+    auto gpu_seq_offset = num_cpu_workers_ * cpu_batch_size + num_gpu_workers_;
     #else
     auto num_rng_sequences =
         num_cpu_workers_  + num_gpu_workers_ * (num_gpu_threads_per_worker + 1);
@@ -851,7 +851,7 @@ class StreamingRRRGenerator {
 #else
     assert(num_gpu_workers_ == 0);
     #ifdef NEIGHBOR_COLOR
-    size_t num_rng_sequences = num_cpu_workers_ * 32;
+    size_t num_rng_sequences = num_cpu_workers_ * cpu_batch_size;
     #else
     size_t num_rng_sequences = num_cpu_workers_;
     #endif
@@ -894,12 +894,12 @@ class StreamingRRRGenerator {
         console->info("> mapping: omp={}\t->\tCPU", omp_num);
         console->info("cpu_worker_id = {}", cpu_worker_id);
         #ifdef NEIGHBOR_COLOR
-        std::vector<std::vector<PRNGeneratorTy>> rng(cpu_threads_per_team_, std::vector<PRNGeneratorTy>(64));
+        std::vector<std::vector<PRNGeneratorTy>> rng(cpu_threads_per_team_, std::vector<PRNGeneratorTy>(cpu_batch_size));
         #pragma omp parallel for
         for (size_t i = 0; i < cpu_threads_per_team_; ++i) {
-          for (size_t j = 0; j < 64; ++j){
+          for (size_t j = 0; j < cpu_batch_size; ++j){
             rng[i][j] = master_rng;
-            rng[i][j].split(num_rng_sequences, cpu_worker_id * cpu_threads_per_team_ * 64 + i * 64);
+            rng[i][j].split(num_rng_sequences, cpu_worker_id * cpu_threads_per_team_ * cpu_batch_size + i * cpu_batch_size + j);
           }
         }
         #else
