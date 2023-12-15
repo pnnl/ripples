@@ -67,6 +67,7 @@
 #ifdef ENABLE_METALL_RRRSETS
 #include "metall/metall.hpp"
 #include "metall/container/vector.hpp"
+#include "metall/container/unordered_map.hpp"
 #endif
 
 namespace ripples {

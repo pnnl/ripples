@@ -117,7 +117,10 @@ auto FindMostInfluentialSet(const GraphTy &G, const ConfTy &CFG,
   std::vector<typename GraphTy::vertex_type> result;
   result.reserve(k);
 
-  size_t uncovered = std::distance(rrr_begin, rrr_end);
+  const size_t RRSize = std::distance(rrr_begin, rrr_end);
+  size_t uncovered = RRSize;
+
+  // std::cout << "Uncovered = " << uncovered << std::endl;
 
   auto end = rrr_end;
   typename IMMExecutionRecord::ex_time_ms pivoting;
@@ -133,6 +136,8 @@ auto FindMostInfluentialSet(const GraphTy &G, const ConfTy &CFG,
     }
 
     uncovered -= element.second;
+
+    // std::cout << "Uncovered = " << uncovered << std::endl;
 
     auto cmp = [=](const typename std::iterator_traits<RRRsetsItr>::value_type &a) -> auto {
       return !std::binary_search(a.begin(), a.end(), element.first);
@@ -158,7 +163,7 @@ auto FindMostInfluentialSet(const GraphTy &G, const ConfTy &CFG,
     result.push_back(element.first);
   }
 
-  double f = double(std::distance(rrr_begin, rrr_end) - uncovered) / std::distance(rrr_begin, rrr_end);
+  double f = double(RRSize - uncovered) / RRSize;
 
   record.Counting.push_back(
       std::chrono::duration_cast<typename IMMExecutionRecord::ex_time_ms>(

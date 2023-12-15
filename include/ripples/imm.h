@@ -128,6 +128,26 @@ ssize_t ThetaPrime(ssize_t x, double epsilonPrime, double l, size_t k,
          std::pow(2.0, x) / (epsilonPrime * epsilonPrime);
 }
 
+//! Compute InvThetaPrime.
+//!
+//! \tparam execution_tag The execution policy
+//!
+//! \param rrsize The size of the RR set.
+//! \param epsilonPrime Parameter controlling the approximation factor.
+//! \param l Parameter usually set to 1.
+//! \param k The size of the seed set.
+//! \param num_nodes The number of nodes in the input graph.
+template <typename execution_tag>
+ssize_t InvThetaPrime(ssize_t rrsize, double epsilonPrime, double l, size_t k,
+                   size_t num_nodes, execution_tag &&) {
+  // Given the RR seed set, compute the index of the iteration
+  k = std::min(k, num_nodes/2);
+  return std::log2(rrsize * epsilonPrime * epsilonPrime /
+                   ((2 + 2. / 3. * epsilonPrime) *
+                    (l * std::log(num_nodes) + logBinomial(num_nodes, k) +
+                     std::log(std::log2(num_nodes)))));
+}
+
 //! Compute Theta.
 //!
 //! \param epsilon Parameter controlling the approximation factor.
@@ -168,13 +188,22 @@ inline size_t Theta(double epsilon, double l, size_t k, double LB,
 //! \param ex_tag The execution policy tag.
 template <typename GraphTy, typename ConfTy, typename RRRGeneratorTy,
           typename RRRSetsTy, typename RRRSetAllocatorTy,
-          typename diff_model_tag, typename execution_tag>
+          typename diff_model_tag, typename execution_tag,
+          typename MapPtrTy = std::unordered_map<ssize_t, double> *>
 void Sampling(const GraphTy &G, const ConfTy &CFG, double l,
               RRRGeneratorTy &generator, RRRSetsTy &RR,
               RRRSetAllocatorTy &allocator,
               IMMExecutionRecord &record,
-              diff_model_tag &&model_tag, execution_tag &&ex_tag) {
+              diff_model_tag &&model_tag, execution_tag &&ex_tag,
+              MapPtrTy LBMap_ptr = nullptr) {
   using vertex_type = typename GraphTy::vertex_type;
+  
+  #ifdef ENABLE_METALL_RRRSETS
+  assert(LBMap_ptr != nullptr);
+  metall::container::unordered_map<ssize_t, double> &LBMap(*LBMap_ptr);
+  #endif
+  
+  
   size_t k = CFG.k;
   double epsilon = CFG.epsilon;
 
@@ -184,10 +213,26 @@ void Sampling(const GraphTy &G, const ConfTy &CFG, double l,
   double LB = 0;
   auto start = std::chrono::high_resolution_clock::now();
   ssize_t thetaPrimePrev = 0;
-  for (ssize_t x = 1; x < std::log2(G.num_nodes()); ++x) {
+  ssize_t x = 1;
+  if (RR.size() != 0){
+    x = InvThetaPrime(RR.size()/2, epsilonPrime, l, k, G.num_nodes(),
+                                    std::forward<execution_tag>(ex_tag));
+    // std::cout << "x_calc = " << x << std::endl;
+  }
+  for (x; x < std::log2(G.num_nodes()); ++x) {
+    // std::cout << "x = " << x << std::endl;
     // Equation 9
     ssize_t thetaPrime = ThetaPrime(x, epsilonPrime, l, k, G.num_nodes(),
                                     std::forward<execution_tag>(ex_tag));
+    if (thetaPrime < RR.size()){
+      #ifdef ENABLE_METALL_RRRSETS
+      if(auto search = LBMap.find(thetaPrime); search != LBMap.end()){
+        LB = search->second;
+        break;
+      }
+      #endif
+      thetaPrime = RR.size();
+    }
 
     auto RRend = RR.end();
     auto timeRRRSets = measure<>::exec_time([&]() {
@@ -195,7 +240,9 @@ void Sampling(const GraphTy &G, const ConfTy &CFG, double l,
       size_t delta = thetaPrime - thetaPrimePrev;
       thetaPrimePrev = thetaPrime;
       record.ThetaPrimeDeltas.push_back(delta);
-      RRend = RR.begin() + thetaPrime;
+      RRend = RR.end() - (RR.size() - thetaPrime);
+      // std::cout << "RR Size = " << RR.size() << std::endl;
+      // std::cout << "Distance = " << std::distance(RR.begin(), RRend) << " vs " << std::distance(RR.begin(), RR.end()) << std::endl;
     }
     else{
       size_t delta = thetaPrime - RR.size();
@@ -212,6 +259,7 @@ void Sampling(const GraphTy &G, const ConfTy &CFG, double l,
     record.ThetaEstimationGenerateRRR.push_back(timeRRRSets);
 
     auto RRbegin = RR.begin();
+    // std::cout << "Top-k distance = " << std::distance(RRbegin, RRend) << std::endl;
     double f;
 
     spdlog::get("console")->info("Finding top-k Seeds: {}", thetaPrime);
@@ -224,11 +272,16 @@ void Sampling(const GraphTy &G, const ConfTy &CFG, double l,
       f = S.first;
     });
 
+    // spdlog::get("console")->info("F = {}", f);
+
     record.ThetaEstimationMostInfluential.push_back(timeMostInfluential);
 
     if (f >= std::pow(2, -x)) {
       // std::cout << "Fraction " << f << std::endl;
       LB = (G.num_nodes() * f) / (1 + epsilonPrime);
+      #ifdef ENABLE_METALL_RRRSETS
+      LBMap[thetaPrime] = LB;
+      #endif
       break;
     }
   }
@@ -299,18 +352,24 @@ auto Sampling(const GraphTy &G, const ConfTy &CFG, double l,
   // RRRsetAllocator<vertex_type> 
   RRRsetsAllocator<GraphTy> allocator =  manager.get_allocator();
   RRRsets<GraphTy> *RR_ptr;
+
+  metall::container::unordered_map<ssize_t, double> *LBMap_ptr;
+
   if (exists) {
     // std::cout << "Metall: " << CFG.rr_dir << " exists. Reloading." << std::endl;
     spdlog::get("console")->info("RR Datastore at {} exists. Reloading...", CFG.rr_dir);
     RR_ptr = manager.find<RRRsets<GraphTy>>("rrrsets").first;
+    LBMap_ptr = manager.find<metall::container::unordered_map<ssize_t, double>>("lbmap").first;
     spdlog::get("console")->info("Reloading complete!");
   } else {
     // std::cout << "Metall: " << CFG.rr_dir << " does not exist. Creating New." << std::endl;
     spdlog::get("console")->info("RR Datastore at {} does not exist. Creating...", CFG.rr_dir);
     RR_ptr = manager.construct<RRRsets<GraphTy>>("rrrsets")(RRRsets<GraphTy>(allocator));
+    LBMap_ptr = manager.construct<metall::container::unordered_map<ssize_t, double>>("lbmap")(manager.get_allocator());
     spdlog::get("console")->info("Creation Complete!!");
   }
   RRRsets<GraphTy> &RR(*RR_ptr);
+  metall::container::unordered_map<ssize_t, double> &LBMap(*LBMap_ptr);
   #else
   RRRsetAllocator<vertex_type> allocator;
   RRRsets<GraphTy> RR;
@@ -318,10 +377,26 @@ auto Sampling(const GraphTy &G, const ConfTy &CFG, double l,
 
   auto start = std::chrono::high_resolution_clock::now();
   ssize_t thetaPrimePrev = 0;
-  for (ssize_t x = 1; x < std::log2(G.num_nodes()); ++x) {
+  ssize_t x = 1;
+  if (RR.size() != 0){
+    x = InvThetaPrime(RR.size()/2, epsilonPrime, l, k, G.num_nodes(),
+                                    std::forward<execution_tag>(ex_tag));
+    // std::cout << "x_calc = " << x << std::endl;
+  }
+  for (x; x < std::log2(G.num_nodes()); ++x) {
+    // std::cout << "x = " << x << std::endl;
     // Equation 9
     ssize_t thetaPrime = ThetaPrime(x, epsilonPrime, l, k, G.num_nodes(),
                                     std::forward<execution_tag>(ex_tag));
+    if (thetaPrime < RR.size()){
+      #ifdef ENABLE_METALL_RRRSETS
+      if(auto search = LBMap.find(thetaPrime); search != LBMap.end()){
+        LB = search->second;
+        break;
+      }
+      #endif
+      thetaPrime = RR.size();
+    }
 
     auto RRend = RR.end();
     auto timeRRRSets = measure<>::exec_time([&]() {
@@ -329,7 +404,9 @@ auto Sampling(const GraphTy &G, const ConfTy &CFG, double l,
       size_t delta = thetaPrime - thetaPrimePrev;
       thetaPrimePrev = thetaPrime;
       record.ThetaPrimeDeltas.push_back(delta);
-      RRend = RR.begin() + thetaPrime;
+      RRend = RR.end() - (RR.size() - thetaPrime);
+      // std::cout << "RR Size = " << RR.size() << std::endl;
+      // std::cout << "Distance = " << std::distance(RR.begin(), RRend) << " vs " << std::distance(RR.begin(), RR.end()) << std::endl;
     }
     else{
       size_t delta = thetaPrime - RR.size();
@@ -346,6 +423,7 @@ auto Sampling(const GraphTy &G, const ConfTy &CFG, double l,
     record.ThetaEstimationGenerateRRR.push_back(timeRRRSets);
 
     auto RRbegin = RR.begin();
+    // std::cout << "Top-k distance = " << std::distance(RRbegin, RRend) << std::endl;
     double f;
 
     spdlog::get("console")->info("Finding top-k Seeds: {}", thetaPrime);
@@ -358,11 +436,16 @@ auto Sampling(const GraphTy &G, const ConfTy &CFG, double l,
       f = S.first;
     });
 
+    // spdlog::get("console")->info("F = {}", f);
+
     record.ThetaEstimationMostInfluential.push_back(timeMostInfluential);
 
     if (f >= std::pow(2, -x)) {
       // std::cout << "Fraction " << f << std::endl;
       LB = (G.num_nodes() * f) / (1 + epsilonPrime);
+      #ifdef ENABLE_METALL_RRRSETS
+      LBMap[thetaPrime] = LB;
+      #endif
       break;
     }
   }
@@ -396,13 +479,20 @@ auto Sampling(const GraphTy &G, const ConfTy &CFG, double l,
 
 template <typename GraphTy, typename ConfTy, typename RRRGeneratorTy,
           typename RRRSetsTy, typename RRRSetAllocatorTy,
-          typename diff_model_tag>
+          typename diff_model_tag,
+          typename MapPtrTy = std::unordered_map<ssize_t, double> *>
 void Sampling(const GraphTy &G, const ConfTy &CFG, double l,
               RRRGeneratorTy &generator, RRRSetsTy &RR,
               RRRSetAllocatorTy &allocator,
               IMMExecutionRecord &record,
-              diff_model_tag &&model_tag, sequential_tag &&ex_tag) {
+              diff_model_tag &&model_tag, sequential_tag &&ex_tag,
+              MapPtrTy LBMap_ptr = nullptr) {
   using vertex_type = typename GraphTy::vertex_type;
+
+  #ifdef ENABLE_METALL_RRRSETS
+  metall::container::unordered_map<ssize_t, double> &LBMap(*LBMap_ptr);
+  #endif
+
   size_t k = CFG.k;
   double epsilon = CFG.epsilon;
 
@@ -412,10 +502,26 @@ void Sampling(const GraphTy &G, const ConfTy &CFG, double l,
   double LB = 0;
   auto start = std::chrono::high_resolution_clock::now();
   ssize_t thetaPrimePrev = 0;
-  for (ssize_t x = 1; x < std::log2(G.num_nodes()); ++x) {
+  ssize_t x = 1;
+  if (RR.size() != 0){
+    x = InvThetaPrime(RR.size()/2, epsilonPrime, l, k, G.num_nodes(),
+                                    std::forward<sequential_tag>(ex_tag));
+    // std::cout << "x_calc = " << x << std::endl;
+  }
+  for (x; x < std::log2(G.num_nodes()); ++x) {
+    // std::cout << "x = " << x << std::endl;
     // Equation 9
     ssize_t thetaPrime = ThetaPrime(x, epsilonPrime, l, k, G.num_nodes(),
                                     std::forward<sequential_tag>(ex_tag));
+    if (thetaPrime < RR.size()){
+      #ifdef ENABLE_METALL_RRRSETS
+      if(auto search = LBMap.find(thetaPrime); search != LBMap.end()){
+        LB = search->second;
+        break;
+      }
+      #endif
+      thetaPrime = RR.size();
+    }
 
     auto RRend = RR.end();
     auto timeRRRSets = measure<>::exec_time([&]() {
@@ -423,7 +529,9 @@ void Sampling(const GraphTy &G, const ConfTy &CFG, double l,
       size_t delta = thetaPrime - thetaPrimePrev;
       thetaPrimePrev = thetaPrime;
       record.ThetaPrimeDeltas.push_back(delta);
-      RRend = RR.begin() + thetaPrime;
+      RRend = RR.end() - (RR.size() - thetaPrime);
+      // std::cout << "RR Size = " << RR.size() << std::endl;
+      // std::cout << "Distance = " << std::distance(RR.begin(), RRend) << " vs " << std::distance(RR.begin(), RR.end()) << std::endl;
     }
     else{
       size_t delta = thetaPrime - RR.size();
@@ -440,6 +548,7 @@ void Sampling(const GraphTy &G, const ConfTy &CFG, double l,
     record.ThetaEstimationGenerateRRR.push_back(timeRRRSets);
 
     auto RRbegin = RR.begin();
+    // std::cout << "Top-k distance = " << std::distance(RRbegin, RRend) << std::endl;
     double f;
 
     auto timeMostInfluential = measure<>::exec_time([&]() {
@@ -449,10 +558,15 @@ void Sampling(const GraphTy &G, const ConfTy &CFG, double l,
       f = S.first;
     });
 
+    // spdlog::get("console")->info("F = {}", f);
+
     record.ThetaEstimationMostInfluential.push_back(timeMostInfluential);
 
     if (f >= std::pow(2, -x)) {
       LB = (G.num_nodes() * f) / (1 + epsilonPrime);
+      #ifdef ENABLE_METALL_RRRSETS
+      LBMap[thetaPrime] = LB;
+      #endif
       break;
     }
   }
@@ -504,18 +618,24 @@ auto Sampling(const GraphTy &G, const ConfTy &CFG, double l,
   // RRRsetAllocator<vertex_type> 
   RRRsetsAllocator<GraphTy> allocator =  manager.get_allocator();
   RRRsets<GraphTy> *RR_ptr;
+
+  metall::container::unordered_map<ssize_t, double> *LBMap_ptr;
+
   if (exists) {
     // std::cout << "Metall: " << CFG.rr_dir << " exists. Reloading." << std::endl;
     spdlog::get("console")->info("RR Datastore at {} exists. Reloading...", CFG.rr_dir);
     RR_ptr = manager.find<RRRsets<GraphTy>>("rrrsets").first;
+    LBMap_ptr = manager.find<metall::container::unordered_map<ssize_t, double>>("lbmap").first;
     spdlog::get("console")->info("Reloading complete!");
   } else {
     // std::cout << "Metall: " << CFG.rr_dir << " does not exist. Creating New." << std::endl;
     spdlog::get("console")->info("RR Datastore at {} does not exist. Creating...", CFG.rr_dir);
     RR_ptr = manager.construct<RRRsets<GraphTy>>("rrrsets")(RRRsets<GraphTy>(allocator));
+    LBMap_ptr = manager.construct<metall::container::unordered_map<ssize_t, double>>("lbmap")(manager.get_allocator());
     spdlog::get("console")->info("Creation Complete!!");
   }
   RRRsets<GraphTy> &RR(*RR_ptr);
+  metall::container::unordered_map<ssize_t, double> &LBMap(*LBMap_ptr);
   #else
   RRRsetAllocator<vertex_type> allocator;
   RRRsets<GraphTy> RR;
@@ -523,10 +643,26 @@ auto Sampling(const GraphTy &G, const ConfTy &CFG, double l,
 
   auto start = std::chrono::high_resolution_clock::now();
   ssize_t thetaPrimePrev = 0;
-  for (ssize_t x = 1; x < std::log2(G.num_nodes()); ++x) {
+  ssize_t x = 1;
+  if (RR.size() != 0){
+    x = InvThetaPrime(RR.size()/2, epsilonPrime, l, k, G.num_nodes(),
+                                    std::forward<sequential_tag>(ex_tag));
+    // std::cout << "x_calc = " << x << std::endl;
+  }
+  for (x; x < std::log2(G.num_nodes()); ++x) {
+    // std::cout << "x = " << x << std::endl;
     // Equation 9
     ssize_t thetaPrime = ThetaPrime(x, epsilonPrime, l, k, G.num_nodes(),
                                     std::forward<sequential_tag>(ex_tag));
+    if (thetaPrime < RR.size()){
+      #ifdef ENABLE_METALL_RRRSETS
+      if(auto search = LBMap.find(thetaPrime); search != LBMap.end()){
+        LB = search->second;
+        break;
+      }
+      #endif
+      thetaPrime = RR.size();
+    }
 
     auto RRend = RR.end();
     auto timeRRRSets = measure<>::exec_time([&]() {
@@ -534,7 +670,9 @@ auto Sampling(const GraphTy &G, const ConfTy &CFG, double l,
       size_t delta = thetaPrime - thetaPrimePrev;
       thetaPrimePrev = thetaPrime;
       record.ThetaPrimeDeltas.push_back(delta);
-      RRend = RR.begin() + thetaPrime;
+      RRend = RR.end() - (RR.size() - thetaPrime);
+      // std::cout << "RR Size = " << RR.size() << std::endl;
+      // std::cout << "Distance = " << std::distance(RR.begin(), RRend) << " vs " << std::distance(RR.begin(), RR.end()) << std::endl;
     }
     else{
       size_t delta = thetaPrime - RR.size();
@@ -551,6 +689,7 @@ auto Sampling(const GraphTy &G, const ConfTy &CFG, double l,
     record.ThetaEstimationGenerateRRR.push_back(timeRRRSets);
 
     auto RRbegin = RR.begin();
+    // std::cout << "Top-k distance = " << std::distance(RRbegin, RRend) << std::endl;
     double f;
 
     auto timeMostInfluential = measure<>::exec_time([&]() {
@@ -560,10 +699,15 @@ auto Sampling(const GraphTy &G, const ConfTy &CFG, double l,
       f = S.first;
     });
 
+    // spdlog::get("console")->info("F = {}", f);
+
     record.ThetaEstimationMostInfluential.push_back(timeMostInfluential);
 
     if (f >= std::pow(2, -x)) {
       LB = (G.num_nodes() * f) / (1 + epsilonPrime);
+      #ifdef ENABLE_METALL_RRRSETS
+      LBMap[thetaPrime] = LB;
+      #endif
       break;
     }
   }
@@ -615,6 +759,7 @@ auto IMM(const GraphTy &G, const ConfTy &CFG, double l, PRNG &gen,
   #if defined ENABLE_MEMKIND
   RRRsetAllocator<vertex_type> allocator(CFG.rr_dir.c_str(), 0);
   RRRsets<GraphTy> RR;
+  std::unordered_map<ssize_t, double> *LBMap_ptr = nullptr;
   #elif defined ENABLE_METALL_RRRSETS
   bool exists = metall::manager::consistent(CFG.rr_dir.c_str());
   metall::manager manager =
@@ -623,21 +768,27 @@ auto IMM(const GraphTy &G, const ConfTy &CFG, double l, PRNG &gen,
   // RRRsetAllocator<vertex_type> 
   RRRsetsAllocator<GraphTy> allocator =  manager.get_allocator();
   RRRsets<GraphTy> *RR_ptr;
+
+  metall::container::unordered_map<ssize_t, double> *LBMap_ptr;
+
   if (exists) {
     // std::cout << "Metall: " << CFG.rr_dir << " exists. Reloading." << std::endl;
     spdlog::get("console")->info("RR Datastore at {} exists. Reloading...", CFG.rr_dir);
     RR_ptr = manager.find<RRRsets<GraphTy>>("rrrsets").first;
+    LBMap_ptr = manager.find<metall::container::unordered_map<ssize_t, double>>("lbmap").first;
     spdlog::get("console")->info("Reloading complete!");
   } else {
     // std::cout << "Metall: " << CFG.rr_dir << " does not exist. Creating New." << std::endl;
     spdlog::get("console")->info("RR Datastore at {} does not exist. Creating...", CFG.rr_dir);
     RR_ptr = manager.construct<RRRsets<GraphTy>>("rrrsets")(RRRsets<GraphTy>(allocator));
+    LBMap_ptr = manager.construct<metall::container::unordered_map<ssize_t, double>>("lbmap")(manager.get_allocator());
     spdlog::get("console")->info("Creation Complete!!");
   }
   RRRsets<GraphTy> &RR(*RR_ptr);
   #else
   RRRsetAllocator<vertex_type> allocator;
   RRRsets<GraphTy> RR;
+  std::unordered_map<ssize_t, double> *LBMap_ptr = nullptr;
   #endif
 
   size_t k = CFG.k;
@@ -649,7 +800,8 @@ auto IMM(const GraphTy &G, const ConfTy &CFG, double l, PRNG &gen,
 
   Sampling(G, CFG, l, generator, RR, allocator, record,
                     std::forward<diff_model_tag>(model_tag),
-                    std::forward<sequential_tag>(ex_tag));
+                    std::forward<sequential_tag>(ex_tag),
+                    LBMap_ptr);
 
 #if CUDA_PROFILE
   auto logst = spdlog::stdout_color_st("IMM-profile");
@@ -696,6 +848,7 @@ auto IMM(const GraphTy &G, const ConfTy &CFG, double l, GeneratorTy &gen,
   #if defined ENABLE_MEMKIND
   RRRsetAllocator<vertex_type> allocator(CFG.rr_dir.c_str(), 0);
   RRRsets<GraphTy> RR;
+  std::unordered_map<ssize_t, double> *LBMap_ptr = nullptr;
   #elif defined ENABLE_METALL_RRRSETS
   bool exists = metall::manager::consistent(CFG.rr_dir.c_str());
   metall::manager manager =
@@ -704,21 +857,27 @@ auto IMM(const GraphTy &G, const ConfTy &CFG, double l, GeneratorTy &gen,
   // RRRsetAllocator<vertex_type> 
   RRRsetsAllocator<GraphTy> allocator =  manager.get_allocator();
   RRRsets<GraphTy> *RR_ptr;
+
+  metall::container::unordered_map<ssize_t, double> *LBMap_ptr;
+
   if (exists) {
     // std::cout << "Metall: " << CFG.rr_dir << " exists. Reloading." << std::endl;
     spdlog::get("console")->info("RR Datastore at {} exists. Reloading...", CFG.rr_dir);
     RR_ptr = manager.find<RRRsets<GraphTy>>("rrrsets").first;
+    LBMap_ptr = manager.find<metall::container::unordered_map<ssize_t, double>>("lbmap").first;
     spdlog::get("console")->info("Reloading complete!");
   } else {
     // std::cout << "Metall: " << CFG.rr_dir << " does not exist. Creating New." << std::endl;
     spdlog::get("console")->info("RR Datastore at {} does not exist. Creating...", CFG.rr_dir);
     RR_ptr = manager.construct<RRRsets<GraphTy>>("rrrsets")(RRRsets<GraphTy>(allocator));
+    LBMap_ptr = manager.construct<metall::container::unordered_map<ssize_t, double>>("lbmap")(manager.get_allocator());
     spdlog::get("console")->info("Creation Complete!!");
   }
   RRRsets<GraphTy> &RR(*RR_ptr);
   #else
   RRRsetAllocator<vertex_type> allocator;
   RRRsets<GraphTy> RR;
+  std::unordered_map<ssize_t, double> *LBMap_ptr = nullptr;
   #endif
 
   size_t k = CFG.k;
@@ -728,7 +887,7 @@ auto IMM(const GraphTy &G, const ConfTy &CFG, double l, GeneratorTy &gen,
   l = l * (1 + 1 / std::log2(G.num_nodes()));
 
   Sampling(G, CFG, l, gen, RR, allocator, record, std::forward<diff_model_tag>(model_tag),
-               std::forward<omp_parallel_tag>(ex_tag));
+               std::forward<omp_parallel_tag>(ex_tag), LBMap_ptr);
 
   spdlog::get("console")->info("Finding Final Most Influential Sets");
 

@@ -4,6 +4,15 @@
 build/
 /.waf*
 *~
+outputs/
+plots/
+scripts/
+test-data/*-LT
+Pipfile.lock
+.vscode/
+*.patch
+
+
 
 docs/api
 
