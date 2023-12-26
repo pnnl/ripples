@@ -18,3 +18,7 @@ add_test(NAME CommunityExtraction COMMAND community-extraction-tests)
 #                       libtrng::libtrng nlohmann_json::nlohmann_json spdlog::spdlog
 #                       fmt::fmt CLI::CLI11 OpenMP::OpenMP_CXX test_main)
 # add_test(NAME RRRSetGeneration COMMAND rrr-set-generation-tests)
+
+if (RIPPLES_ENABLE_BENCHMARKS)
+  add_subdirectory(benchmarks)
+endif()
