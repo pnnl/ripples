@@ -99,10 +99,15 @@ int main(int argc, char **argv) {
   benchmark(report_dir, "BarabasiAlbert", [](int scale) {
     return NetworKit::BarabasiAlbertGenerator(8, 1 << scale);
   });
-  benchmark(report_dir, "LFR",
-            [](int scale) { return NetworKit::LFRGenerator(1 << scale); });
+  benchmark(report_dir, "LFR", [](int scale) {
+    auto G = NetworKit::LFRGenerator(1 << scale);
+    G.generatePowerlawDegreeSequence(5, 6, -2);
+    G.generatePowerlawCommunitySizeSequence(5, 6, -1);
+    G.setMu(.5);
+    return G;
+  });
   benchmark(report_dir, "WattsStrogatz", [](int scale) {
-    return NetworKit::WattsStrogatzGenerator(1 << scale, 8, 0.2);
+    return NetworKit::WattsStrogatzGenerator(1 << scale, 8, 0.5);
   });
 
   return 0;
