@@ -38,10 +38,6 @@ void benchmark(const std::string &report_dir, const std::string &modelName,
       EL.push_back({uint32_t(e.u), uint32_t(e.v), 0.5f});
     }
 
-    trng::lcg64 weightGen;
-    weightGen.seed(0UL);
-    weightGen.split(2, 0);
-
     trng::lcg64 generator;
     generator.seed(0UL);
     generator.split(2, 1);
@@ -58,6 +54,7 @@ void benchmark(const std::string &report_dir, const std::string &modelName,
     ripples::IMMExecutionRecord record;
 
     ripples::ToolConfiguration<ripples::IMMConfiguration> CFG;
+    CFG.k = 10;
     ripples::ICStreamingGenerator se(Gbwd, generator, omp_get_num_threads(), 1,
                                      0, 0, 64,
                                      std::unordered_map<size_t, size_t>());
