@@ -40,14 +40,20 @@
 //
 //===----------------------------------------------------------------------===//
 
+#include "ripples/graph.h"
 #include "ripples/cuda/cuda_graph.cuh"
 #include "ripples/cuda/cuda_hc_engine.h"
-#include "ripples/cuda/cuda_supported_graphs.h"
 
 #include "trng/lcg64.hpp"
 #include "trng/uniform01_dist.hpp"
 
 namespace ripples {
+using IMMGraphTy =
+	  Graph<uint32_t, WeightedDestination<uint32_t, float>, BackwardDirection<uint32_t>>;
+
+using HCGraphTy =
+	  Graph<uint32_t, WeightedDestination<uint32_t, float>, ForwardDirection<uint32_t>>;
+
 __inline__ __device__
 int warpReduceSum(int val) {
   #define FULL_MASK 0xffffffff

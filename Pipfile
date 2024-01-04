@@ -4,9 +4,10 @@ url = "https://pypi.org/simple"
 verify_ssl = true
 
 [dev-packages]
+ipykernel = "*"
 
 [packages]
 conan = "*"
 
 [requires]
-python_version = "3.7"
+python_version = "*"

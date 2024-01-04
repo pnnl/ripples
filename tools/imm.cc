@@ -48,40 +48,50 @@
 #include "ripples/configuration.h"
 #include "ripples/diffusion_simulation.h"
 #include "ripples/graph.h"
-#include "ripples/imm.h"
 #include "ripples/loaders.h"
 #include "ripples/utility.h"
+#include "ripples/imm_configuration.h"
+#include "ripples/imm_interface.h"
+#include "ripples/imm.h"
 
-#include "omp.h"
-
-#include "CLI/CLI.hpp"
 #include "nlohmann/json.hpp"
-
 #include "spdlog/fmt/ostr.h"
 #include "spdlog/sinks/stdout_color_sinks.h"
 #include "spdlog/spdlog.h"
+
+#include "omp.h"
 
 namespace ripples {
 
 auto GetWalkIterationRecord(
     const typename IMMExecutionRecord::walk_iteration_prof &iter) {
-  nlohmann::json res{{"NumSets", iter.NumSets}, {"Total", iter.Total}};
+  nlohmann::json res{{"NumSets", iter.NumSets}, {"Total", iter.Total.count()}};
   for (size_t wi = 0; wi < iter.CPUWalks.size(); ++wi) {
     std::stringstream wname;
     wname << "CPU Worker " << wi;
     res[wname.str()] = nlohmann::json{{"NumSets", iter.CPUWalks[wi].NumSets},
-                                      {"Total", iter.CPUWalks[wi].Total}};
+                                      {"Total", iter.CPUWalks[wi].Total.count()}};
   }
   for (size_t wi = 0; wi < iter.GPUWalks.size(); ++wi) {
     std::stringstream wname;
     wname << "GPU Worker " << wi;
     res[wname.str()] = nlohmann::json{{"NumSets", iter.GPUWalks[wi].NumSets},
-                                      {"Total", iter.GPUWalks[wi].Total},
-                                      {"Kernel", iter.GPUWalks[wi].Kernel},
-                                      {"D2H", iter.GPUWalks[wi].D2H},
-                                      {"Post", iter.GPUWalks[wi].Post}};
+                                      {"Total", iter.GPUWalks[wi].Total.count()},
+                                      {"Kernel", iter.GPUWalks[wi].Kernel.count()},
+                                      {"D2H", iter.GPUWalks[wi].D2H.count()},
+                                      {"Post", iter.GPUWalks[wi].Post.count()}};
   }
   return res;
+}
+
+template <typename TimeTy>
+std::vector<double> ConvertToCounts(const TimeTy &times){
+  std::vector<double> counts;
+  counts.reserve(times.size());
+  for(auto time : times){
+    counts.push_back(time.count());
+  }
+  return counts;
 }
 
 template <typename SeedSet>
@@ -97,18 +107,23 @@ auto GetExperimentRecord(const ToolConfiguration<IMMConfiguration> &CFG,
       {"L", 1},
       {"NumThreads", R.NumThreads},
       {"NumWalkWorkers", CFG.streaming_workers},
+      {"NumCPUTeams", CFG.streaming_cpu_teams},
       {"NumGPUWalkWorkers", CFG.streaming_gpu_workers},
-      {"Total", R.Total},
+      {"PauseThreshold", CFG.pause_threshold},
+      {"Total", R.Total.count()},
       {"ThetaPrimeDeltas", R.ThetaPrimeDeltas},
-      {"ThetaEstimation", R.ThetaEstimationTotal},
-      {"ThetaEstimationGenerateRRR", R.ThetaEstimationGenerateRRR},
-      {"ThetaEstimationMostInfluential", R.ThetaEstimationMostInfluential},
+      {"ThetaEstimation", R.ThetaEstimationTotal.count()},
+      {"ThetaEstimationGenerateRRR", ConvertToCounts(R.ThetaEstimationGenerateRRR)},
+      {"ThetaEstimationMostInfluential", ConvertToCounts(R.ThetaEstimationMostInfluential)},
       {"Theta", R.Theta},
-      {"Counting", R.Counting},
-      {"Pivoting", R.Pivoting},
+      {"Counting", ConvertToCounts(R.Counting)},
+      {"Pivoting", ConvertToCounts(R.Pivoting)},
+      {"Microbenchmarking", R.Microbenchmarking.count()},
+      {"CPUBatchSize", R.CPUBatchSize},
+      {"GPUBatchSize", R.GPUBatchSize},
       {"RRRSetSizeBytes", R.RRRSetSize},
-      {"GenerateRRRSets", R.GenerateRRRSets},
-      {"FindMostInfluentialSet", R.FindMostInfluentialSet},
+      {"GenerateRRRSets", R.GenerateRRRSets.count()},
+      {"FindMostInfluentialSet", R.FindMostInfluentialSet.count()},
       {"Seeds", seeds}};
   for (auto &ri : R.WalkIterations) {
     experiment["Iterations"].push_back(GetWalkIterationRecord(ri));
@@ -141,7 +156,7 @@ int main(int argc, char **argv) {
   auto CFG = ripples::configuration();
   if (CFG.parallel) {
     if (ripples::streaming_command_line(
-            CFG.worker_to_gpu, CFG.streaming_workers, CFG.streaming_gpu_workers,
+            CFG.worker_to_gpu, CFG.streaming_workers, CFG.streaming_cpu_teams, CFG.streaming_gpu_workers,
             CFG.gpu_mapping_string) != 0) {
       console->error("invalid command line");
       return -1;
@@ -201,7 +216,7 @@ int main(int argc, char **argv) {
 
   nlohmann::json executionLog;
 
-  std::vector<typename GraphBwd::vertex_type> seeds;
+  std::vector<typename ripples::GraphBwd::vertex_type> seeds;
   ripples::IMMExecutionRecord R;
 
   trng::lcg64 generator;
@@ -210,32 +225,75 @@ int main(int argc, char **argv) {
 
   std::ofstream perf(CFG.OutputFile);
 
+  #ifdef PROFILE_OVERHEAD
+  output_file_name = CFG.OutputFile;
+  #endif // PROFILE_OVERHEAD
+
+  #ifdef UTILIZATION_PROFILE
+  output_file_name = CFG.OutputFile;
+  #endif // UTILIZATION_PROFILE
+
   if (CFG.parallel) {
     auto workers = CFG.streaming_workers;
+    auto cpu_teams = CFG.streaming_cpu_teams;
     auto gpu_workers = CFG.streaming_gpu_workers;
     decltype(R.Total) real_total;
     if (CFG.diffusionModel == "IC") {
-      ripples::StreamingRRRGenerator<
-          GraphBwd, decltype(generator),
-          typename ripples::RRRsets<GraphBwd>::iterator,
-          ripples::independent_cascade_tag>
-          se(G, generator, R, workers - gpu_workers, gpu_workers,
-             CFG.worker_to_gpu);
+      ripples::ICStreamingGenerator se(G, generator, workers - gpu_workers, cpu_teams, gpu_workers,
+             CFG.gpu_batch_size, CFG.cpu_batch_size, CFG.worker_to_gpu, CFG.pause_threshold);
+      R.GPUBatchSize = CFG.gpu_batch_size;
+      if (CFG.cpu_batch_size) {
+        R.CPUBatchSize = CFG.cpu_batch_size;
+      }
+#if defined(RIPPLES_ENABLE_CUDA) || defined(RIPPLES_ENABLE_HIP)
+      else {
+        if (se.isGpuEnabled() && cpu_teams) {
+          se.benchmark(2, 4, R);
+        }
+      }
+#endif
+
       auto start = std::chrono::high_resolution_clock::now();
-      seeds = IMM(G, CFG, 1, se, ripples::independent_cascade_tag{},
+      if(CFG.num_rr_sets){
+        // Override, just generate one set of RR sets
+        ssize_t thetaPrime = CFG.num_rr_sets;
+        size_t delta = thetaPrime;
+        R.ThetaPrimeDeltas.push_back(delta);
+        R.Theta = CFG.num_rr_sets;
+
+        using vertex_type = typename ripples::GraphBwd::vertex_type;
+#if defined ENABLE_METALL_RRRSETS
+        ripples::RRRsetAllocator<vertex_type> allocator =  metall_manager_instance(CFG.rr_dir).get_allocator();
+#else
+        ripples::RRRsetAllocator<vertex_type> allocator;
+#endif
+        std::vector<ripples::RRRset<ripples::GraphBwd>> RR;
+        auto timeRRRSets = ripples::measure<>::exec_time([&]() {
+          RR.insert(RR.end(), delta, ripples::RRRset<ripples::GraphBwd>(allocator));
+
+          auto begin = RR.end() - delta;
+
+          GenerateRRRSets(G, se, begin, RR.end(), R,
+                          ripples::independent_cascade_tag{},
+                          ripples::omp_parallel_tag{});
+        });
+        R.ThetaEstimationGenerateRRR.push_back(timeRRRSets);
+        R.ThetaEstimationMostInfluential.push_back(timeRRRSets - timeRRRSets);
+        seeds = std::vector<typename ripples::GraphBwd::vertex_type>(CFG.k, 1);
+      }
+      else{
+        seeds = IMM(G, CFG, 1, se, R, ripples::independent_cascade_tag{},
                   ripples::omp_parallel_tag{});
+      }
       auto end = std::chrono::high_resolution_clock::now();
       R.Total = end - start - R.Total;
       real_total = end - start;
     } else if (CFG.diffusionModel == "LT") {
-      ripples::StreamingRRRGenerator<
-          GraphBwd, decltype(generator),
-          typename ripples::RRRsets<GraphBwd>::iterator,
-          ripples::linear_threshold_tag>
-          se(G, generator, R, workers - gpu_workers, gpu_workers,
-             CFG.worker_to_gpu);
+      ripples::LTStreamingGenerator se(G, generator, workers - gpu_workers, cpu_teams, gpu_workers,
+             CFG.gpu_batch_size, CFG.cpu_batch_size, CFG.worker_to_gpu);
+
       auto start = std::chrono::high_resolution_clock::now();
-      seeds = IMM(G, CFG, 1, se, ripples::linear_threshold_tag{},
+      seeds = IMM(G, CFG, 1, se, R, ripples::linear_threshold_tag{},
                   ripples::omp_parallel_tag{});
       auto end = std::chrono::high_resolution_clock::now();
       R.Total = end - start - R.Total;
@@ -257,13 +315,13 @@ int main(int argc, char **argv) {
   } else {
     if (CFG.diffusionModel == "IC") {
       auto start = std::chrono::high_resolution_clock::now();
-      seeds = IMM(G, CFG, 1, generator, R, ripples::independent_cascade_tag{},
+      seeds = IMM(G, CFG, 1.0, generator, R, ripples::independent_cascade_tag{},
                   ripples::sequential_tag{});
       auto end = std::chrono::high_resolution_clock::now();
       R.Total = end - start;
     } else if (CFG.diffusionModel == "LT") {
       auto start = std::chrono::high_resolution_clock::now();
-      seeds = IMM(G, CFG, 1, generator, R, ripples::linear_threshold_tag{},
+      seeds = IMM(G, CFG, 1.0, generator, R, ripples::linear_threshold_tag{},
                   ripples::sequential_tag{});
       auto end = std::chrono::high_resolution_clock::now();
       R.Total = end - start;

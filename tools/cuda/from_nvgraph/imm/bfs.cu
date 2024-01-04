@@ -21,7 +21,7 @@
 #include <limits>
 
 #include "ripples/graph.h"
-#include "ripples/cuda/cuda_generate_rrr_sets.h"
+#include "ripples/gpu/generate_rrr_sets.h"
 #include "ripples/cuda/from_nvgraph/imm/bfs.hxx"
 #include "ripples/cuda/from_nvgraph/nvgraph_error.hxx"
 
@@ -409,5 +409,5 @@ namespace nvgraph {
     ;
   }
 
-  template class Bfs<int, ripples::cuda_PRNGeneratorTy>;
+  template class Bfs<int, trng::lcg64>;
 } // end namespace nvgraph

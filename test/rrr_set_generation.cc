@@ -42,6 +42,7 @@
 
 #include "catch2/catch.hpp"
 
+#include "ripples/imm_configuration.h"
 #include "ripples/generate_rrr_sets.h"
 #include "ripples/graph.h"
 #include "ripples/imm.h"
@@ -121,7 +122,7 @@ SCENARIO("Generate RRR sets", "[rrrsets]") {
           decltype(G), decltype(gen),
           typename ripples::RRRsets<decltype(G)>::iterator,
           ripples::independent_cascade_tag>
-          generator(G, gen, R, max_num_threads, 0, map);
+          generator(G, gen, max_num_threads, 0, map);
 
       for (size_t i = 0; i < 2; ++i) {
         ripples::GenerateRRRSets(G, generator, RR.end() - theta, RR.end(),

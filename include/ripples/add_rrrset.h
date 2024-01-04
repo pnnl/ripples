@@ -40,69 +40,20 @@
 //
 //===----------------------------------------------------------------------===//
 
-#ifndef RIPPLES_GENERATE_RRR_SETS_H
-#define RIPPLES_GENERATE_RRR_SETS_H
+#ifndef RIPPLES_ADD_RRRSET_H
+#define RIPPLES_ADD_RRRSET_H
 
-#include <algorithm>
 #include <queue>
-#include <utility>
 #include <vector>
-
-#include "omp.h"
+#include <utility>
 
 #include "ripples/diffusion_simulation.h"
-#include "ripples/graph.h"
-#include "ripples/imm_execution_record.h"
-#include "ripples/utility.h"
-#include "ripples/rrr_sets.h"
-#include "ripples/add_rrrset.h"
-#include "ripples/streaming_rrr_generator.h"
 
 #include "trng/uniform01_dist.hpp"
 #include "trng/uniform_int_dist.hpp"
-
-#ifdef ENABLE_MEMKIND
-#include "memkind_allocator.h"
-#include "pmem_allocator.h"
-#endif
-
-#ifdef ENABLE_METALL_RRRSETS
-#include "metall/metall.hpp"
-#include "metall/container/vector.hpp"
-#include "metall/container/unordered_map.hpp"
-#endif
+#include "ripples/rrr_sets.h"
 
 namespace ripples {
-
-#if defined ENABLE_MEMKIND
-template<typename vertex_type>
-using RRRsetAllocator = libmemkind::pmem::allocator<vertex_type>;
-#elif defined ENABLE_METALL_RRRSETS
-template<typename vertex_type>
-using RRRsetAllocator = metall::manager::allocator_type<vertex_type>;
-#else
-template <typename vertex_type>
-using RRRsetAllocator = std::allocator<vertex_type>;
-#endif
-
-//! \brief The Random Reverse Reachability Sets type
-template <typename GraphTy>
-using RRRset =
-#ifdef  ENABLE_METALL_RRRSETS
-    metall::container::vector<typename GraphTy::vertex_type,
-                              RRRsetAllocator<typename GraphTy::vertex_type>>;
-    template<typename GraphTy>
-using RRRsetsAllocator = metall::container::scoped_allocator_adaptor<
-    metall::manager::allocator_type<RRRset<GraphTy>>>;
-    template <typename GraphTy>
-    using RRRsets = metall::container::vector<RRRset<GraphTy>, RRRsetsAllocator<GraphTy>>;
-#else
-    std::vector<typename GraphTy::vertex_type,
-                              RRRsetAllocator<typename GraphTy::vertex_type>>;
-    template <typename GraphTy>
-    using RRRsets = std::vector<RRRset<GraphTy>>;
-#endif
-#if 0
 
 //! \brief Execute a randomize BFS to generate a Random RR Set.
 //!
@@ -164,65 +115,7 @@ void AddRRRSet(const GraphTy &G, typename GraphTy::vertex_type r,
 
   std::stable_sort(result.begin(), result.end());
 }
+
+}
+
 #endif
-
-//! \brief Generate Random Reverse Reachability Sets - sequential.
-//!
-//! \tparam GraphTy The type of the garph.
-//! \tparam PRNGeneratorty The type of the random number generator.
-//! \tparam ItrTy A random access iterator type.
-//! \tparam ExecRecordTy The type of the execution record
-//! \tparam diff_model_tag The policy for the diffusion model.
-//!
-//! \param G The original graph.
-//! \param generator The random numeber generator.
-//! \param begin The start of the sequence where to store RRR sets.
-//! \param end The end of the sequence where to store RRR sets.
-//! \param model_tag The diffusion model tag.
-//! \param ex_tag The execution policy tag.
-template <typename GraphTy, typename PRNGeneratorTy,
-          typename ItrTy, typename ExecRecordTy,
-          typename diff_model_tag>
-void GenerateRRRSets(GraphTy &G, PRNGeneratorTy &generator,
-                     ItrTy begin, ItrTy end,
-                     ExecRecordTy &,
-                     diff_model_tag &&model_tag,
-                     sequential_tag &&ex_tag) {
-  trng::uniform_int_dist start(0, G.num_nodes());
-
-  for (auto itr = begin; itr < end; ++itr) {
-    typename GraphTy::vertex_type r = start(generator[0]);
-    AddRRRSet(G, r, generator[0], *itr,
-              std::forward<diff_model_tag>(model_tag));
-  }
-}
-
-//! \brief Generate Random Reverse Reachability Sets - CUDA.
-//!
-//! \tparam GraphTy The type of the garph.
-//! \tparam PRNGeneratorty The type of the random number generator.
-//! \tparam ItrTy A random access iterator type.
-//! \tparam ExecRecordTy The type of the execution record
-//! \tparam diff_model_tag The policy for the diffusion model.
-//!
-//! \param G The original graph.
-//! \param generator The random numeber generator.
-//! \param begin The start of the sequence where to store RRR sets.
-//! \param end The end of the sequence where to store RRR sets.
-//! \param model_tag The diffusion model tag.
-//! \param ex_tag The execution policy tag.
-template <typename GraphTy, typename PRNGeneratorTy,
-          typename ItrTy, typename ExecRecordTy,
-          typename diff_model_tag>
-void GenerateRRRSets(const GraphTy &G,
-                     StreamingRRRGenerator<GraphTy, PRNGeneratorTy, ItrTy, diff_model_tag> &se,
-                     ItrTy begin, ItrTy end,
-                     ExecRecordTy & record,
-                     diff_model_tag &&,
-                     omp_parallel_tag &&) {
-  se.generate(begin, end, record);
-}
-
-}  // namespace ripples
-
-#endif  // RIPPLES_GENERATE_RRR_SETS_H

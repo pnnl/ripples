@@ -59,8 +59,8 @@
 #include "spdlog/spdlog.h"
 
 #ifdef RIPPLES_ENABLE_CUDA
-#include "ripples/cuda/cuda_generate_rrr_sets.h"
-#include "ripples/cuda/find_most_influential.h"
+#include "ripples/gpu/generate_rrr_sets.h"
+#include "ripples/gpu/find_most_influential.h"
 #include "thrust/count.h"
 #include "thrust/device_ptr.h"
 #endif

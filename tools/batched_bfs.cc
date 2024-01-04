@@ -40,85 +40,106 @@
 //
 //===----------------------------------------------------------------------===//
 
-#include <iostream>
+#include <algorithm>
+#include <bitset>
+#include <cassert>
+#include <map>
+#include <numeric>
+#include <ostream>
 #include <string>
 
 #include "ripples/configuration.h"
 #include "ripples/graph.h"
-#include "ripples/graph_dump.h"
+#if defined(RIPPLES_ENABLE_CUDA) || defined(RIPPLES_ENABLE_HIP)
+#include "ripples/gpu/gpu_graph.h"
+#include "ripples/gpu/gpu_runtime_trait.h"
+#include "ripples/gpu/bfs.h"
+#include "thrust/device_vector.h"
+#include "thrust/for_each.h"
+#include "thrust/host_vector.h"
+#include "thrust/inner_product.h"
+#include "thrust/random.h"
+#include "thrust/reduce.h"
+#include "thrust/transform_scan.h"
+#endif
 #include "ripples/loaders.h"
 
 #include "CLI/CLI.hpp"
+#include "CLI/Validators.hpp"
+#include "spdlog/fmt/fmt.h"
+#include "spdlog/fmt/ostr.h"
 #include "spdlog/sinks/stdout_color_sinks.h"
 #include "spdlog/spdlog.h"
 #include "trng/lcg64.hpp"
+#include "trng/uniform01_dist.hpp"
+#include "trng/uniform_int_dist.hpp"
 
-struct DumpOutputConfiguration {
-  std::string OName{"output"};
-  bool binaryDump{false};
-  bool normalize{false};
-
+class BFSToolConfiguration : public ripples::AlgorithmConfiguration {
+ public:
   void addCmdOptions(CLI::App &app) {
-    app.add_option("-o,--output", OName, "The name of the output file name")
-        ->required()
-        ->group("Output Options");
-    app.add_flag("--dump-binary", binaryDump,
-                 "Dump the Graph in binary format.")
-        ->group("Output Options");
-    app.add_flag("--normalize", normalize,
-                 "Dump the Graph in text format with vertices starting from 1")
-        ->group("Output Options");
+    std::map<std::string, spdlog::level::level_enum> VerbosityMap{
+        {"off", spdlog::level::off},    {"critical", spdlog::level::critical},
+        {"error", spdlog::level::err},  {"warning", spdlog::level::warn},
+        {"info", spdlog::level::info},  {"debug", spdlog::level::debug},
+        {"trace", spdlog::level::trace}};
+    app.add_option("--verbosity", logLevel_, "Output verbosity")
+        ->group("General")
+        ->default_val("6")
+        ->transform(CLI::CheckedTransformer(VerbosityMap));
   }
+
+  spdlog::level::level_enum LogLevel() const { return logLevel_; }
+
+ private:
+  spdlog::level::level_enum logLevel_;
 };
 
-struct DumpConfiguration {
-  std::string diffusionModel{"IC"};  //!< The diffusion model to use.
-
-  void addCmdOptions(CLI::App &app) {
-    app.add_option("-d,--diffusion-model", diffusionModel,
-                   "The diffusion model to be used (LT|IC)")
-        ->required()
-        ->group("Tool Options");
-  }
-};
-
-using Configuration =
-    ripples::ToolConfiguration<DumpConfiguration, DumpOutputConfiguration>;
 
 int main(int argc, char **argv) {
-  Configuration CFG;
+  auto console = spdlog::stdout_color_st("console");
+
+  ripples::ToolConfiguration<BFSToolConfiguration> CFG;
+
   CFG.ParseCmdOptions(argc, argv);
+
+  spdlog::set_level(CFG.LogLevel());
 
   trng::lcg64 weightGen;
   weightGen.seed(0UL);
   weightGen.split(2, 0);
 
-  spdlog::set_level(spdlog::level::info);
-
-  using Graph = ripples::Graph<uint32_t>;
-  auto console = spdlog::stdout_color_st("console");
+  using dest_type = ripples::WeightedDestination<uint32_t, float>;
+  using GraphFwd =
+      ripples::Graph<uint32_t, dest_type, ripples::ForwardDirection<uint32_t>>;
   console->info("Loading...");
-  auto loading_start = std::chrono::high_resolution_clock::now();
-  Graph G = ripples::loadGraph<Graph>(CFG, weightGen);
-  auto loading_end = std::chrono::high_resolution_clock::now();
+  GraphFwd G = ripples::loadGraph<GraphFwd>(CFG, weightGen);
+  using vertex_type = typename GraphFwd::vertex_type;
   console->info("Loading Done!");
   console->info("Number of Nodes : {}", G.num_nodes());
   console->info("Number of Edges : {}", G.num_edges());
-  const auto load_time = std::chrono::duration_cast<std::chrono::milliseconds>(
-                             loading_end - loading_start)
-                             .count();
-  console->info("Loading took {}ms", load_time);
 
-  if (CFG.binaryDump) {
-    // Dump in binary format
-    auto file = std::fstream(CFG.OName, std::ios::out | std::ios::binary);
-    G.dump_binary(file);
-    file.close();
-  } else {
-    auto file = std::fstream(CFG.OName, std::ios::out);
-    dumpGraph(G, file, CFG.normalize);
-    file.close();
-  }
+  std::vector<vertex_type> sources(8);
+  trng::uniform_int_dist u(0, G.num_nodes());
+  std::generate(sources.begin(), sources.end(), [&]() { return u(weightGen); });
 
+  trng::lcg64 generator;
+  generator.seed(0UL);
+  generator.split(2, 1);
+
+  auto DeviceContext = ripples::make_gpu_context<ripples::HIP>(G, 0);
+
+  console->info("Start BFSs");
+  std::vector<std::vector<vertex_type>> rrr_sets(sources.size());
+  GPUBatchedBFS(G, *DeviceContext, std::begin(sources), std::end(sources),
+                std::begin(rrr_sets), ripples::independent_cascade_tag{});
+  console->info("End of BFSs");
+
+  std::for_each(rrr_sets.begin(), rrr_sets.end(), [&](auto &v) {
+    console->trace("Visited {} vertices", v.size());
+    // std::sort(v.begin(), v.end());
+    // for (size_t i = 0; i < v.size(); ++i)
+    //   console->trace("--> Visited[{}] = {}", i,  v[i]);
+    // console->trace("----------------------------------------------------------------------");
+  });
   return EXIT_SUCCESS;
 }

@@ -1,36 +1,54 @@
-from conans import ConanFile, tools
+from conan import ConanFile
+from conan.tools.cmake import CMakeDeps, CMakeToolchain, CMake, cmake_layout
 
 
 class RipplesConan(ConanFile):
-    options = {'memkind' : [ True, False],
-               'metal' : [True, False],
-               'nvidia_cub' : [True, False]}
-    default_options = {'memkind' : False,
-                       'metal' : False,
-                       'nvidia_cub' : False}
-    generators = 'Waf'
+    options = {'metall' : [True, False],
+               'nvidia_cub' : [True, False],
+               'gpu' : [None, 'amd', 'nvidia']}
+    default_options = {'nvidia_cub' : False,
+                       'metall': False,
+                       'gpu' : None}
+    settings = "os", "compiler", "build_type", "arch"
 
     def configure(self):
-        self.options['fmt'].shared = True
-        self.options['spdlog'].shared = True
+        self.options['fmt'].shared = False
+        self.options['spdlog'].shared = False
+
+    def layout(self):
+        cmake_layout(self)
+
+    def generate(self):
+        tc = CMakeToolchain(self)
+        tc.cache_variables['RIPPLES_ENABLE_HIP'] = self.options.gpu == 'amd'
+        tc.cache_variables['RIPPLES_ENABLE_CUDA'] = self.options.gpu == 'nvidia'
+        tc.cache_variables['RIPPLES_ENABLE_METALL'] = self.options.metall
+        tc.generate()
+        deps = CMakeDeps(self)
+        deps.generate()
 
     def requirements(self):
         self.requires('spdlog/1.11.0')
         self.requires('nlohmann_json/3.9.1')
-        self.requires('catch2/2.13.3')
+        self.requires('catch2/2.13.10')
         self.requires('cli11/2.1.1')
-        self.requires('libtrng/4.22@user/stable')
-        self.requires('WafGen/0.1@user/stable')
-        if self.options.nvidia_cub:
-            self.requires('nvidia-cub/1.12.0@user/stable')
+        self.requires('libtrng/4.23.1')
+        if self.options.gpu == 'nvidia' and self.options.nvidia_cub:
+            self.requires('nvidia-cub/1.12.0')
 
-        if self.options.memkind and self.options.metal:
-            self.output.error("Metal and Memkind are mutually exclusive")
+        if self.options.gpu == 'amd':
+            self.requires('rocthrust/5.3.0')
 
-        if tools.os_info.is_linux:
-            if self.options.memkind:
-                self.requires('memkind/1.10.1-rc1@memkind/stable')
+        if self.options.metall:
+            self.requires('metall/master')
 
-        if self.options.metal:
-            self.requires('metall/master@user/stable')
+    def build(self):
+        cmake = CMake(self)
+        cmake.configure()
+        cmake.build()
 
+    def package(self):
+        pass
+
+    def package_info(self):
+        pass

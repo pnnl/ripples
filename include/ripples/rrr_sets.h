@@ -7,7 +7,7 @@
 //===----------------------------------------------------------------------===//
 //
 // Copyright (c) 2019, Battelle Memorial Institute
-// 
+//
 // Battelle Memorial Institute (hereinafter Battelle) hereby grants permission
 // to any person or entity lawfully obtaining a copy of this software and
 // associated documentation files (hereinafter “the Software”) to redistribute
@@ -15,18 +15,18 @@
 // modification.  Such person or entity may use, copy, modify, merge, publish,
 // distribute, sublicense, and/or sell copies of the Software, and may permit
 // others to do so, subject to the following conditions:
-// 
+//
 // 1. Redistributions of source code must retain the above copyright notice,
 //    this list of conditions and the following disclaimers.
-// 
+//
 // 2. Redistributions in binary form must reproduce the above copyright notice,
 //    this list of conditions and the following disclaimer in the documentation
 //    and/or other materials provided with the distribution.
-// 
+//
 // 3. Other than as used herein, neither the name Battelle Memorial Institute or
 //    Battelle may be used in any form whatsoever without the express written
 //    consent of Battelle.
-// 
+//
 // THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
 // AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
 // IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
@@ -40,45 +40,43 @@
 //
 //===----------------------------------------------------------------------===//
 
-#ifndef RIPPLES_CUDA_CUDA_UTILS_H
-#define RIPPLES_CUDA_CUDA_UTILS_H
+#ifndef RIPPLES_RRR_SETS_H
+#define RIPPLES_RRR_SETS_H
 
 #include <vector>
-#include <utility>
 
-#include "cuda_runtime.h"
-#include "unistd.h"
+#ifdef ENABLE_METALL_RRRSETS
+#include "metall/metall.hpp"
+#include "metall/container/vector.hpp"
+#endif
 
 namespace ripples {
-void cuda_check(cudaError_t err, const char *fname, int line);
-void cuda_check(const char *fname, int line);
+#if defined ENABLE_METALL_RRRSETS
+  template<typename vertex_type>
+  using RRRsetAllocator = metall::manager::allocator_type<vertex_type>;
 
+  metall::manager &metall_manager_instance(std::string path) {
+    static metall::manager manager(metall::create_only, path.c_str());
+    return manager;
+  }
 
-//! \brief CUDA runtime wrap functions.
-size_t cuda_max_blocks();
-size_t cuda_num_devices();
-void cuda_set_device(size_t);
-void cuda_stream_create(cudaStream_t *);
-void cuda_stream_destroy(cudaStream_t);
+#else
+  template <typename vertex_type>
+  using RRRsetAllocator = std::allocator<vertex_type>;
+#endif
 
-std::vector<std::pair<size_t, ssize_t>> cuda_get_reduction_tree();
+  //! \brief The Random Reverse Reachability Sets type
+  template <typename GraphTy>
+  using RRRset =
+#ifdef  ENABLE_METALL_RRRSETS
+    metall::container::vector<typename GraphTy::vertex_type,
+                              RRRsetAllocator<typename GraphTy::vertex_type>>;
+#else
+  std::vector<typename GraphTy::vertex_type,
+              RRRsetAllocator<typename GraphTy::vertex_type>>;
+#endif
+  template <typename GraphTy>
+  using RRRsets = std::vector<RRRset<GraphTy>>;
+}
 
-bool cuda_malloc(void **dst, size_t size);
-void cuda_free(void *ptr);
-void cuda_d2h(void *dst, void *src, size_t size, cudaStream_t);
-void cuda_d2h(void *dst, void *src, size_t size);
-void cuda_h2d(void *dst, void *src, size_t size, cudaStream_t);
-void cuda_h2d(void *dst, void *src, size_t size);
-void cuda_memset(void *dst, int val, size_t size, cudaStream_t s);
-void cuda_memset(void *dst, int val, size_t size);
-void cuda_sync(cudaStream_t);
-void cuda_device_sync();
-
-void cuda_enable_p2p(size_t dev_number);
-void cuda_disable_p2p(size_t dev_number);
-
-size_t cuda_available_memory();
-
-}  // namespace ripples
-
-#endif  // IM_CUDA_CUDA_UTILS_H
+#endif
