@@ -40,85 +40,28 @@
 //
 //===----------------------------------------------------------------------===//
 
-#include <iostream>
-#include <string>
+#ifndef RIPPLES_TIM_CONFIGURATION_H
+#define RIPPLES_TIM_CONFIGURATION_H
 
 #include "ripples/configuration.h"
-#include "ripples/graph.h"
-#include "ripples/graph_dump.h"
-#include "ripples/loaders.h"
 
-#include "CLI/CLI.hpp"
-#include "spdlog/sinks/stdout_color_sinks.h"
-#include "spdlog/spdlog.h"
-#include "trng/lcg64.hpp"
+namespace ripples {
 
-struct DumpOutputConfiguration {
-  std::string OName{"output"};
-  bool binaryDump{false};
-  bool normalize{false};
+//! \brief The configuration data structure for the TIM+ algorithm.
+struct TIMConfiguration : public AlgorithmConfiguration {
+  double epsilon{0.50};  //!< The epsilon of the IM algorithm
 
+  //! \brief Add command line options to configure TIM+.
+  //!
+  //! \param app The command-line parser object.
   void addCmdOptions(CLI::App &app) {
-    app.add_option("-o,--output", OName, "The name of the output file name")
-        ->required()
-        ->group("Output Options");
-    app.add_flag("--dump-binary", binaryDump,
-                 "Dump the Graph in binary format.")
-        ->group("Output Options");
-    app.add_flag("--normalize", normalize,
-                 "Dump the Graph in text format with vertices starting from 1")
-        ->group("Output Options");
+    AlgorithmConfiguration::addCmdOptions(app);
+    app.add_option("-e,--epsilon", epsilon, "The size of the seed set.")
+      ->required()
+      ->group("Algorithm Options");
   }
 };
 
-struct DumpConfiguration {
-  std::string diffusionModel{"IC"};  //!< The diffusion model to use.
-
-  void addCmdOptions(CLI::App &app) {
-    app.add_option("-d,--diffusion-model", diffusionModel,
-                   "The diffusion model to be used (LT|IC)")
-        ->required()
-        ->group("Tool Options");
-  }
-};
-
-using Configuration =
-    ripples::ToolConfiguration<DumpConfiguration, DumpOutputConfiguration>;
-
-int main(int argc, char **argv) {
-  Configuration CFG;
-  CFG.ParseCmdOptions(argc, argv);
-
-  trng::lcg64 weightGen;
-  weightGen.seed(0UL);
-  weightGen.split(2, 0);
-
-  spdlog::set_level(spdlog::level::info);
-
-  using Graph = ripples::Graph<uint32_t>;
-  auto console = spdlog::stdout_color_st("console");
-  console->info("Loading...");
-  auto loading_start = std::chrono::high_resolution_clock::now();
-  Graph G = ripples::loadGraph<Graph>(CFG, weightGen);
-  auto loading_end = std::chrono::high_resolution_clock::now();
-  console->info("Loading Done!");
-  console->info("Number of Nodes : {}", G.num_nodes());
-  console->info("Number of Edges : {}", G.num_edges());
-  const auto load_time = std::chrono::duration_cast<std::chrono::milliseconds>(
-                             loading_end - loading_start)
-                             .count();
-  console->info("Loading took {}ms", load_time);
-
-  if (CFG.binaryDump) {
-    // Dump in binary format
-    auto file = std::fstream(CFG.OName, std::ios::out | std::ios::binary);
-    G.dump_binary(file);
-    file.close();
-  } else {
-    auto file = std::fstream(CFG.OName, std::ios::out);
-    dumpGraph(G, file, CFG.normalize);
-    file.close();
-  }
-
-  return EXIT_SUCCESS;
 }
+
+#endif

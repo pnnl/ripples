@@ -7,7 +7,7 @@
 //===----------------------------------------------------------------------===//
 //
 // Copyright (c) 2019, Battelle Memorial Institute
-// 
+//
 // Battelle Memorial Institute (hereinafter Battelle) hereby grants permission
 // to any person or entity lawfully obtaining a copy of this software and
 // associated documentation files (hereinafter “the Software”) to redistribute
@@ -15,18 +15,18 @@
 // modification.  Such person or entity may use, copy, modify, merge, publish,
 // distribute, sublicense, and/or sell copies of the Software, and may permit
 // others to do so, subject to the following conditions:
-// 
+//
 // 1. Redistributions of source code must retain the above copyright notice,
 //    this list of conditions and the following disclaimers.
-// 
+//
 // 2. Redistributions in binary form must reproduce the above copyright notice,
 //    this list of conditions and the following disclaimer in the documentation
 //    and/or other materials provided with the distribution.
-// 
+//
 // 3. Other than as used herein, neither the name Battelle Memorial Institute or
 //    Battelle may be used in any form whatsoever without the express written
 //    consent of Battelle.
-// 
+//
 // THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
 // AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
 // IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
@@ -40,45 +40,58 @@
 //
 //===----------------------------------------------------------------------===//
 
-#ifndef RIPPLES_CUDA_CUDA_UTILS_H
-#define RIPPLES_CUDA_CUDA_UTILS_H
+#include <unordered_map>
 
-#include <vector>
-#include <utility>
+#include "trng/uniform01_dist.hpp"
+#include "trng/uniform_int_dist.hpp"
 
-#include "cuda_runtime.h"
-#include "unistd.h"
+#include "ripples/gpu/generate_rrr_sets.h"
+#include "ripples/gpu/gpu_graph.h"
 
 namespace ripples {
-void cuda_check(cudaError_t err, const char *fname, int line);
-void cuda_check(const char *fname, int line);
 
+__global__ void kernel_lt_trng_setup(gpu_PRNGeneratorTy *d_trng_states,
+                                     gpu_PRNGeneratorTy r, size_t num_seqs,
+                                     size_t first_seq) {
+  int tid = blockIdx.x * blockDim.x + threadIdx.x;
+  d_trng_states[tid] = r;
+  d_trng_states[tid].split(num_seqs, first_seq + tid);
+}
 
-//! \brief CUDA runtime wrap functions.
-size_t cuda_max_blocks();
-size_t cuda_num_devices();
-void cuda_set_device(size_t);
-void cuda_stream_create(cudaStream_t *);
-void cuda_stream_destroy(cudaStream_t);
+__global__ void kernel_ic_trng_setup(gpu_PRNGeneratorTy *d_trng_states,
+                                     gpu_PRNGeneratorTy r, size_t num_seqs,
+                                     size_t first_seq) {
+  int tid = blockIdx.x * blockDim.x + threadIdx.x;
+  d_trng_states[tid] = r;
+  d_trng_states[tid].split(num_seqs, first_seq + tid);
+}
 
-std::vector<std::pair<size_t, ssize_t>> cuda_get_reduction_tree();
+void gpu_lt_rng_setup(gpu_PRNGeneratorTy *d_trng_state,
+                      const gpu_PRNGeneratorTy &r, size_t num_seqs,
+                      size_t first_seq, size_t n_blocks, size_t block_size) {
+#if defined(RIPPLES_ENABLE_CUDA)
+  kernel_lt_trng_setup<<<n_blocks, block_size>>>(d_trng_state, r, num_seqs,
+                                                 first_seq);
+#elif defined(RIPPLES_ENABLE_HIP)
+  hipLaunchKernelGGL(kernel_lt_trng_setup, n_blocks, block_size, 0, 0,
+                     d_trng_state, r, num_seqs, first_seq);
+#else
+#error "Unsupported GPU runtime"
+#endif
+}
 
-bool cuda_malloc(void **dst, size_t size);
-void cuda_free(void *ptr);
-void cuda_d2h(void *dst, void *src, size_t size, cudaStream_t);
-void cuda_d2h(void *dst, void *src, size_t size);
-void cuda_h2d(void *dst, void *src, size_t size, cudaStream_t);
-void cuda_h2d(void *dst, void *src, size_t size);
-void cuda_memset(void *dst, int val, size_t size, cudaStream_t s);
-void cuda_memset(void *dst, int val, size_t size);
-void cuda_sync(cudaStream_t);
-void cuda_device_sync();
-
-void cuda_enable_p2p(size_t dev_number);
-void cuda_disable_p2p(size_t dev_number);
-
-size_t cuda_available_memory();
+void gpu_ic_rng_setup(gpu_PRNGeneratorTy *d_trng_state,
+                      const gpu_PRNGeneratorTy &r, size_t num_seqs,
+                      size_t first_seq, size_t n_blocks, size_t block_size) {
+#if defined(RIPPLES_ENABLE_CUDA)
+  kernel_ic_trng_setup<<<n_blocks, block_size>>>(d_trng_state, r, num_seqs,
+                                                 first_seq);
+#elif defined(RIPPLES_ENABLE_HIP)
+  hipLaunchKernelGGL(kernel_ic_trng_setup, n_blocks, block_size, 0, 0,
+                     d_trng_state, r, num_seqs, first_seq);
+#else
+#error "Unsupported GPU runtime"
+#endif
+}
 
 }  // namespace ripples
-
-#endif  // IM_CUDA_CUDA_UTILS_H

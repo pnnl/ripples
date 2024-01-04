@@ -49,116 +49,65 @@ First of all we need to set up the Python environment needed.
 
 .. code-block:: shell
 
-   $ pip install --user pipenv
-   $ pipenv --three
-   $ pipenv install
-   $ pipenv shell
+   $ python -m venv --prompt ripples-dev .venv
+   $ source .venv/bin/activate
+   $ pip install conan
 
 Then, we set up the conan profile:
 
 .. code-block:: shell
 
-   $ conan profile new default --detect
-   $ conan profile update settings.compiler.libcxx=libstdc++11 default
-   $ conan profile update env.CC=$(which gcc) default
-   $ conan profile update env.CXX=$(which g++) default
+   $ conan profile detect
 
-Next, we need to install dependencies:
+You can check that the conan has detected the correct compiler by:
 
 .. code-block:: shell
 
-   $ conan create conan/waf-generator user/stable
-   $ conan create conan/trng user/stable
-   $ conan create conan/metall user/stable
-   $ conan create conan/memkind user/stable
-   $ conan install --install-folder build .
+   $ conan profile show
+
+In many cases this will show the correct configuration. Notable exceptions are
+systems where you want to use a provided compiler wrapper (e.g., many HPE
+machines ship compiler wrappers) or you want to use hipcc to compile the
+framework. In that case you want to edit your conan profile file with:
+
+.. code-block:: shell
+
+   $ vim $(conan profile path default)
+
+Here as a reference you can find how to change the profile to use hipcc:
+
+.. code-block:: conf
+
+    [settings]
+    arch=x86_64
+    build_type=Release
+    compiler=clang
+    compiler.cppstd=gnu14
+    compiler.libcxx=libstdc++11
+    compiler.version=15
+    os=Linux
+    [buildenv]
+    *:CC=hipcc
+    *:CXX=hipcc
+
+The next step is to install dependencies:
+
+.. code-block:: shell
+
+    $ conan create conan/trng
+    $ conan create conan/rocThrust # if compiling with AMD GPU support.
+    $ conan create conan/metall    # if compiling with Metall support.
+    $ conan install . --build missing
+    $ conan install . --build missing -o gpu=amd # for AMD GPU support.
+
+We can now compile ripples:
+
+.. code-block:: shell
+
+    $ conan build .               # CPU only version
+    $ conan build . -o gpu=amd    # with AMD GPU support.
 
 To enable Memkind or Metall please replace the conan install command with one of:
-
-.. code-block:: shell
-
-   $ conan install --install-folder build . -o memkind=True
-   $ conan install --install-folder build . -o metal=True
-
-Now we are ready to configure and build ripples:
-
-.. code-block:: shell
-
-   $ ./waf configure --enable-mpi build_release
-   # or without MPI support
-   $ ./waf configure build_release
-
-To enable Memkind or Metal configure and build ripples with:
-
-.. code-block:: shell
-
-   $ ./waf configure --enable-mpi --enable-metall build_release
-   # or without MPI support
-   $ ./waf configure --enable-metall build_release
-
-For Memkind just replace :code:`--enable-metall` with :code:`--enable-memkind`.
-
-In the case you are a Mac OS user, you will need to install the LLVM toolchain
-through brew that comes with OpenMP support.  Compiling Ripples than is as
-simple as:
-
-.. code-block:: shell
-
-   $ ./waf configure --openmp-root=/usr/local/opt/llvm --enable-mpi build_release
-   # or without MPI support
-   $ ./waf configure --openmp-root=/usr/local/opt/llvm build_release
-
-
-Build Instructions
-==================
-
-This project uses `WAF <https://waf.io>`_ as its build system.  Building Ripples
-is a two-step process: configure the project and build the tools.  Before
-attempting to build, be sure to have the following dependencies installed:
-
-- A compiler with C++17 support and OpenMP support.
-- `Spdlog <https://github.com/gabime/spdlog>`_
-- `JSON <https://github.com/nlohmann/json>`_
-- `TRNG4 <https://github.com/rabauke/trng4>`_
-- An MPI library (optional)
-
-The configure step can be invoked with:
-
-.. code-block:: shell
-
-   $ ./waf configure
-
-or optionally to enable the MPI implementations:
-
-.. code-block:: shell
-
-   $ ./waf configure --enable-mpi
-
-The build system offers options that can be used to help the configuration step
-locate dependencies (e.g., they are installed in unconventional paths).  A
-complete list of the options can be obtained with:
-
-.. code-block:: shell
-
-   $ ./waf configure --help
-
-
-After the configuration step succeeds, the build step can be executed by
-running:
-
-.. code-block:: shell
-
-   $ ./waf build_release
-
-For more detailed instruction, please read :ref:`build:Step By Step Build
-Instructions`.
-
-The tools compiled can be found under ``build/release/tools/``.  A complete set of
-command line options can be obtained through:
-
-.. code-block:: shell
-
-   $ ./build/release/tools/<tool_name> --help
 
 Allocate RRRSets Using Metall
 =============================

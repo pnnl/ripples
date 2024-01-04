@@ -7,7 +7,7 @@
 //===----------------------------------------------------------------------===//
 //
 // Copyright (c) 2019, Battelle Memorial Institute
-// 
+//
 // Battelle Memorial Institute (hereinafter Battelle) hereby grants permission
 // to any person or entity lawfully obtaining a copy of this software and
 // associated documentation files (hereinafter “the Software”) to redistribute
@@ -15,18 +15,18 @@
 // modification.  Such person or entity may use, copy, modify, merge, publish,
 // distribute, sublicense, and/or sell copies of the Software, and may permit
 // others to do so, subject to the following conditions:
-// 
+//
 // 1. Redistributions of source code must retain the above copyright notice,
 //    this list of conditions and the following disclaimers.
-// 
+//
 // 2. Redistributions in binary form must reproduce the above copyright notice,
 //    this list of conditions and the following disclaimer in the documentation
 //    and/or other materials provided with the distribution.
-// 
+//
 // 3. Other than as used herein, neither the name Battelle Memorial Institute or
 //    Battelle may be used in any form whatsoever without the express written
 //    consent of Battelle.
-// 
+//
 // THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
 // AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
 // IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
@@ -40,45 +40,58 @@
 //
 //===----------------------------------------------------------------------===//
 
-#ifndef RIPPLES_CUDA_CUDA_UTILS_H
-#define RIPPLES_CUDA_CUDA_UTILS_H
+#ifndef RIPPLES_IMM_INTERFACE_H
+#define RIPPLES_IMM_INTERFACE_H
 
-#include <vector>
-#include <utility>
-
-#include "cuda_runtime.h"
-#include "unistd.h"
+#include "ripples/imm_execution_record.h"
+#include "ripples/rrr_sets.h"
+#include "ripples/streaming_rrr_generator.h"
 
 namespace ripples {
-void cuda_check(cudaError_t err, const char *fname, int line);
-void cuda_check(const char *fname, int line);
 
+using dest_type = ripples::WeightedDestination<uint32_t, float>;
+using GraphFwd =
+  ripples::Graph<uint32_t, dest_type, ripples::ForwardDirection<uint32_t>>;
+using GraphBwd =
+  ripples::Graph<uint32_t, dest_type, ripples::BackwardDirection<uint32_t>>;
 
-//! \brief CUDA runtime wrap functions.
-size_t cuda_max_blocks();
-size_t cuda_num_devices();
-void cuda_set_device(size_t);
-void cuda_stream_create(cudaStream_t *);
-void cuda_stream_destroy(cudaStream_t);
+template <typename GraphTy, typename PRNGeneratorTy, typename ItrTy,
+          typename diff_model_tag>
+class StreamingRRRGenerator;
 
-std::vector<std::pair<size_t, ssize_t>> cuda_get_reduction_tree();
+using LTStreamingGenerator =
+	  ripples::StreamingRRRGenerator<
+	    GraphBwd, trng::lcg64,
+	  typename ripples::RRRsets<GraphBwd>::iterator,
+	    ripples::linear_threshold_tag>;
+using ICStreamingGenerator =
+	  ripples::StreamingRRRGenerator<
+	    GraphBwd, trng::lcg64,
+	  typename ripples::RRRsets<GraphBwd>::iterator,
+	    ripples::independent_cascade_tag>;
 
-bool cuda_malloc(void **dst, size_t size);
-void cuda_free(void *ptr);
-void cuda_d2h(void *dst, void *src, size_t size, cudaStream_t);
-void cuda_d2h(void *dst, void *src, size_t size);
-void cuda_h2d(void *dst, void *src, size_t size, cudaStream_t);
-void cuda_h2d(void *dst, void *src, size_t size);
-void cuda_memset(void *dst, int val, size_t size, cudaStream_t s);
-void cuda_memset(void *dst, int val, size_t size);
-void cuda_sync(cudaStream_t);
-void cuda_device_sync();
+#if 0
 
-void cuda_enable_p2p(size_t dev_number);
-void cuda_disable_p2p(size_t dev_number);
+template <typename GraphTy, typename ConfTy, typename GeneratorTy,
+          typename diff_model_tag>
+extern std::vector<typename GraphTy::vertex_type> IMM(const GraphTy &G, const ConfTy &CFG, double l, GeneratorTy &gen,
+                diff_model_tag &&model_tag, sequential_tag &&ex_tag);
 
-size_t cuda_available_memory();
+template <typename GraphTy, typename ConfTy, typename GeneratorTy,
+          typename diff_model_tag>
+extern std::vector<typename GraphTy::vertex_type> IMM(const GraphTy &G, const ConfTy &CFG, double l, GeneratorTy &gen,
+                diff_model_tag &&model_tag, omp_parallel_tag &&ex_tag);
 
-}  // namespace ripples
+template <typename GraphTy, typename ConfTy, typename GeneratorTy,
+          typename diff_model_tag>
+extern std::vector<typename GraphTy::vertex_type> IMM(const GraphTy &G, const ConfTy &CFG, double l, GeneratorTy &gen,
+                IMMExecutionRecord&, diff_model_tag &&model_tag, sequential_tag &&ex_tag);
 
-#endif  // IM_CUDA_CUDA_UTILS_H
+template <typename GraphTy, typename ConfTy, typename GeneratorTy,
+          typename diff_model_tag>
+extern std::vector<typename GraphTy::vertex_type> IMM(const GraphTy &G, const ConfTy &CFG, double l, GeneratorTy &gen,
+                IMMExecutionRecord &, diff_model_tag &&model_tag, omp_parallel_tag &&ex_tag);
+#endif
+}
+
+#endif

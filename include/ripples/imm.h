@@ -49,12 +49,10 @@
 #include <unordered_map>
 #include <vector>
 
-#include "nlohmann/json.hpp"
 #include "trng/lcg64.hpp"
 #include "trng/uniform01_dist.hpp"
 #include "trng/uniform_int_dist.hpp"
 
-#include "ripples/configuration.h"
 #include "ripples/find_most_influential.h"
 #include "ripples/generate_rrr_sets.h"
 #include "ripples/imm_execution_record.h"
@@ -66,40 +64,6 @@
 #define CUDA_PROFILE 0
 
 namespace ripples {
-
-//! The IMM algorithm configuration descriptor.
-struct IMMConfiguration : public TIMConfiguration {
-  size_t streaming_workers{0};
-  size_t streaming_gpu_workers{0};
-  size_t seed_select_max_workers{std::numeric_limits<size_t>::max()};
-  size_t seed_select_max_gpu_workers{0};
-  std::string gpu_mapping_string{""};
-  std::unordered_map<size_t, size_t> worker_to_gpu;
-
-  //! \brief Add command line options to configure IMM.
-  //!
-  //! \param app The command-line parser object.
-  void addCmdOptions(CLI::App &app) {
-    TIMConfiguration::addCmdOptions(app);
-    app.add_option(
-           "--streaming-gpu-workers", streaming_gpu_workers,
-           "The number of GPU workers for the CPU+GPU streaming engine.")
-        ->group("Streaming-Engine Options");
-    app.add_option("--streaming-gpu-mapping", gpu_mapping_string,
-                   "A comma-separated set of OpenMP numbers for GPU workers.")
-        ->group("Streaming-Engine Options");
-    app.add_option("--seed-select-max-workers", seed_select_max_workers,
-                   "The max number of workers for seed selection.")
-        ->group("Streaming-Engine Options");
-    app.add_option("--seed-select-max-gpu-workers", seed_select_max_gpu_workers,
-                   "The max number of GPU workers for seed selection.")
-        ->group("Streaming-Engine Options");
-  }
-};
-
-//! Retrieve the configuration parsed from command line.
-//! \return the configuration parsed from command line.
-ToolConfiguration<ripples::IMMConfiguration> configuration();
 
 //! Approximate logarithm of n chose k.
 //! \param n
@@ -367,7 +331,7 @@ auto Sampling(const GraphTy &G, const ConfTy &CFG, double l,
   RRRsets<GraphTy> RR;
   #endif
 
-  auto start = std::chrono::high_resolution_clock::now();
+  auto start = std::chrono::high_resolution_clock::now(); 
   ssize_t thetaPrimePrev = 0;
   ssize_t x = 1;
   if (RR.size() != 0){
@@ -714,7 +678,7 @@ auto Sampling(const GraphTy &G, const ConfTy &CFG, double l,
 //! \param ex_tag The execution policy tag.
 template <typename GraphTy, typename ConfTy, typename PRNG,
           typename diff_model_tag>
-auto IMM(const GraphTy &G, const ConfTy &CFG, double l, PRNG &gen,
+std::vector<typename GraphTy::vertex_type> IMM(const GraphTy &G, const ConfTy &CFG, double l, PRNG &gen,
          IMMExecutionRecord &record, diff_model_tag &&model_tag,
          sequential_tag &&ex_tag) {
   using vertex_type = typename GraphTy::vertex_type;
@@ -811,8 +775,8 @@ auto IMM(const GraphTy &G, const ConfTy &CFG, double l, PRNG &gen,
 //! \param ex_tag The execution policy tag.
 template <typename GraphTy, typename ConfTy, typename GeneratorTy,
           typename diff_model_tag>
-auto IMM(const GraphTy &G, const ConfTy &CFG, double l, GeneratorTy &gen,
-         diff_model_tag &&model_tag, omp_parallel_tag &&ex_tag) {
+std::vector<typename GraphTy::vertex_type> IMM(const GraphTy &G, const ConfTy &CFG, double l, GeneratorTy &gen,
+                                               IMMExecutionRecord& record, diff_model_tag &&model_tag, omp_parallel_tag &&ex_tag) {
   using vertex_type = typename GraphTy::vertex_type;
 
   // Initialize RR set & allocator
@@ -855,7 +819,6 @@ auto IMM(const GraphTy &G, const ConfTy &CFG, double l, GeneratorTy &gen,
 
   size_t k = CFG.k;
   double epsilon = CFG.epsilon;
-  auto &record(gen.execution_record());
 
   l = l * (1 + 1 / std::log2(G.num_nodes()));
 

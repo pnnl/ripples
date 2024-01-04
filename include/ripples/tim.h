@@ -61,6 +61,7 @@
 #include "ripples/find_most_influential.h"
 #include "ripples/generate_rrr_sets.h"
 #include "ripples/utility.h"
+#include "ripples/tim_configuration.h"
 
 #include "CLI/CLI.hpp"
 #include "trng/lcg64.hpp"
@@ -68,22 +69,6 @@
 #include "trng/uniform_int_dist.hpp"
 
 namespace ripples {
-
-//! \brief The configuration data structure for the TIM+ algorithm.
-struct TIMConfiguration : public AlgorithmConfiguration {
-  double epsilon{0.50};  //!< The epsilon of the IM algorithm
-
-  //! \brief Add command line options to configure TIM+.
-  //!
-  //! \param app The command-line parser object.
-  void addCmdOptions(CLI::App &app) {
-    AlgorithmConfiguration::addCmdOptions(app);
-    app.add_option("-e,--epsilon", epsilon, "The size of the seed set.")
-        ->required()
-        ->group("Algorithm Options");
-  }
-};
-
 //! TIM+ execution record.
 struct TIMExecutionRecord {
   //! Number of threads used during the execution.
