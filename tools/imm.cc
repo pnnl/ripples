@@ -39,6 +39,8 @@
 // SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 //
 //===----------------------------------------------------------------------===//
+#define ENABLE_METALL_RRRSETS
+
 #include <iostream>
 #include <sstream>
 #include <string>
