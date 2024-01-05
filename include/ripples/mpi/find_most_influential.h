@@ -92,13 +92,10 @@ class MPIStreamingFindMostInfluential {
         reduction_steps_(1),
         d_cpu_counters_(nullptr) {
     MPI_Comm_rank(MPI_COMM_WORLD, &mpi_rank);
-
 #if defined(RIPPLES_ENABLE_CUDA) || defined(RIPPLES_ENABLE_HIP)
     // Get Number of device and allocate 1 thread each.
     // num_gpu_workers_ = cuda_num_devices();
     num_cpu_workers_ -= num_gpu_workers_;
-
-    std::fill(vertex_coverage_.begin(), vertex_coverage_.end(), 0);
 
     // Allocate Counters
     if (num_gpu_workers_ > 0) {

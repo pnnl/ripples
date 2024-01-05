@@ -14,6 +14,7 @@ class RipplesConan(ConanFile):
     def configure(self):
         self.options['fmt'].shared = False
         self.options['spdlog'].shared = False
+        self.options['metall'].shared = False
 
     def layout(self):
         cmake_layout(self)
@@ -40,7 +41,7 @@ class RipplesConan(ConanFile):
             self.requires('rocthrust/5.3.0')
 
         if self.options.metall:
-            self.requires('metall/master')
+            self.requires('metall/0.27')
 
     def build(self):
         cmake = CMake(self)
