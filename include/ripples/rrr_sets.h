@@ -46,37 +46,63 @@
 #include <vector>
 
 #ifdef ENABLE_METALL_RRRSETS
-#include "metall/metall.hpp"
-#include "metall/container/vector.hpp"
+#include "Metall/metall.hpp"
+#include "Metall/container/vector.hpp"
+#include "Metall/container/unordered_map.hpp"
 #endif
 
 namespace ripples {
+// #if defined ENABLE_METALL_RRRSETS
+//   template<typename vertex_type>
+//   using RRRsetAllocator = metall::manager::allocator_type<vertex_type>;
+
+//   metall::manager &metall_manager_instance(std::string path) {
+//     static metall::manager manager(metall::create_only, path.c_str());
+//     return manager;
+//   }
+
+// #else
+//   template <typename vertex_type>
+//   using RRRsetAllocator = std::allocator<vertex_type>;
+// #endif
+
+//   //! \brief The Random Reverse Reachability Sets type
+//   template <typename GraphTy>
+//   using RRRset =
+// #ifdef  ENABLE_METALL_RRRSETS
+//     metall::container::vector<typename GraphTy::vertex_type,
+//                               RRRsetAllocator<typename GraphTy::vertex_type>>;
+// #else
+//   std::vector<typename GraphTy::vertex_type,
+//               RRRsetAllocator<typename GraphTy::vertex_type>>;
+// #endif
+//   // template <typename GraphTy>
+//   // using RRRsets = std::vector<RRRset<GraphTy>>;
 #if defined ENABLE_METALL_RRRSETS
-  template<typename vertex_type>
-  using RRRsetAllocator = metall::manager::allocator_type<vertex_type>;
-
-  metall::manager &metall_manager_instance(std::string path) {
-    static metall::manager manager(metall::create_only, path.c_str());
-    return manager;
-  }
-
+template<typename vertex_type>
+using RRRsetAllocator = metall::manager::allocator_type<vertex_type>;
 #else
-  template <typename vertex_type>
-  using RRRsetAllocator = std::allocator<vertex_type>;
+template <typename vertex_type>
+using RRRsetAllocator = std::allocator<vertex_type>;
 #endif
 
-  //! \brief The Random Reverse Reachability Sets type
-  template <typename GraphTy>
-  using RRRset =
+//! \brief The Random Reverse Reachability Sets type
+template <typename GraphTy>
+using RRRset =
 #ifdef  ENABLE_METALL_RRRSETS
     metall::container::vector<typename GraphTy::vertex_type,
                               RRRsetAllocator<typename GraphTy::vertex_type>>;
+    template<typename GraphTy>
+using RRRsetsAllocator = metall::container::scoped_allocator_adaptor<
+    metall::manager::allocator_type<RRRset<GraphTy>>>;
+    template <typename GraphTy>
+    using RRRsets = metall::container::vector<RRRset<GraphTy>, RRRsetsAllocator<GraphTy>>;
 #else
-  std::vector<typename GraphTy::vertex_type,
-              RRRsetAllocator<typename GraphTy::vertex_type>>;
+    std::vector<typename GraphTy::vertex_type,
+                              RRRsetAllocator<typename GraphTy::vertex_type>>;
+    template <typename GraphTy>
+    using RRRsets = std::vector<RRRset<GraphTy>>;
 #endif
-  template <typename GraphTy>
-  using RRRsets = std::vector<RRRset<GraphTy>>;
 }
 
 #endif

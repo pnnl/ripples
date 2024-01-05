@@ -53,9 +53,9 @@
 #include <ripples/utility.h>
 
 #if defined ENABLE_METALL
-#include <metall/container/vector.hpp>
-#include <metall/container/unordered_map.hpp>
-#include <metall/metall.hpp>
+#include <Metall/container/vector.hpp>
+#include <Metall/container/unordered_map.hpp>
+#include <Metall/metall.hpp>
 #endif
 
 namespace ripples {

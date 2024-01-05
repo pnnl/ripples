@@ -4,13 +4,20 @@
 build/
 /.waf*
 *~
+
+outputs/
+plots/
+scripts/
+test-data/*-LT
+Pipfile.lock
+.vscode/
+*.patch
 Pipfile.lock
 *.csv
 output.json
 *.png
 hpc*/
 results*
-scripts/
 core
 .venv/
 

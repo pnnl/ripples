@@ -7,9 +7,10 @@ target_link_libraries(imm
                       spdlog::spdlog fmt::fmt libtrng::libtrng
                       nlohmann_json::nlohmann_json CLI11::CLI11 OpenMP::OpenMP_CXX
                       infmax)
-if (metall_FOUND)
+if (Metall_FOUND)
   target_compile_definitions(imm PRIVATE ENABLE_METAL=1)
-  target_link_libraries(imm metall::metall)
+  # target_compile_definitions(imm PRIVATE ENABLE_METALL_RRRSETS=1)
+  target_link_libraries(imm Metall::Metall)
 endif()
 
 target_compile_definitions(imm PRIVATE
@@ -46,9 +47,10 @@ target_link_libraries(mpi-imm
 target_compile_definitions(mpi-imm PRIVATE
                            $<IF:$<BOOL:${RIPPLES_ENABLE_CUDA}>, RIPPLES_ENABLE_CUDA=1,>
                            $<IF:$<BOOL:${RIPPLES_ENABLE_HIP}>, RIPPLES_ENABLE_HIP=1,>)
-if (metall_FOUND)
+if (Metall_FOUND)
   target_compile_definitions(mpi-imm PRIVATE ENABLE_METAL=1)
-  target_link_libraries(mpi-imm metall::metall)
+  # target_compile_definitions(mpi-imm PRIVATE ENABLE_METALL_RRRSETS=1)
+  target_link_libraries(mpi-imm Metall::Metall)
 endif()
 
 add_executable(mpi-hill-climbing mpi-hill-climbing.cc)
