@@ -55,7 +55,7 @@ void benchmark(const std::string &report_dir, const std::string &modelName,
 
     ripples::ToolConfiguration<ripples::IMMConfiguration> CFG;
     CFG.k = 10;
-    ripples::ICStreamingGenerator se(Gbwd, generator, omp_get_num_threads(), 1,
+    ripples::ICStreamingGenerator se(Gbwd, generator, omp_get_num_threads(), 0,
                                      0, 0, 64,
                                      std::unordered_map<size_t, size_t>());
 
