@@ -256,7 +256,7 @@ int main(int argc, char **argv) {
         #if defined ENABLE_METALL_RRRSETS
           assert(false && "Not implemented");
         #else
-        using RRRsetAllocator = std::allocator<vertex_type>;
+        ripples::RRRsetAllocator<vertex_type> allocator;
         std::vector<ripples::RRRset<ripples::GraphBwd>> RR;
         auto timeRRRSets = ripples::measure<>::exec_time([&]() {
           RR.insert(RR.end(), delta, ripples::RRRset<ripples::GraphBwd>(allocator));
