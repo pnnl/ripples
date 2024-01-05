@@ -50,10 +50,19 @@
 namespace ripples {
 
 using dest_type = ripples::WeightedDestination<uint32_t, float>;
-using GraphFwd =
-  ripples::Graph<uint32_t, dest_type, ripples::ForwardDirection<uint32_t>>;
-using GraphBwd =
-  ripples::Graph<uint32_t, dest_type, ripples::BackwardDirection<uint32_t>>;
+#if defined ENABLE_METALL
+  using GraphFwd =
+      ripples::Graph<uint32_t, dest_type, ripples::ForwardDirection<uint32_t>,
+                     metall::manager::allocator_type<char>>;
+  using GraphBwd =
+      ripples::Graph<uint32_t, dest_type, ripples::BackwardDirection<uint32_t>,
+                     metall::manager::allocator_type<char>>;
+#else
+  using GraphFwd =
+      ripples::Graph<uint32_t, dest_type, ripples::ForwardDirection<uint32_t>>;
+  using GraphBwd =
+      ripples::Graph<uint32_t, dest_type, ripples::BackwardDirection<uint32_t>>;
+#endif
 
 template <typename GraphTy, typename PRNGeneratorTy, typename ItrTy,
           typename diff_model_tag>

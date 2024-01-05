@@ -8,8 +8,10 @@ target_link_libraries(imm
                       nlohmann_json::nlohmann_json CLI11::CLI11 OpenMP::OpenMP_CXX
                       infmax)
 if (Metall_FOUND)
-  target_compile_definitions(imm PRIVATE ENABLE_METAL=1)
-  # target_compile_definitions(imm PRIVATE ENABLE_METALL_RRRSETS=1)
+  target_compile_definitions(imm PRIVATE ENABLE_METALL=1)
+  if(RIPPLES_ENABLE_METALL_CHECKPOINTING)
+    target_compile_definitions(imm PRIVATE ENABLE_METALL_CHECKPOINTING=1)
+  endif()
   target_link_libraries(imm Metall::Metall)
 endif()
 
@@ -48,8 +50,10 @@ target_compile_definitions(mpi-imm PRIVATE
                            $<IF:$<BOOL:${RIPPLES_ENABLE_CUDA}>, RIPPLES_ENABLE_CUDA=1,>
                            $<IF:$<BOOL:${RIPPLES_ENABLE_HIP}>, RIPPLES_ENABLE_HIP=1,>)
 if (Metall_FOUND)
-  target_compile_definitions(mpi-imm PRIVATE ENABLE_METAL=1)
-  # target_compile_definitions(mpi-imm PRIVATE ENABLE_METALL_RRRSETS=1)
+  target_compile_definitions(mpi-imm PRIVATE ENABLE_METALL=1)
+  if(RIPPLES_ENABLE_METALL_CHECKPOINTING)
+    target_compile_definitions(mpi-imm PRIVATE ENABLE_METALL_CHECKPOINTING=1)
+  endif()
   target_link_libraries(mpi-imm Metall::Metall)
 endif()
 
