@@ -40,8 +40,10 @@
 //
 //===----------------------------------------------------------------------===//
 #ifdef ENABLE_METALL
-#define ENABLE_METALL_RRRSETS
-#endif
+  #ifdef ENABLE_METALL_CHECKPOINTING
+    #define ENABLE_METALL_RRRSETS
+  #endif // ENABLE_METALL_CHECKPOINTING
+#endif // ENABLE_METALL
 
 #include <iostream>
 #include <sstream>
@@ -172,19 +174,6 @@ int main(int argc, char **argv) {
   weightGen.split(2, 0);
 
   using dest_type = ripples::WeightedDestination<uint32_t, float>;
-#if defined ENABLE_METALL
-  using GraphFwd =
-      ripples::Graph<uint32_t, dest_type, ripples::ForwardDirection<uint32_t>,
-                     metall::manager::allocator_type<char>>;
-  using GraphBwd =
-      ripples::Graph<uint32_t, dest_type, ripples::BackwardDirection<uint32_t>,
-                     metall::manager::allocator_type<char>>;
-#else
-  using GraphFwd =
-      ripples::Graph<uint32_t, dest_type, ripples::ForwardDirection<uint32_t>>;
-  using GraphBwd =
-      ripples::Graph<uint32_t, dest_type, ripples::BackwardDirection<uint32_t>>;
-#endif
   console->info("Loading...");
   auto loading_start = std::chrono::high_resolution_clock::now();
 #if defined ENABLE_METALL
@@ -192,20 +181,20 @@ int main(int argc, char **argv) {
   metall::manager manager =
       (exists ? metall::manager(metall::open_only, CFG.metall_dir.c_str())
               : metall::manager(metall::create_only, CFG.metall_dir.c_str()));
-  GraphBwd *Gr;
+  ripples::GraphBwd *Gr;
   if (exists) {
     console->info("Previously existing graph exists! Loading...");
-    Gr = manager.find<GraphBwd>("graph").first;
+    Gr = manager.find<ripples::GraphBwd>("graph").first;
   } else {
     console->info("Creating new metall directory...");
-    GraphFwd Gf =
-        ripples::loadGraph<GraphFwd>(CFG, weightGen, manager.get_allocator());
-    Gr = manager.construct<GraphBwd>("graph")(Gf.get_transpose());
+    ripples::GraphFwd Gf =
+        ripples::loadGraph<ripples::GraphFwd>(CFG, weightGen, manager.get_allocator());
+    Gr = manager.construct<ripples::GraphBwd>("graph")(Gf.get_transpose());
   }
-  GraphBwd &G(*Gr);
+  const ripples::GraphBwd &G(*Gr);
 #else
-  GraphFwd Gf = ripples::loadGraph<GraphFwd>(CFG, weightGen);
-  GraphBwd G = Gf.get_transpose();
+  ripples::GraphFwd Gf = ripples::loadGraph<ripples::GraphFwd>(CFG, weightGen);
+  const ripples::GraphBwd G = Gf.get_transpose();
 #endif
   auto loading_end = std::chrono::high_resolution_clock::now();
   console->info("Loading Done!");
@@ -264,11 +253,10 @@ int main(int argc, char **argv) {
         R.Theta = CFG.num_rr_sets;
 
         using vertex_type = typename ripples::GraphBwd::vertex_type;
-#if defined ENABLE_METALL_RRRSETS
-        ripples::RRRsetAllocator<vertex_type> allocator =  metall_manager_instance(CFG.rr_dir).get_allocator();
-#else
-        ripples::RRRsetAllocator<vertex_type> allocator;
-#endif
+        #if defined ENABLE_METALL_RRRSETS
+          assert(false && "Not implemented");
+        #else
+        using RRRsetAllocator = std::allocator<vertex_type>;
         std::vector<ripples::RRRset<ripples::GraphBwd>> RR;
         auto timeRRRSets = ripples::measure<>::exec_time([&]() {
           RR.insert(RR.end(), delta, ripples::RRRset<ripples::GraphBwd>(allocator));
@@ -282,6 +270,7 @@ int main(int argc, char **argv) {
         R.ThetaEstimationGenerateRRR.push_back(timeRRRSets);
         R.ThetaEstimationMostInfluential.push_back(timeRRRSets - timeRRRSets);
         seeds = std::vector<typename ripples::GraphBwd::vertex_type>(CFG.k, 1);
+        #endif
       }
       else{
         seeds = IMM(G, CFG, 1, se, R, ripples::independent_cascade_tag{},
