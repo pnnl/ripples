@@ -70,7 +70,7 @@ void benchmark(const std::string &report_dir, const std::string &modelName,
         .run(modelName + " Graph",
              [&]() {
                auto r = ripples::FindMostInfluentialSet(
-                   Gbwd, CFG, RRRsets, record, false,
+                   Gbwd, CFG, RRRsets.begin(), RRRsets.end(), record, false,
                    ripples::omp_parallel_tag{});
                ankerl::nanobench::doNotOptimizeAway(r);
              })
