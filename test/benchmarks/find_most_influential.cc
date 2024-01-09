@@ -19,9 +19,9 @@
 #include "networkit/generators/WattsStrogatzGenerator.hpp"
 #include "networkit/graph/Graph.hpp"
 
-template <typename GeneratorTy>
+template <typename GeneratorTy, typename ConfigurationTy>
 void benchmark(const std::string &report_dir, const std::string &modelName,
-               GeneratorTy &&G) {
+               GeneratorTy &&G, ConfigurationTy & CFG) {
   ankerl::nanobench::Bench bench;
   for (auto scale : {10, 11, 12, 13, 14, 16, 17, 18, 19, 20}) {
     std::string report_file =
@@ -53,7 +53,6 @@ void benchmark(const std::string &report_dir, const std::string &modelName,
     std::vector<ripples::RRRset<GraphBwd>> RRRsets(1000);
     ripples::IMMExecutionRecord record;
 
-    ripples::ToolConfiguration<ripples::IMMConfiguration> CFG;
     CFG.k = 10;
     CFG.seed_select_max_workers = omp_get_num_threads();
     CFG.seed_select_max_gpu_workers = 0;
@@ -92,22 +91,47 @@ int main(int argc, char **argv) {
 
   CLI11_PARSE(app, argc, argv);
 
+  ripples::ToolConfiguration<ripples::IMMConfiguration> CFG;
+  CFG.k = 10;
+  CFG.seed_select_max_workers = omp_get_num_threads();
+  CFG.seed_select_max_gpu_workers = 0;
   benchmark(report_dir, "RMAT", [](int scale) {
     return NetworKit::RmatGenerator(scale, 16, .57, .19, .19, .05);
-  });
+  }, CFG);
   benchmark(report_dir, "BarabasiAlbert", [](int scale) {
     return NetworKit::BarabasiAlbertGenerator(8, 1 << scale);
-  });
+  }, CFG);
   benchmark(report_dir, "LFR", [](int scale) {
     auto G = NetworKit::LFRGenerator(1 << scale);
     G.generatePowerlawDegreeSequence(5, 6, -2);
     G.generatePowerlawCommunitySizeSequence(5, 6, -1);
     G.setMu(.5);
     return G;
-  });
+  }, CFG);
   benchmark(report_dir, "WattsStrogatz", [](int scale) {
     return NetworKit::WattsStrogatzGenerator(1 << scale, 8, 0.5);
-  });
+  }, CFG);
+
+#if defined(RIPPLES_ENABLE_CUDA) || defined(RIPPLES_ENABLE_HIP)
+  CFG.seed_select_max_workers = 2;
+  CFG.seed_select_max_gpu_workers = 1;
+  benchmark(report_dir, "RMAT + GPUs", [](int scale) {
+    return NetworKit::RmatGenerator(scale, 16, .57, .19, .19, .05);
+  }, CFG);
+  benchmark(report_dir, "BarabasiAlbert + GPUs", [](int scale) {
+    return NetworKit::BarabasiAlbertGenerator(8, 1 << scale);
+  }, CFG);
+  benchmark(report_dir, "LFR + GPUs", [](int scale) {
+    auto G = NetworKit::LFRGenerator(1 << scale);
+    G.generatePowerlawDegreeSequence(5, 6, -2);
+    G.generatePowerlawCommunitySizeSequence(5, 6, -1);
+    G.setMu(.5);
+    return G;
+  }, CFG);
+  benchmark(report_dir, "WattsStrogatz + GPUs", [](int scale) {
+    return NetworKit::WattsStrogatzGenerator(1 << scale, 8, 0.5);
+  }, CFG);
+#endif
 
   return 0;
 }
