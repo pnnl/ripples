@@ -55,6 +55,8 @@ void benchmark(const std::string &report_dir, const std::string &modelName,
 
     ripples::ToolConfiguration<ripples::IMMConfiguration> CFG;
     CFG.k = 10;
+    CFG.seed_select_max_workers = omp_get_num_threads();
+    CFG.seed_select_max_gpu_workers = 0;
     ripples::ICStreamingGenerator se(Gbwd, generator, omp_get_num_threads(), 0,
                                      0, 0, 64,
                                      std::unordered_map<size_t, size_t>());
