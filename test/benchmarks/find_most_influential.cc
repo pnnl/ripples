@@ -50,7 +50,7 @@ void benchmark(const std::string &report_dir, const std::string &modelName,
     GraphFwd Gfwd(EL.begin(), EL.end(), false);
     GraphBwd Gbwd = Gfwd.get_transpose();
 
-    std::vector<ripples::RRRset<GraphBwd>> RRRsets(1000);
+    std::vector<ripples::RRRset<GraphBwd>> RRRsets(10000);
     ripples::IMMExecutionRecord record;
 
     CFG.k = 10;
@@ -68,7 +68,7 @@ void benchmark(const std::string &report_dir, const std::string &modelName,
         .title("Seed Selection no Atomics")
         .performanceCounters(true)
         .output(nullptr)
-        .run(modelName + " Graph",
+        .run(modelName,
              [&]() {
                auto r = ripples::FindMostInfluentialSet(
                    Gbwd, CFG, RRRsets.begin(), RRRsets.end(), record, false,
@@ -115,20 +115,20 @@ int main(int argc, char **argv) {
 #if defined(RIPPLES_ENABLE_CUDA) || defined(RIPPLES_ENABLE_HIP)
   CFG.seed_select_max_workers = 2;
   CFG.seed_select_max_gpu_workers = 1;
-  benchmark(report_dir, "RMAT + GPUs", [](int scale) {
+  benchmark(report_dir, "RMAT+GPUs", [](int scale) {
     return NetworKit::RmatGenerator(scale, 16, .57, .19, .19, .05);
   }, CFG);
-  benchmark(report_dir, "BarabasiAlbert + GPUs", [](int scale) {
+  benchmark(report_dir, "BarabasiAlbert+GPUs", [](int scale) {
     return NetworKit::BarabasiAlbertGenerator(8, 1 << scale);
   }, CFG);
-  benchmark(report_dir, "LFR + GPUs", [](int scale) {
+  benchmark(report_dir, "LFR+GPUs", [](int scale) {
     auto G = NetworKit::LFRGenerator(1 << scale);
     G.generatePowerlawDegreeSequence(5, 6, -2);
     G.generatePowerlawCommunitySizeSequence(5, 6, -1);
     G.setMu(.5);
     return G;
   }, CFG);
-  benchmark(report_dir, "WattsStrogatz + GPUs", [](int scale) {
+  benchmark(report_dir, "WattsStrogatz+GPUs", [](int scale) {
     return NetworKit::WattsStrogatzGenerator(1 << scale, 8, 0.5);
   }, CFG);
 #endif
