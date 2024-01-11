@@ -53,11 +53,12 @@ void benchmark(const std::string &report_dir, const std::string &modelName,
     std::vector<ripples::RRRset<GraphBwd>> RRRsets(10000);
     ripples::IMMExecutionRecord record;
 
-    CFG.k = 10;
-    CFG.seed_select_max_workers = omp_get_num_threads();
-    CFG.seed_select_max_gpu_workers = 0;
-    ripples::ICStreamingGenerator se(Gbwd, generator, omp_get_num_threads(), 0,
-                                     0, 0, 64,
+    size_t num_threads;
+#pragma omp single
+    num_threads = omp_get_max_threads();
+
+    ripples::ICStreamingGenerator se(Gbwd, generator, num_threads, 0, 0, 0,
+                                     64,
                                      std::unordered_map<size_t, size_t>());
 
     ripples::GenerateRRRSets(Gbwd, se, RRRsets.begin(), RRRsets.end(), record,
@@ -71,7 +72,8 @@ void benchmark(const std::string &report_dir, const std::string &modelName,
         .run(modelName,
              [&]() {
                auto r = ripples::FindMostInfluentialSet(
-                   Gbwd, CFG, RRRsets.begin(), RRRsets.end(), record, false,
+                   Gbwd, CFG, RRRsets.begin(), RRRsets.end(), record,
+                   CFG.seed_select_max_gpu_workers != 0,
                    ripples::omp_parallel_tag{});
                ankerl::nanobench::doNotOptimizeAway(r);
              })
@@ -93,7 +95,11 @@ int main(int argc, char **argv) {
 
   ripples::ToolConfiguration<ripples::IMMConfiguration> CFG;
   CFG.k = 10;
-  CFG.seed_select_max_workers = omp_get_num_threads();
+#pragma omp parallel
+  {
+#pragma omp single
+    CFG.seed_select_max_workers = omp_get_num_threads();
+  }
   CFG.seed_select_max_gpu_workers = 0;
   benchmark(report_dir, "RMAT", [](int scale) {
     return NetworKit::RmatGenerator(scale, 16, .57, .19, .19, .05);
@@ -113,8 +119,12 @@ int main(int argc, char **argv) {
   }, CFG);
 
 #if defined(RIPPLES_ENABLE_CUDA) || defined(RIPPLES_ENABLE_HIP)
-  CFG.seed_select_max_workers = 2;
-  CFG.seed_select_max_gpu_workers = 1;
+  std::cout << ripples::GPURuntimeTrait<RUNTIME>::num_devices() << std::endl;
+  CFG.streaming_workers = 1 + ripples::GPURuntimeTrait<RUNTIME>::num_devices();
+  CFG.streaming_gpu_workers = ripples::GPURuntimeTrait<RUNTIME>::num_devices();
+  CFG.seed_select_max_workers =
+      1 + ripples::GPURuntimeTrait<RUNTIME>::num_devices();
+  CFG.seed_select_max_gpu_workers = ripples::GPURuntimeTrait<RUNTIME>::num_devices();
   benchmark(report_dir, "RMAT+GPUs", [](int scale) {
     return NetworKit::RmatGenerator(scale, 16, .57, .19, .19, .05);
   }, CFG);
