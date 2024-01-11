@@ -6,11 +6,13 @@ class RipplesConan(ConanFile):
     options = {'metall' : [True, False],
                'nvidia_cub' : [True, False],
                'enable_benchmarks' : [True, False],
-               'gpu' : [None, 'amd', 'nvidia']}
+               'gpu' : [None, 'amd', 'nvidia'],
+               'metall_checkpointing' : [True, False]}
     default_options = {'nvidia_cub' : False,
                        'enable_benchmarks' : False,
                        'metall': False,
-                       'gpu' : None}
+                       'gpu' : None,
+                       'metall_checkpointing' : True}
     settings = "os", "compiler", "build_type", "arch"
 
     def configure(self):
@@ -27,6 +29,10 @@ class RipplesConan(ConanFile):
         tc.cache_variables['RIPPLES_ENABLE_CUDA'] = self.options.gpu == 'nvidia'
         tc.cache_variables['RIPPLES_ENABLE_METALL'] = self.options.metall
         tc.cache_variables['RIPPLES_ENABLE_BENCHMARKS'] = self.options.enable_benchmarks
+        if self.options.metall:
+            tc.cache_variables['RIPPLES_ENABLE_METALL_CHECKPOINTING'] = self.options.metall_checkpointing
+        else:
+            tc.cache_variables['RIPPLES_ENABLE_METALL_CHECKPOINTING'] = False
         tc.generate()
         deps = CMakeDeps(self)
         deps.generate()
