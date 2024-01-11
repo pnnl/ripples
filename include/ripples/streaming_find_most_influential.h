@@ -60,12 +60,6 @@
 #include "ripples/gpu/gpu_runtime_trait.h"
 #endif
 
-#if defined(RIPPLES_ENABLE_CUDA)
-#define RUNTIME CUDA
-#elif defined(RIPPLES_ENABLE_HIP)
-#define RUNTIME HIP
-#endif
-
 namespace ripples {
 
 template <typename GraphTy>
@@ -620,7 +614,5 @@ class StreamingFindMostInfluential {
 };
 
 }  // namespace ripples
-
-#undef RUNTIME
 
 #endif
