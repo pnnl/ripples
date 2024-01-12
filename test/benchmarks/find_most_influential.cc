@@ -21,7 +21,7 @@
 
 template <typename GeneratorTy, typename ConfigurationTy>
 void benchmark(const std::string &report_dir, const std::string &modelName,
-               GeneratorTy &&G, ConfigurationTy & CFG) {
+               GeneratorTy &&G, ConfigurationTy & CFG, size_t numRRRsets) {
   ankerl::nanobench::Bench bench;
   for (auto scale : {10, 11, 12, 13, 14, 16, 17, 18, 19, 20}) {
     std::string report_file =
@@ -50,7 +50,7 @@ void benchmark(const std::string &report_dir, const std::string &modelName,
     GraphFwd Gfwd(EL.begin(), EL.end(), false);
     GraphBwd Gbwd = Gfwd.get_transpose();
 
-    std::vector<ripples::RRRset<GraphBwd>> RRRsets(10000);
+    std::vector<ripples::RRRset<GraphBwd>> RRRsets(numRRRsets);
     ripples::IMMExecutionRecord record;
 
     size_t num_threads;
@@ -91,6 +91,10 @@ int main(int argc, char **argv) {
       ->required()
       ->check(CLI::ExistingDirectory);
 
+  size_t numRRRSets{10000};
+  app.add_option("-n", numRRRSets, "The number of RRR sets used during the experiment.")
+    ->capture_default_str();
+
   CLI11_PARSE(app, argc, argv);
 
   ripples::ToolConfiguration<ripples::IMMConfiguration> CFG;
@@ -103,20 +107,20 @@ int main(int argc, char **argv) {
   CFG.seed_select_max_gpu_workers = 0;
   benchmark(report_dir, "RMAT", [](int scale) {
     return NetworKit::RmatGenerator(scale, 16, .57, .19, .19, .05);
-  }, CFG);
+  }, CFG, numRRRSets);
   benchmark(report_dir, "BarabasiAlbert", [](int scale) {
     return NetworKit::BarabasiAlbertGenerator(8, 1 << scale);
-  }, CFG);
+  }, CFG, numRRRSets);
   benchmark(report_dir, "LFR", [](int scale) {
     auto G = NetworKit::LFRGenerator(1 << scale);
     G.generatePowerlawDegreeSequence(5, 6, -2);
     G.generatePowerlawCommunitySizeSequence(5, 6, -1);
     G.setMu(.5);
     return G;
-  }, CFG);
+  }, CFG, numRRRSets);
   benchmark(report_dir, "WattsStrogatz", [](int scale) {
     return NetworKit::WattsStrogatzGenerator(1 << scale, 8, 0.5);
-  }, CFG);
+  }, CFG, numRRRSets);
 
 #if defined(RIPPLES_ENABLE_CUDA) || defined(RIPPLES_ENABLE_HIP)
   std::cout << ripples::GPURuntimeTrait<RUNTIME>::num_devices() << std::endl;
@@ -127,20 +131,20 @@ int main(int argc, char **argv) {
   CFG.seed_select_max_gpu_workers = ripples::GPURuntimeTrait<RUNTIME>::num_devices();
   benchmark(report_dir, "RMAT+GPUs", [](int scale) {
     return NetworKit::RmatGenerator(scale, 16, .57, .19, .19, .05);
-  }, CFG);
+  }, CFG, numRRRSets);
   benchmark(report_dir, "BarabasiAlbert+GPUs", [](int scale) {
     return NetworKit::BarabasiAlbertGenerator(8, 1 << scale);
-  }, CFG);
+  }, CFG, numRRRSets);
   benchmark(report_dir, "LFR+GPUs", [](int scale) {
     auto G = NetworKit::LFRGenerator(1 << scale);
     G.generatePowerlawDegreeSequence(5, 6, -2);
     G.generatePowerlawCommunitySizeSequence(5, 6, -1);
     G.setMu(.5);
     return G;
-  }, CFG);
+  }, CFG, numRRRSets);
   benchmark(report_dir, "WattsStrogatz+GPUs", [](int scale) {
     return NetworKit::WattsStrogatzGenerator(1 << scale, 8, 0.5);
-  }, CFG);
+  }, CFG, numRRRSets);
 #endif
 
   return 0;
