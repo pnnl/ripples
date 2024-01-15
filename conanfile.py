@@ -5,9 +5,11 @@ from conan.tools.cmake import CMakeDeps, CMakeToolchain, CMake, cmake_layout
 class RipplesConan(ConanFile):
     options = {'metall' : [True, False],
                'nvidia_cub' : [True, False],
+               'enable_benchmarks' : [True, False],
                'gpu' : [None, 'amd', 'nvidia'],
                'metall_checkpointing' : [True, False]}
     default_options = {'nvidia_cub' : False,
+                       'enable_benchmarks' : False,
                        'metall': False,
                        'gpu' : None,
                        'metall_checkpointing' : True}
@@ -26,6 +28,7 @@ class RipplesConan(ConanFile):
         tc.cache_variables['RIPPLES_ENABLE_HIP'] = self.options.gpu == 'amd'
         tc.cache_variables['RIPPLES_ENABLE_CUDA'] = self.options.gpu == 'nvidia'
         tc.cache_variables['RIPPLES_ENABLE_METALL'] = self.options.metall
+        tc.cache_variables['RIPPLES_ENABLE_BENCHMARKS'] = self.options.enable_benchmarks
         if self.options.metall:
             tc.cache_variables['RIPPLES_ENABLE_METALL_CHECKPOINTING'] = self.options.metall_checkpointing
         else:
@@ -40,6 +43,9 @@ class RipplesConan(ConanFile):
         self.requires('catch2/2.13.10')
         self.requires('cli11/2.1.1')
         self.requires('libtrng/4.23.1')
+        if self.options.enable_benchmarks:
+            self.requires('nanobench/4.3.11')
+            self.requires('networkit/master')
         if self.options.gpu == 'nvidia' and self.options.nvidia_cub:
             self.requires('nvidia-cub/1.12.0')
 

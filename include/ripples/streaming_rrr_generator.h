@@ -68,12 +68,6 @@
 #include "ripples/gpu/gpu_runtime_trait.h"
 #endif
 
-#if defined(RIPPLES_ENABLE_CUDA)
-#define RUNTIME CUDA
-#elif defined(RIPPLES_ENABLE_HIP)
-#define RUNTIME HIP
-#endif
-
 #ifdef PROFILE_OVERHEAD
 std::string output_file_name;
 std::atomic<size_t> gpu_id{0};
@@ -1207,7 +1201,5 @@ class StreamingRRRGenerator {
 #endif
 };
 }  // namespace ripples
-
-#undef RUNTIME
 
 #endif  // RIPPLES_STREAMING_RRR_GENERATOR_H

@@ -56,10 +56,8 @@
 #include "thrust/transform_scan.h"
 
 #if defined(RIPPLES_ENABLE_CUDA)
-#define RUNTIME CUDA
 #define MAX_COLOR_WIDTH 32
 #elif defined(RIPPLES_ENABLE_HIP)
-#define RUNTIME HIP
 #define MAX_COLOR_WIDTH 64
 #endif
 

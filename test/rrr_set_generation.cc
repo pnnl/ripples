@@ -43,11 +43,13 @@
 #include "catch2/catch.hpp"
 
 #include "ripples/imm_configuration.h"
-#include "ripples/generate_rrr_sets.h"
+#include "ripples/imm_interface.h"
 #include "ripples/graph.h"
 #include "ripples/imm.h"
 
 #include "trng/lcg64.hpp"
+#include <vector>
+
 
 using EdgeT = ripples::Edge<uint32_t, float>;
 std::vector<EdgeT> karate{
@@ -111,19 +113,12 @@ SCENARIO("Generate RRR sets", "[rrrsets]") {
       ripples::IMMExecutionRecord exRecord;
 
       size_t max_num_threads(1);
-#pragma omp single
       max_num_threads = omp_get_max_threads();
 
       trng::lcg64 gen;
       ripples::IMMExecutionRecord R;
-      decltype(ripples::IMMConfiguration::worker_to_gpu) map;
-
-      ripples::StreamingRRRGenerator<
-          decltype(G), decltype(gen),
-          typename ripples::RRRsets<decltype(G)>::iterator,
-          ripples::independent_cascade_tag>
-          generator(G, gen, max_num_threads, 0, map);
-
+      ripples::ICStreamingGenerator generator(G, gen, max_num_threads, 0, 0, 0, 64,
+                                                std::unordered_map<size_t, size_t>());
       for (size_t i = 0; i < 2; ++i) {
         ripples::GenerateRRRSets(G, generator, RR.end() - theta, RR.end(),
                                  exRecord, ripples::independent_cascade_tag{},
@@ -142,5 +137,43 @@ SCENARIO("Generate RRR sets", "[rrrsets]") {
         RR.insert(RR.end(), theta, ripples::RRRset<GraphBwd>{});
       }
     }
+#if defined(RIPPLES_ENABLE_CUDA) || defined(RIPPLES_ENABLE_HIP)
+    WHEN("I build the theta RRR sets in parallel with all GPUs") {
+      size_t theta = 100;
+      std::vector<ripples::RRRset<GraphBwd>> RR(theta);
+      ripples::IMMExecutionRecord exRecord;
+
+      size_t max_num_threads(1);
+      max_num_threads = omp_get_max_threads();
+      size_t num_gpus = 1;
+
+      std::unordered_map<size_t, size_t> gpu_mapping;
+      for (int i = 0; i < num_gpus; ++i) {
+        gpu_mapping[max_num_threads - num_gpus + i] = i;
+      }
+
+      trng::lcg64 gen;
+      ripples::IMMExecutionRecord R;
+      ripples::ICStreamingGenerator generator(G, gen, max_num_threads - num_gpus, 0, num_gpus, 64, 64,
+                                              gpu_mapping);
+      for (size_t i = 0; i < 2; ++i) {
+        ripples::GenerateRRRSets(G, generator, RR.end() - theta, RR.end(),
+                                 exRecord, ripples::independent_cascade_tag{},
+                                 ripples::omp_parallel_tag{});
+
+        THEN("They all contain a non empty list of vertices.") {
+          for (auto& e : RR) {
+            REQUIRE(!e.empty());
+            for (auto v : e) {
+              REQUIRE(v >= 0);
+              REQUIRE(v < G.num_nodes());
+            }
+          }
+        }
+
+        RR.insert(RR.end(), theta, ripples::RRRset<GraphBwd>{});
+      }
+    }
+#endif
   }
 }

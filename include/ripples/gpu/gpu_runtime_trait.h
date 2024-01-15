@@ -55,6 +55,12 @@
 namespace ripples {
 enum GPURuntime { CUDA, HIP };
 
+#if defined(RIPPLES_ENABLE_CUDA)
+#define RUNTIME ripples::GPURuntime::CUDA
+#elif defined(RIPPLES_ENABLE_HIP)
+#define RUNTIME ripples::GPURuntime::HIP
+#endif
+
 template <GPURuntime R>
 class GPURuntimeTrait {
  public:

@@ -61,6 +61,7 @@
 #ifdef RIPPLES_ENABLE_CUDA
 #include "ripples/gpu/generate_rrr_sets.h"
 #include "ripples/gpu/find_most_influential.h"
+#include "ripples/gpu/gpu_runtime_trait.h"
 #include "thrust/count.h"
 #include "thrust/device_ptr.h"
 #endif
@@ -184,9 +185,10 @@ auto FindMostInfluentialSet(const GraphTy &G, const ConfTy &CFG,
     num_max_cpu =
         std::min<size_t>(omp_get_max_threads(), CFG.seed_select_max_workers);
   }
-#ifdef RIPPLES_ENABLE_CUDA
+#if defined(RIPPLES_ENABLE_CUDA) || defined(RIPPLES_ENABLE_HIP)
   if (enableGPU) {
-    num_gpu = std::min(cuda_num_devices(), CFG.seed_select_max_gpu_workers);
+    num_gpu = std::min(GPURuntimeTrait<RUNTIME>::num_devices(),
+                       CFG.seed_select_max_gpu_workers);
   }
 #endif
   StreamingFindMostInfluential<GraphTy> SE(G, rrr_begin, rrr_end, num_max_cpu, num_gpu);

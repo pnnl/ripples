@@ -60,12 +60,6 @@
 #include "ripples/gpu/gpu_runtime_trait.h"
 #endif
 
-#if defined(RIPPLES_ENABLE_CUDA)
-#define RUNTIME CUDA
-#elif defined(RIPPLES_ENABLE_HIP)
-#define RUNTIME HIP
-#endif
-
 namespace ripples {
 
 template <typename GraphTy>
@@ -585,7 +579,7 @@ class StreamingFindMostInfluential {
     std::chrono::duration<double, std::milli> seedSelection(0);
     while (uncovered != 0) {
       // Print uncovered
-      std::cout << "Uncovered: " << uncovered << std::endl;
+      // std::cout << "Uncovered: " << uncovered << std::endl;
       auto start = std::chrono::high_resolution_clock::now();
       auto element = getNextSeed(queue);
       auto end = std::chrono::high_resolution_clock::now();
@@ -620,7 +614,5 @@ class StreamingFindMostInfluential {
 };
 
 }  // namespace ripples
-
-#undef RUNTIME
 
 #endif
