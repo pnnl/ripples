@@ -53,6 +53,10 @@ find_package(libtrng REQUIRED)
 find_package(CLI11 REQUIRED)
 find_package(Catch2 REQUIRED)
 
+if (RIPPLES_ENABLE_TCMALLOC)
+  find_package(gperftools REQUIRED)
+endif()
+
 if (RIPPLES_ENABLE_BENCHMARKS)
   find_package(nanobench REQUIRED)
   find_package(networkit REQUIRED)

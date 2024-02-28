@@ -4,6 +4,7 @@ endif()
 
 add_library(infmax STATIC imm.cc)
 target_link_libraries(infmax
+                      $<IF:$<BOOL:${RIPPLES_ENABLE_TCMALLOC}>, gperftools::tcmalloc_minimal,>
                       CLI11::CLI11 libtrng::libtrng fmt::fmt
                       spdlog::spdlog nlohmann_json::nlohmann_json)
 target_compile_definitions(infmax PRIVATE

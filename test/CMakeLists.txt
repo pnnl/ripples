@@ -3,12 +3,14 @@ target_link_libraries(test_main Catch2::Catch2)
 
 add_executable(pivoting-tests pivoting.cc)
 target_link_libraries(pivoting-tests
+                      $<IF:$<BOOL:${RIPPLES_ENABLE_TCMALLOC}>, gperftools::tcmalloc_minimal,>
                       libtrng::libtrng nlohmann_json::nlohmann_json spdlog::spdlog
                       fmt::fmt OpenMP::OpenMP_CXX test_main)
 add_test(NAME Pivoting COMMAND pivoting-tests)
 
 add_executable(community-extraction-tests community_extraction.cc)
 target_link_libraries(community-extraction-tests
+                      $<IF:$<BOOL:${RIPPLES_ENABLE_TCMALLOC}>, gperftools::tcmalloc_minimal,>
                       libtrng::libtrng nlohmann_json::nlohmann_json spdlog::spdlog
                       fmt::fmt OpenMP::OpenMP_CXX test_main)
 add_test(NAME CommunityExtraction COMMAND community-extraction-tests)
@@ -19,9 +21,11 @@ if (RIPPLES_ENABLE_CUDA)
   target_link_libraries(imm CUDA::cudart)
 endif()
 target_link_libraries(rrr-set-generation-tests
+                      $<IF:$<BOOL:${RIPPLES_ENABLE_TCMALLOC}>, gperftools::tcmalloc_minimal,>
                       libtrng::libtrng nlohmann_json::nlohmann_json spdlog::spdlog
                       fmt::fmt CLI11::CLI11 OpenMP::OpenMP_CXX infmax test_main)
 target_compile_definitions(rrr-set-generation-tests PRIVATE
+                           $<IF:$<BOOL:${RIPPLES_ENABLE_TCMALLOC}>, gperftools::tcmalloc_minimal,>
                            $<IF:$<BOOL:${RIPPLES_ENABLE_CUDA}>, RIPPLES_ENABLE_CUDA=1,>
                            $<IF:$<BOOL:${RIPPLES_ENABLE_HIP}>, RIPPLES_ENABLE_HIP=1,>)
 

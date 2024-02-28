@@ -3,12 +3,14 @@ from conan.tools.cmake import CMakeDeps, CMakeToolchain, CMake, cmake_layout
 
 
 class RipplesConan(ConanFile):
-    options = {'metall' : [True, False],
+    options = {'gperftools': [True, False],
+               'metall' : [True, False],
                'nvidia_cub' : [True, False],
                'enable_benchmarks' : [True, False],
                'gpu' : [None, 'amd', 'nvidia'],
                'metall_checkpointing' : [True, False]}
-    default_options = {'nvidia_cub' : False,
+    default_options = {'gperftools': True,
+                       'nvidia_cub': False,
                        'enable_benchmarks' : False,
                        'metall': False,
                        'gpu' : None,
@@ -33,6 +35,9 @@ class RipplesConan(ConanFile):
             tc.cache_variables['RIPPLES_ENABLE_METALL_CHECKPOINTING'] = self.options.metall_checkpointing
         else:
             tc.cache_variables['RIPPLES_ENABLE_METALL_CHECKPOINTING'] = False
+
+        if self.options.gperftools:
+            tc.cache_variables['RIPPLES_ENABLE_TCMALLOC'] = True
         tc.generate()
         deps = CMakeDeps(self)
         deps.generate()
@@ -43,6 +48,8 @@ class RipplesConan(ConanFile):
         self.requires('catch2/2.13.10')
         self.requires('cli11/2.1.1')
         self.requires('libtrng/4.23.1')
+        if self.options.gperftools:
+            self.requires('gperftools/2.15')
         if self.options.enable_benchmarks:
             self.requires('nanobench/4.3.11')
             self.requires('networkit/master')
