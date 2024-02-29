@@ -43,13 +43,14 @@
 #ifndef RIPPLES_GRAPH_H
 #define RIPPLES_GRAPH_H
 
+#include <omp.h>
+
 #include <algorithm>
 #include <cstddef>
+#include <fstream>
 #include <unordered_map>
 #include <numeric>
 #include <vector>
-#include <cassert>
-
 #include <ripples/utility.h>
 
 #if defined ENABLE_METALL
@@ -588,56 +589,90 @@ class Graph {
 
   edge_pointer_t csr_edges() const { return edges; }
 
-  template <typename FStream>
-  void load_binary(FStream &FS) {
+private:
+  template<typename FStreamTy>
+  void read_chunk(FStreamTy &FS, size_t TotalBytes, char* O) {
+    size_t threadnum = omp_get_thread_num(), numthreads = omp_get_num_threads();
+    size_t low = TotalBytes * threadnum / numthreads,
+      high = TotalBytes * (threadnum + 1) / numthreads;
+    size_t bytesToRead = high - low;
+    O += low;
+    FS.seekg(low, std::ios_base::cur);
+    FS.read(O, bytesToRead);
+    FS.seekg(TotalBytes - high, std::ios_base::cur);
+  }
+
+public:
+  void load_binary(const std::string & FileName) {
     #ifdef ENABLE_METALL
     // Static assert 0
     throw 0 && "Not implemented yet, don't use with Metall";
     #endif
 
+    #pragma omp parallel
+    {
+      std::ifstream FS(FileName, std::ios::binary);
+      if (!FS.is_open()) throw "Bad things happened!!!";
 
-    if (!FS.is_open()) throw "Bad things happened!!!";
+      #pragma omp single
+      {
+        FS.read(reinterpret_cast<char *>(&numNodes), sizeof(numNodes));
+        FS.read(reinterpret_cast<char *>(&numEdges), sizeof(numEdges));
 
-    FS.read(reinterpret_cast<char *>(&numNodes), sizeof(numNodes));
-    FS.read(reinterpret_cast<char *>(&numEdges), sizeof(numEdges));
+        numNodes = le64toh(numNodes);
+        numEdges = le64toh(numEdges);
 
-    numNodes = le64toh(numNodes);
-    numEdges = le64toh(numEdges);
+        reverseMap.resize(numNodes);
+      }
 
-    reverseMap.resize(numNodes);
-    FS.read(reinterpret_cast<char *>(reverseMap.data()),
-            reverseMap.size() * sizeof(VertexTy));
+      FS.seekg(sizeof(numNodes) + sizeof(numEdges), std::ios_base::beg);
+      read_chunk(FS, reverseMap.size() * sizeof(VertexTy),
+                 reinterpret_cast<char *>(reverseMap.data()));
 
-    sequence_of<VertexTy>::load(reverseMap.begin(), reverseMap.end(),
-                                reverseMap.begin());
+      #pragma omp for
+      for (size_t i = 0; i < reverseMap.size(); ++i) {
+        reverseMap[i] =  load_v<sizeof(VertexTy)>::value(reverseMap[i]);
+      }
 
-    for (VertexTy i = 0; i < numNodes; ++i) idMap[reverseMap[i]] = i;
+      #pragma omp single
+      {
+        index = allocate_index(numNodes + 1);
+        edges = allocate_edges(numEdges);
+      }
 
-    index = allocate_index(numNodes + 1);
-    edges = allocate_edges(numEdges);
+      read_chunk(FS, (numNodes + 1) * sizeof(ptrdiff_t),
+                 reinterpret_cast<char *>(pointer_to(index)));
 
-    #pragma omp parallel for
-    for (size_t i = 0; i < numNodes + 1; ++i) {
-      index[i] = nullptr;
+      #pragma omp for
+      for (size_t i = 0; i < numNodes + 1; ++i) {
+        uint64_t v = *(reinterpret_cast<uint64_t *>(pointer_to(index)) + i);
+        *(reinterpret_cast<uint64_t *>(pointer_to(index)) + i) =
+          load_v<sizeof(edge_pointer_t)>::value(v) * sizeof(edge_type)
+          + reinterpret_cast<uint64_t>(pointer_to(edges));
+      }
+
+      read_chunk(FS, numEdges * sizeof(edge_type), reinterpret_cast<char *>(pointer_to(edges)));
+
+      #pragma omp for
+      for (size_t i = 0; i < numEdges; ++i) {
+        // TODO: this will be wrong when the DestinationTy bigger than 64 bits.
+        uint64_t v = *(reinterpret_cast<uint64_t *>(pointer_to(edges)) + i);
+        *(reinterpret_cast<uint64_t *>(pointer_to(edges)) + i) = load_v<sizeof(uint64_t)>::value(v);
+      }
+
+      decltype(idMap) localMap;
+      #pragma omp for
+      for (VertexTy i = 0; i < numNodes; ++i) localMap[reverseMap[i]] = i;
+
+      #pragma omp critical
+      {
+#if (__cplusplus >= 201703L)
+        idMap.merge(localMap);
+#else
+        idMap.insert(localMap.begin(), localMap.end());
+#endif
+      }
     }
-
-    #pragma omp parallel for
-    for (size_t i = 0; i < numEdges; ++i) {
-      edges[i] = edge_type();
-    }
-
-    FS.read(reinterpret_cast<char *>(pointer_to(index)),
-            (numNodes + 1) * sizeof(ptrdiff_t));
-
-    sequence_of<edge_pointer_t>::load(index, index + numNodes + 1, index);
-
-    std::transform(index, index + numNodes + 1, index,
-                   [=](edge_pointer_t v) -> edge_pointer_t {
-                     return edge_pointer_t(reinterpret_cast<ptrdiff_t>(pointer_to(v)) + edges);
-                   });
-
-    FS.read(reinterpret_cast<char *>(pointer_to(edges)), numEdges * sizeof(edge_type));
-    sequence_of<edge_type>::load(edges, edges + numEdges, edges);
   }
 
   private:

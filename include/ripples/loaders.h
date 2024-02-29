@@ -44,8 +44,6 @@
 #define RIPPLES_LOADERS_H
 
 #include <algorithm>
-#include <fstream>
-#include <iostream>
 #include <numeric>
 #include <sstream>
 #include <stdexcept>
@@ -58,6 +56,8 @@
 #include "trng/lcg64.hpp"
 #include "trng/truncated_normal_dist.hpp"
 #include "trng/uniform01_dist.hpp"
+#include <vector>
+#include <cstdlib>
 
 namespace ripples {
 
@@ -242,8 +242,7 @@ GraphTy loadGraph_helper(ConfTy &CFG, PrngTy &PRNG, allocator_t allocator = allo
     GraphTy tmpG(edgeList.begin(), edgeList.end(), !CFG.disable_renumbering, allocator);
     G = std::move(tmpG);
   } else {
-    std::ifstream binaryDump(CFG.IFileName, std::ios::binary);
-    G.load_binary(binaryDump);
+    G.load_binary(CFG.IFileName);
   }
 
   return G;
