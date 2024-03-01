@@ -47,11 +47,14 @@
 
 #include <algorithm>
 #include <cstddef>
+#include <cstdio>
 #include <fstream>
 #include <unordered_map>
 #include <numeric>
 #include <vector>
 #include <ripples/utility.h>
+#include <fcntl.h>
+#include <unistd.h>
 
 #if defined ENABLE_METALL
 #include <metall/metall.hpp>
@@ -501,29 +504,77 @@ class Graph {
       throw "Bad node";
   }
 
+private:
+  size_t total_binary_size() const {
+    return 2 * sizeof(uint64_t)
+      + sizeof(VertexTy) * numNodes
+      + sizeof(pointer_to(edges)) * (numNodes + 1)
+      + sizeof(edge_type) * numEdges;
+  }
+  void write_chunk(std::ofstream &FS, size_t TotalBytes, char* O) const {
+    size_t threadnum = omp_get_thread_num(), numthreads = omp_get_num_threads();
+    size_t low = TotalBytes * threadnum / numthreads,
+      high = TotalBytes * (threadnum + 1) / numthreads;
+    size_t bytesToRead = high - low;
+    O += low;
+    FS.seekp(low, std::ios_base::cur);
+    FS.write(O, bytesToRead);
+    FS.seekp(TotalBytes - high, std::ios_base::cur);
+  }
+
+public:
   //! Dump the internal representation to a binary stream.
   //!
-  //! \tparam FStream The type of the output stream
-  //!
-  //! \param FS The ouput file stream.
-  template <typename FStream>
-  void dump_binary(FStream &FS) const {
-    uint64_t num_nodes = htole64(numNodes);
-    uint64_t num_edges = htole64(numEdges);
-    FS.write(reinterpret_cast<const char *>(&num_nodes), sizeof(uint64_t));
-    FS.write(reinterpret_cast<const char *>(&num_edges), sizeof(uint64_t));
+  //! \param FilePath The path to the ouput file.
+  void dump_binary(const std::string &FilePath) const {
+    size_t totalFileSize = total_binary_size();
+    int mode = S_IRUSR | S_IWUSR | S_IRGRP;
+    int file = open(FilePath.c_str(), O_CREAT | O_WRONLY, mode);
+    fallocate(file, 0, 0, totalFileSize);
+    close(file);
 
-    sequence_of<VertexTy>::dump(FS, reverseMap.begin(), reverseMap.end());
+    // TODO: fix for 64bit vertices IDs.
+    std::vector<uint32_t> tmpVertices(numNodes + 1);
+    std::vector<uint64_t> tmpEdges(numEdges);
+    #pragma omp parallel
+    {
+      std::ofstream FS(FilePath, std::ios::out | std::ios::binary);
 
-    using relative_index =
-        typename std::iterator_traits<edge_pointer_t>::difference_type;
-    std::vector<relative_index> relIndex(numNodes + 1, 0);
-    std::transform(index, index + numNodes + 1, relIndex.begin(),
-                   [=](edge_pointer_t v) -> relative_index {
-                     return std::distance(edges, v);
-                   });
-    sequence_of<relative_index>::dump(FS, relIndex.begin(), relIndex.end());
-    sequence_of<edge_type>::dump(FS, edges, edges + numEdges);
+      #pragma omp single
+      {
+        uint64_t num_nodes = htole64(numNodes);
+        uint64_t num_edges = htole64(numEdges);
+        FS.write(reinterpret_cast<const char *>(&num_nodes), sizeof(uint64_t));
+        FS.write(reinterpret_cast<const char *>(&num_edges), sizeof(uint64_t));
+      }
+      FS.seekp(sizeof(numNodes) + sizeof(numEdges), std::ios_base::beg);
+
+      #pragma omp for
+      for (size_t i = 0; i < reverseMap.size(); ++i){
+        tmpVertices[i] = dump_v<sizeof(uint32_t)>::value(reverseMap[i]);
+      }
+
+      write_chunk(FS, reverseMap.size() * sizeof(uint32_t),
+                  reinterpret_cast<char *>(tmpVertices.data()));
+
+      #pragma omp for
+      for (size_t i = 0; i < numNodes + 1; ++i) {
+        tmpEdges[i] =
+          dump_v<sizeof(uint64_t)>::value(std::distance(edges, index[i]));
+      }
+
+      write_chunk(FS, (numNodes + 1)  * sizeof(uint64_t),
+                  reinterpret_cast<char *>(tmpEdges.data()));
+
+      #pragma omp for
+      for (size_t i = 0; i < numEdges; ++i) {
+        uint64_t v = *(reinterpret_cast<uint64_t *>(pointer_to(edges)) + i);
+        tmpEdges[i] = dump_v<sizeof(edge_type)>::value(v);
+      }
+
+      write_chunk(FS, tmpEdges.size() * sizeof(uint64_t),
+                  reinterpret_cast<char *>(tmpEdges.data()));
+    }
   }
 
  private:

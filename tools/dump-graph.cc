@@ -111,9 +111,7 @@ int main(int argc, char **argv) {
 
   if (CFG.binaryDump) {
     // Dump in binary format
-    auto file = std::fstream(CFG.OName, std::ios::out | std::ios::binary);
-    G.dump_binary(file);
-    file.close();
+    G.dump_binary(CFG.OName);
   } else {
     auto file = std::fstream(CFG.OName, std::ios::out);
     dumpGraph(G, file, CFG.normalize);
