@@ -553,8 +553,7 @@ public:
 #endif
 
     // TODO: fix for 64bit vertices IDs.
-    std::vector<uint32_t> tmpVertices(numNodes);
-    std::vector<uint64_t> tmpEdges(numEdges);
+    std::vector<uint64_t> tmpIndex(numNodes + 1);
     #pragma omp parallel
     {
       std::ofstream FS(FilePath, std::ios::out | std::ios::binary);
@@ -562,42 +561,26 @@ public:
       #pragma omp single
       {
         uint64_t endianess_check = 0xc0ffee;
-        uint64_t num_nodes = htole64(numNodes);
-        uint64_t num_edges = htole64(numEdges);
         FS.write(reinterpret_cast<const char *>(&endianess_check), sizeof(uint64_t));
-        FS.write(reinterpret_cast<const char *>(&num_nodes), sizeof(uint64_t));
-        FS.write(reinterpret_cast<const char *>(&num_edges), sizeof(uint64_t));
+        FS.write(reinterpret_cast<const char *>(&numNodes), sizeof(uint64_t));
+        FS.write(reinterpret_cast<const char *>(&numEdges), sizeof(uint64_t));
       }
 
       FS.seekp(sizeof(uint64_t) + sizeof(numNodes) + sizeof(numEdges), std::ios_base::beg);
 
-      #pragma omp for
-      for (size_t i = 0; i < numNodes; ++i){
-        tmpVertices[i] = dump_v<sizeof(VertexTy)>::value(reverseMap[i]);
-      }
-
       write_chunk(FS, numNodes * sizeof(VertexTy),
-                  reinterpret_cast<char *>(tmpVertices.data()));
-
+                  const_cast<char *>(
+                      reinterpret_cast<const char *>(reverseMap.data())));
       #pragma omp for
       for (size_t i = 0; i < numNodes + 1; ++i) {
-        tmpEdges[i] =
-          dump_v<sizeof(uint64_t)>::value(std::distance(edges, index[i]));
+        tmpIndex[i] = std::distance(edges, index[i]);
       }
 
       write_chunk(FS, (numNodes + 1)  * sizeof(uint64_t),
-                  reinterpret_cast<char *>(tmpEdges.data()));
+                  reinterpret_cast<char *>(tmpIndex.data()));
 
-      #pragma omp barrier
-
-      #pragma omp for
-      for (size_t i = 0; i < numEdges; ++i) {
-        uint64_t v = *(reinterpret_cast<uint64_t *>(pointer_to(edges)) + i);
-        tmpEdges[i] = dump_v<sizeof(edge_type)>::value(v);
-      }
-
-      write_chunk(FS, tmpEdges.size() * sizeof(uint64_t),
-                  reinterpret_cast<char *>(tmpEdges.data()));
+      write_chunk(FS, numEdges * sizeof(edge_type),
+                  reinterpret_cast<char *>(pointer_to(edges)));
     }
     close(file);
   }
@@ -722,11 +705,6 @@ public:
       read_chunk(FS, reverseMap.size() * sizeof(VertexTy),
                  reinterpret_cast<char *>(reverseMap.data()));
 
-      #pragma omp for
-      for (size_t i = 0; i < reverseMap.size(); ++i) {
-        reverseMap[i] =  load_v<sizeof(VertexTy)>::value(reverseMap[i]);
-      }
-
       #pragma omp single
       {
         index = allocate_index(numNodes + 1);
@@ -736,22 +714,15 @@ public:
       read_chunk(FS, (numNodes + 1) * sizeof(ptrdiff_t),
                  reinterpret_cast<char *>(pointer_to(index)));
 
-      #pragma omp for
+#pragma omp barrier
+#pragma omp for
       for (size_t i = 0; i < numNodes + 1; ++i) {
         uint64_t v = *(reinterpret_cast<uint64_t *>(pointer_to(index)) + i);
         *(reinterpret_cast<uint64_t *>(pointer_to(index)) + i) =
-          load_v<sizeof(edge_pointer_t)>::value(v) * sizeof(edge_type)
-          + reinterpret_cast<uint64_t>(pointer_to(edges));
+          v * sizeof(edge_type) + reinterpret_cast<uint64_t>(pointer_to(edges));
       }
 
       read_chunk(FS, numEdges * sizeof(edge_type), reinterpret_cast<char *>(pointer_to(edges)));
-
-      #pragma omp for
-      for (size_t i = 0; i < numEdges; ++i) {
-        // TODO: this will be wrong when the DestinationTy bigger than 64 bits.
-        uint64_t v = *(reinterpret_cast<uint64_t *>(pointer_to(edges)) + i);
-        *(reinterpret_cast<uint64_t *>(pointer_to(edges)) + i) = load_v<sizeof(uint64_t)>::value(v);
-      }
 
       decltype(idMap) localMap;
       #pragma omp for
