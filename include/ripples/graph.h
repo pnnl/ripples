@@ -49,12 +49,15 @@
 #include <cstddef>
 #include <cstdio>
 #include <fstream>
+#include <ios>
 #include <unordered_map>
 #include <numeric>
 #include <vector>
-#include <ripples/utility.h>
 #include <fcntl.h>
 #include <unistd.h>
+#include <iostream>
+
+#include <ripples/utility.h>
 
 #if defined ENABLE_METALL
 #include <metall/metall.hpp>
@@ -527,14 +530,30 @@ public:
   //!
   //! \param FilePath The path to the ouput file.
   void dump_binary(const std::string &FilePath) const {
-    size_t totalFileSize = total_binary_size();
+    ssize_t totalFileSize = total_binary_size();
     int mode = S_IRUSR | S_IWUSR | S_IRGRP;
     int file = open(FilePath.c_str(), O_CREAT | O_WRONLY, mode);
-    fallocate(file, 0, 0, totalFileSize);
-    close(file);
+#if defined(__gnu_linux__)
+    if (fallocate(file, 0, 0, totalFileSize) != 0) {
+      std::cout << "Preallocation failed. is disk too full?" << std::endl;
+      close(file);
+      exit(-1);
+    }
+#else
+    fstore_t store = {F_ALLOCATEALL, F_PEOFPOSMODE, 0, totalFileSize};
+    fcntl(file, F_PREALLOCATE, &store);
+
+    if (store.fst_bytesalloc < totalFileSize) {
+      std::cout << "Preallocation failed. is disk too full?" << std::endl;
+      close(file);
+      exit(-1);
+    }
+
+    ftruncate(file, totalFileSize);
+#endif
 
     // TODO: fix for 64bit vertices IDs.
-    std::vector<uint32_t> tmpVertices(numNodes + 1);
+    std::vector<uint32_t> tmpVertices(numNodes);
     std::vector<uint64_t> tmpEdges(numEdges);
     #pragma omp parallel
     {
@@ -550,11 +569,11 @@ public:
       FS.seekp(sizeof(numNodes) + sizeof(numEdges), std::ios_base::beg);
 
       #pragma omp for
-      for (size_t i = 0; i < reverseMap.size(); ++i){
-        tmpVertices[i] = dump_v<sizeof(uint32_t)>::value(reverseMap[i]);
+      for (size_t i = 0; i < numNodes; ++i){
+        tmpVertices[i] = dump_v<sizeof(VertexTy)>::value(reverseMap[i]);
       }
 
-      write_chunk(FS, reverseMap.size() * sizeof(uint32_t),
+      write_chunk(FS, numNodes * sizeof(uint32_t),
                   reinterpret_cast<char *>(tmpVertices.data()));
 
       #pragma omp for
@@ -577,6 +596,7 @@ public:
       write_chunk(FS, tmpEdges.size() * sizeof(uint64_t),
                   reinterpret_cast<char *>(tmpEdges.data()));
     }
+    close(file);
   }
 
  private:
