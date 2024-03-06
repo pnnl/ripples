@@ -566,6 +566,8 @@ public:
       write_chunk(FS, (numNodes + 1)  * sizeof(uint64_t),
                   reinterpret_cast<char *>(tmpEdges.data()));
 
+      #pragma omp barrier
+
       #pragma omp for
       for (size_t i = 0; i < numEdges; ++i) {
         uint64_t v = *(reinterpret_cast<uint64_t *>(pointer_to(edges)) + i);
