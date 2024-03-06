@@ -561,19 +561,22 @@ public:
 
       #pragma omp single
       {
+        uint64_t endianess_check = 0xc0ffee;
         uint64_t num_nodes = htole64(numNodes);
         uint64_t num_edges = htole64(numEdges);
+        FS.write(reinterpret_cast<const char *>(&endianess_check), sizeof(uint64_t));
         FS.write(reinterpret_cast<const char *>(&num_nodes), sizeof(uint64_t));
         FS.write(reinterpret_cast<const char *>(&num_edges), sizeof(uint64_t));
       }
-      FS.seekp(sizeof(numNodes) + sizeof(numEdges), std::ios_base::beg);
+
+      FS.seekp(sizeof(uint64_t) + sizeof(numNodes) + sizeof(numEdges), std::ios_base::beg);
 
       #pragma omp for
       for (size_t i = 0; i < numNodes; ++i){
         tmpVertices[i] = dump_v<sizeof(VertexTy)>::value(reverseMap[i]);
       }
 
-      write_chunk(FS, numNodes * sizeof(uint32_t),
+      write_chunk(FS, numNodes * sizeof(VertexTy),
                   reinterpret_cast<char *>(tmpVertices.data()));
 
       #pragma omp for
@@ -682,13 +685,30 @@ public:
     throw 0 && "Not implemented yet, don't use with Metall";
     #endif
 
-    #pragma omp parallel
     {
       std::ifstream FS(FileName, std::ios::binary);
       if (!FS.is_open()) throw "Bad things happened!!!";
+      uint64_t endianess_check;
+      FS.read(reinterpret_cast<char *>(&endianess_check), sizeof(uint64_t));
 
+      if (endianess_check != 0xc0ffee) {
+        std::cout <<
+          "The endianess check failed when reloading the input binary.\nLikely,"
+          "the input file was generated on a different architecture.\nPlease,"
+          "used the dump-graph tool to produce a new binary."
+                  << std::endl;
+
+        FS.close();
+        exit(-1);
+      }
+    }
+
+    #pragma omp parallel
+    {
+      std::ifstream FS(FileName, std::ios::binary);
       #pragma omp single
       {
+        FS.seekg(sizeof(uint64_t), std::ios_base::beg);
         FS.read(reinterpret_cast<char *>(&numNodes), sizeof(numNodes));
         FS.read(reinterpret_cast<char *>(&numEdges), sizeof(numEdges));
 
@@ -698,7 +718,7 @@ public:
         reverseMap.resize(numNodes);
       }
 
-      FS.seekg(sizeof(numNodes) + sizeof(numEdges), std::ios_base::beg);
+      FS.seekg(sizeof(uint64_t) + sizeof(numNodes) + sizeof(numEdges), std::ios_base::beg);
       read_chunk(FS, reverseMap.size() * sizeof(VertexTy),
                  reinterpret_cast<char *>(reverseMap.data()));
 
