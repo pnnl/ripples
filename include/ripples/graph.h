@@ -50,6 +50,7 @@
 #include <cstdio>
 #include <fstream>
 #include <ios>
+#include <type_traits>
 #include <unordered_map>
 #include <numeric>
 #include <vector>
@@ -561,12 +562,15 @@ public:
       #pragma omp single
       {
         uint64_t endianess_check = 0xc0ffee;
+        uint64_t direction_policy = std::is_same<ForwardDirection<VertexTy>, DirectionPolicy>::value ?
+          0xf0cacc1a : 0xa1ccac0f;
         FS.write(reinterpret_cast<const char *>(&endianess_check), sizeof(uint64_t));
+        FS.write(reinterpret_cast<const char *>(&direction_policy), sizeof(uint64_t));
         FS.write(reinterpret_cast<const char *>(&numNodes), sizeof(uint64_t));
         FS.write(reinterpret_cast<const char *>(&numEdges), sizeof(uint64_t));
       }
 
-      FS.seekp(sizeof(uint64_t) + sizeof(numNodes) + sizeof(numEdges), std::ios_base::beg);
+      FS.seekp(2 * sizeof(uint64_t) + sizeof(numNodes) + sizeof(numEdges), std::ios_base::beg);
 
       write_chunk(FS, numNodes * sizeof(VertexTy),
                   const_cast<char *>(
@@ -684,14 +688,35 @@ public:
         FS.close();
         exit(-1);
       }
+      uint64_t direction_check;
+      FS.read(reinterpret_cast<char *>(&direction_check), sizeof(uint64_t));
+
+      if (std::is_same<ForwardDirection<VertexTy>, DirectionPolicy>::value &&
+          direction_check != 0xf0cacc1a) {
+        std::cout <<
+          "You are loading a binary that is not compitible with the algorithm you are trying to run.\n"
+          "Please, try to regenerate the binary with passing --transpose."
+                  << std::endl;
+        FS.close();
+        exit(-1);
+      } else if (std::is_same<BackwardDirection<VertexTy>, DirectionPolicy>::value &&
+          direction_check != 0xa1ccac0f) {
+        std::cout
+            << "You are loading a binary that is not compitible with the "
+               "algorithm you are trying to run.\n"
+               "Please, try to regenerate the binary with passing --transpose or use --avoid-transpose."
+            << std::endl;
+        FS.close();
+        exit(-1);
+      }
     }
 
-    #pragma omp parallel
+#pragma omp parallel
     {
       std::ifstream FS(FileName, std::ios::binary);
       #pragma omp single
       {
-        FS.seekg(sizeof(uint64_t), std::ios_base::beg);
+        FS.seekg(2 * sizeof(uint64_t), std::ios_base::beg);
         FS.read(reinterpret_cast<char *>(&numNodes), sizeof(numNodes));
         FS.read(reinterpret_cast<char *>(&numEdges), sizeof(numEdges));
 
@@ -701,7 +726,7 @@ public:
         reverseMap.resize(numNodes);
       }
 
-      FS.seekg(sizeof(uint64_t) + sizeof(numNodes) + sizeof(numEdges), std::ios_base::beg);
+      FS.seekg(2 * sizeof(uint64_t) + sizeof(numNodes) + sizeof(numEdges), std::ios_base::beg);
       read_chunk(FS, reverseMap.size() * sizeof(VertexTy),
                  reinterpret_cast<char *>(reverseMap.data()));
 

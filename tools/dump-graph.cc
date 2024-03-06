@@ -57,6 +57,7 @@ struct DumpOutputConfiguration {
   std::string OName{"output"};
   bool binaryDump{false};
   bool normalize{false};
+  bool transpose{false};
 
   void addCmdOptions(CLI::App &app) {
     app.add_option("-o,--output", OName, "The name of the output file name")
@@ -67,6 +68,9 @@ struct DumpOutputConfiguration {
         ->group("Output Options");
     app.add_flag("--normalize", normalize,
                  "Dump the Graph in text format with vertices starting from 1")
+        ->group("Output Options");
+    app.add_flag("--transpose", transpose,
+                 "Transpose the graph before dumping it. (Required to use IMM)")
         ->group("Output Options");
   }
 };
@@ -82,8 +86,21 @@ struct DumpConfiguration {
   }
 };
 
+
 using Configuration =
     ripples::ToolConfiguration<DumpConfiguration, DumpOutputConfiguration>;
+
+template <typename GraphTy>
+void dump(GraphTy &G, Configuration &CFG) {
+  if (CFG.binaryDump) {
+    // Dump in binary format
+    G.dump_binary(CFG.OName);
+  } else {
+    auto file = std::fstream(CFG.OName, std::ios::out);
+    dumpGraph(G, file, CFG.normalize);
+    file.close();
+  }
+}
 
 int main(int argc, char **argv) {
   Configuration CFG;
@@ -109,13 +126,11 @@ int main(int argc, char **argv) {
                              .count();
   console->info("Loading took {}ms", load_time);
 
-  if (CFG.binaryDump) {
-    // Dump in binary format
-    G.dump_binary(CFG.OName);
+  if (CFG.transpose) {
+    auto Gt = G.get_transpose();
+    dump(Gt, CFG);
   } else {
-    auto file = std::fstream(CFG.OName, std::ios::out);
-    dumpGraph(G, file, CFG.normalize);
-    file.close();
+    dump(G, CFG);
   }
 
   return EXIT_SUCCESS;

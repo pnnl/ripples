@@ -179,8 +179,14 @@ int main(int argc, char *argv[]) {
   }
   GraphBwd &G(*Gr);
 #else
-  GraphFwd Gf = ripples::loadGraph<GraphFwd>(CFG, weightGen);
-  GraphBwd G = Gf.get_transpose();
+  ripples::GraphBwd G;
+  if (CFG.avoidTranspose) {
+    G = ripples::loadGraph<ripples::GraphBwd>(CFG, weightGen);
+  } else {
+    ripples::GraphFwd Gf =
+        ripples::loadGraph<ripples::GraphFwd>(CFG, weightGen);
+    G = Gf.get_transpose();
+  }
 #endif
   console->info("Loading Done!");
   console->info("Number of Nodes : {}", G.num_nodes());
