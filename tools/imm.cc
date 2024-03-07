@@ -193,14 +193,7 @@ int main(int argc, char **argv) {
   }
   ripples::GraphBwd &G(*Gr);
 #else
-  ripples::GraphBwd G;
-  if (CFG.avoidTranspose) {
-    G = ripples::loadGraph<ripples::GraphBwd>(CFG, weightGen);
-  } else {
-    ripples::GraphFwd Gf =
-        ripples::loadGraph<ripples::GraphFwd>(CFG, weightGen);
-    G = Gf.get_transpose();
-  }
+  ripples::GraphBwd G = ripples::loadGraph<ripples::GraphBwd>(CFG, weightGen);
 #endif
   auto loading_end = std::chrono::high_resolution_clock::now();
   console->info("Loading Done!");

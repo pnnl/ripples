@@ -50,7 +50,6 @@ namespace ripples {
 //! \brief The configuration data structure for the TIM+ algorithm.
 struct TIMConfiguration : public AlgorithmConfiguration {
   double epsilon{0.50};  //!< The epsilon of the IM algorithm
-  bool avoidTranspose{false};
 
   //! \brief Add command line options to configure TIM+.
   //!
@@ -60,8 +59,6 @@ struct TIMConfiguration : public AlgorithmConfiguration {
     app.add_option("-e,--epsilon", epsilon, "The size of the seed set.")
       ->required()
       ->group("Algorithm Options");
-    app.add_flag("--avoid-transpose", avoidTranspose, "Assume the input graph is already transposed.")
-      ->group("Input Options");
   }
 };
 

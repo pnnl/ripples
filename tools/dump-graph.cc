@@ -102,6 +102,23 @@ void dump(GraphTy &G, Configuration &CFG) {
   }
 }
 
+template <typename GraphTy, typename GenTy>
+GraphTy load(Configuration &CFG, GenTy &weightGen) {
+  auto console = spdlog::stdout_color_st("console");
+  console->info("Loading...");
+  auto loading_start = std::chrono::high_resolution_clock::now();
+  GraphTy G = ripples::loadGraph<GraphTy>(CFG, weightGen);
+  auto loading_end = std::chrono::high_resolution_clock::now();
+  console->info("Loading Done!");
+  console->info("Number of Nodes : {}", G.num_nodes());
+  console->info("Number of Edges : {}", G.num_edges());
+  const auto load_time = std::chrono::duration_cast<std::chrono::milliseconds>(
+                             loading_end - loading_start)
+                             .count();
+  console->info("Loading took {}ms", load_time);
+  return G;
+}
+
 int main(int argc, char **argv) {
   Configuration CFG;
   CFG.ParseCmdOptions(argc, argv);
@@ -112,24 +129,17 @@ int main(int argc, char **argv) {
 
   spdlog::set_level(spdlog::level::info);
 
-  using Graph = ripples::Graph<uint32_t>;
-  auto console = spdlog::stdout_color_st("console");
-  console->info("Loading...");
-  auto loading_start = std::chrono::high_resolution_clock::now();
-  Graph G = ripples::loadGraph<Graph>(CFG, weightGen);
-  auto loading_end = std::chrono::high_resolution_clock::now();
-  console->info("Loading Done!");
-  console->info("Number of Nodes : {}", G.num_nodes());
-  console->info("Number of Edges : {}", G.num_edges());
-  const auto load_time = std::chrono::duration_cast<std::chrono::milliseconds>(
-                             loading_end - loading_start)
-                             .count();
-  console->info("Loading took {}ms", load_time);
+  using dest_type = ripples::WeightedDestination<uint32_t, float>;
+  using GraphFwd =
+      ripples::Graph<uint32_t, dest_type, ripples::ForwardDirection<uint32_t>>;
+  using GraphBwd =
+      ripples::Graph<uint32_t, dest_type, ripples::BackwardDirection<uint32_t>>;
 
   if (CFG.transpose) {
-    auto Gt = G.get_transpose();
-    dump(Gt, CFG);
+    auto G = load<GraphBwd>(CFG, weightGen);
+    dump(G, CFG);
   } else {
+    auto G = load<GraphFwd>(CFG, weightGen);
     dump(G, CFG);
   }
 

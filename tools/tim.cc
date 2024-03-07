@@ -73,14 +73,7 @@ int main(int argc, char **argv) {
       ripples::Graph<uint32_t, float, ripples::BackwardDirection<uint32_t>>;
   auto console = spdlog::stdout_color_st("console");
   console->info("Loading...");
-  ripples::GraphBwd G;
-  if (CFG.avoidTranspose) {
-    G = ripples::loadGraph<ripples::GraphBwd>(CFG, weightGen);
-  } else {
-    ripples::GraphFwd Gf =
-        ripples::loadGraph<ripples::GraphFwd>(CFG, weightGen);
-    G = Gf.get_transpose();
-  }
+  ripples::GraphBwd G = ripples::loadGraph<ripples::GraphBwd>(CFG, weightGen);
   console->info("Loading Done!");
   console->info("Number of Nodes : {}", G.num_nodes());
   console->info("Number of Edges : {}", G.num_edges());
