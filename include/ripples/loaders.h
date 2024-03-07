@@ -209,6 +209,7 @@ std::vector<EdgeTy> load(const std::string &inputFile, const bool undirected,
 
   auto splits = getSplitPointsFileSizeBased(inputFile, omp_get_max_threads());
 
+  std::vector<std::vector<EdgeTy>> edges(omp_get_max_threads());
 
   std::vector<EdgeTy> result;
   #pragma omp parallel
@@ -224,7 +225,6 @@ std::vector<EdgeTy> load(const std::string &inputFile, const bool undirected,
       std::stringstream SS;
       SS << buffer.data();
 
-      std::vector<EdgeTy> localEdges;
       for (std::string line; std::getline(SS, line); ++lineNumber) {
         if (line.empty()) continue;
         if (line.find('%') != std::string::npos) continue;
@@ -238,20 +238,25 @@ std::vector<EdgeTy> load(const std::string &inputFile, const bool undirected,
         SS >> source >> destination >> weight;
 
         EdgeTy e = {source, destination, weight};
-        localEdges.emplace_back(e);
+        edges[thread_id].emplace_back(e);
 
         if (undirected) {
           EdgeTy e = {destination, source, weight};
-          localEdges.emplace_back(e);
+          edges[thread_id].emplace_back(e);
         }
       }
-
-      // Maybe a reduction?
-#pragma omp critical
-      {
-        result.insert(result.end(), localEdges.begin(), localEdges.end());
-      }
     }
+  }
+
+  std::vector<size_t> sizes(omp_get_max_threads() + 1);
+  for (size_t i = 1; i < sizes.size(); ++i) {
+    sizes[i] = edges[i - 1].size() + sizes[i - 1];
+  }
+  result.resize(sizes.back());
+
+  #pragma omp parallel for
+  for (size_t i = 0; i < sizes.size() - 1; ++i) {
+    result.insert(result.begin() + sizes[i], edges[i].begin(), edges[i].end());
   }
   return result;
 }
