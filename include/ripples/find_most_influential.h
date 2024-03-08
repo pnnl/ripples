@@ -187,7 +187,7 @@ auto FindMostInfluentialSet(const GraphTy &G, const ConfTy &CFG,
   }
 #if defined(RIPPLES_ENABLE_CUDA) || defined(RIPPLES_ENABLE_HIP)
   if (enableGPU) {
-    num_gpu = std::min(GPURuntimeTrait<RUNTIME>::num_devices(),
+    num_gpu = std::min<size_t>(GPURuntimeTrait<RUNTIME>::num_devices(),
                        CFG.seed_select_max_gpu_workers);
   }
 #endif

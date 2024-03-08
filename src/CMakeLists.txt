@@ -10,7 +10,9 @@ target_link_libraries(infmax
 target_compile_definitions(infmax PRIVATE
                            $<IF:$<BOOL:${RIPPLES_ENABLE_CUDA}>, RIPPLES_ENABLE_CUDA=1,>
                            $<IF:$<BOOL:${RIPPLES_ENABLE_HIP}>, RIPPLES_ENABLE_HIP=1,>)
+if(RIPPLES_ENABLE_CUDA)
+set_source_files_properties(imm.cc PROPERTIES LANGUAGE CUDA)
+endif()
 if(RIPPLES_ENABLE_CUDA OR RIPPLES_ENABLE_HIP)
-  set_source_files_properties(imm.cc PROPERTIES LANGUAGE CUDA)
   target_link_libraries(infmax gpu_ripples)
 endif()
