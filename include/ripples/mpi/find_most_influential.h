@@ -53,12 +53,6 @@
 #endif
 #include "spdlog/spdlog.h"
 
-#if defined(RIPPLES_ENABLE_CUDA)
-#define RUNTIME CUDA
-#elif defined(RIPPLES_ENABLE_HIP)
-#define RUNTIME HIP
-#endif
-
 namespace ripples {
 
 template <typename GraphTy>
@@ -126,11 +120,11 @@ class MPIStreamingFindMostInfluential {
     if (num_gpu_workers_ == 0) return;
 
     // Define Reduction tree on GPU workers.
-    auto tree = cuda_get_reduction_tree();
+    auto tree = GPU<RUNTIME>::build_reduction_tree();
 
     // Construct GPU workers
     for (size_t i = 0; i < num_gpu_workers_; ++i) {
-      reduction_steps_ = std::max(reduction_steps_, tree[i].second);
+      reduction_steps_ = std::max<size_t>(reduction_steps_, tree[i].second);
 
       // std::cout << "step " << tree[i].second << " : " << i << " -> " <<
       // tree[i].first << std::endl;
@@ -248,7 +242,7 @@ class MPIStreamingFindMostInfluential {
       uint32_t *global_counter = d_cpu_reduced_counters_;
 
       if (mpi_rank == 0) {
-        cuda_set_device(0);
+        GPURuntimeTrait<RUNTIME>::set_device(0);
         auto result = GPUMaxElement(global_counter, vertex_coverage_.size());
         // std::cout << "Max Element " << result.first << " " << result.second
         // << std::endl;
@@ -525,7 +519,8 @@ auto FindMostInfluentialSet(const GraphTy &G, const ConfTy &CFG,
   }
 #if defined(RIPPLES_ENABLE_CUDA) || defined(RIPPLES_ENABLE_HIP)
   if (enableGPU) {
-    num_gpu = std::min(cuda_num_devices(), CFG.seed_select_max_gpu_workers);
+    num_gpu = std::min<size_t>(GPURuntimeTrait<RUNTIME>::num_devices(),
+                       CFG.seed_select_max_gpu_workers);
   }
 #endif
   MPIStreamingFindMostInfluential<GraphTy> SE(G, RRRsets, num_max_cpu, num_gpu);
