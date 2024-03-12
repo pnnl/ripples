@@ -365,24 +365,41 @@ class Graph {
     idMap(allocator),
     reverseMap(allocator){
 
+  // std::time_t sys_time = std::time(nullptr);
+  // std::cout << std::asctime(std::localtime(&sys_time)) << " Building map" << std::endl;
+
     VertexTy maxVertexID = 0;
+    omp_lock_t mapLock;
+    omp_init_lock(&mapLock);
+    #pragma omp parallel for reduction(max : maxVertexID)
     for (auto itr = begin; itr != end; ++itr) {
       if (idMap.count(itr->source) == 0) {
-        idMap[itr->source] = itr->source;
-        if (renumbering) {
-          reverseMap.push_back(itr->source);
+        omp_set_lock(&mapLock);
+        if (idMap.count(itr->source) == 0) {
+          idMap[itr->source] = itr->source;
+          if (renumbering) {
+            reverseMap.push_back(itr->source);
+          }
         }
+        omp_unset_lock(&mapLock);
       }
 
       if (idMap.count(itr->destination) == 0) {
-        idMap[itr->destination] = itr->destination;
-        if (renumbering) {
-          reverseMap.push_back(itr->destination);
+        omp_set_lock(&mapLock);
+        if (idMap.count(itr->destination) == 0) {
+          idMap[itr->destination] = itr->destination;
+          if (renumbering) {
+            reverseMap.push_back(itr->destination);
+          }
         }
+        omp_unset_lock(&mapLock);
       }
 
       maxVertexID = std::max(std::max(itr->source, itr->destination), maxVertexID);
     }
+
+    // sys_time = std::time(nullptr);
+    // std::cout << std::asctime(std::localtime(&sys_time)) << " Assigning reverse map" << std::endl;
 
     if (renumbering) {
       // Could utilize the C++ 17 parallel sort
@@ -401,11 +418,17 @@ class Graph {
       }
     }
 
+    // sys_time = std::time(nullptr);
+    // std::cout << std::asctime(std::localtime(&sys_time)) << " Allocating pointers" << std::endl;
+
     numNodes = reverseMap.size();
     numEdges = std::distance(begin, end);
 
     edges = allocate_edges(numEdges);
     index = allocate_index(numNodes + 1);
+
+    // sys_time = std::time(nullptr);
+    // std::cout << std::asctime(std::localtime(&sys_time)) << " Assigning pointers and edges" << std::endl;
 
 #pragma omp parallel for
     for (size_t i = 0; i < numNodes + 1; ++i) {
@@ -417,19 +440,38 @@ class Graph {
       edges[i] = DestinationTy();
     }
 
+    // sys_time = std::time(nullptr);
+    // std::cout << std::asctime(std::localtime(&sys_time)) << " Calculating index" << std::endl;
+
+    #pragma omp parallel for
     for (auto itr = begin; itr != end; ++itr) {
+      #pragma omp atomic
       index[DirectionPolicy::Source(itr, idMap) + 1] += 1;
     }
+
+    // sys_time = std::time(nullptr);
+    // std::cout << std::asctime(std::localtime(&sys_time)) << " prefix sum" << std::endl;
 
     for (size_t i = 1; i <= numNodes; ++i) {
       index[i] += index[i - 1] - edges;
     }
 
+    // sys_time = std::time(nullptr);
+    // std::cout << std::asctime(std::localtime(&sys_time)) << " calculating edge ptr" << std::endl;
+
+    std::vector<omp_lock_t> ptrLock(numNodes);
+    #pragma omp parallel for
+    for (size_t i = 0; i < numNodes; ++i) {
+      omp_init_lock(&ptrLock[i]);
+    }
     std::vector<edge_pointer_t> ptrEdge(index, index + numNodes);
+    #pragma omp parallel for
     for (auto itr = begin; itr != end; ++itr) {
+      omp_set_lock(&ptrLock[DirectionPolicy::Source(itr, idMap)]);
       *ptrEdge[DirectionPolicy::Source(itr, idMap)] =
           edge_type::template Create<DirectionPolicy>(itr, idMap);
       ++ptrEdge[DirectionPolicy::Source(itr, idMap)];
+      omp_unset_lock(&ptrLock[DirectionPolicy::Source(itr, idMap)]);
     }
   }
 
