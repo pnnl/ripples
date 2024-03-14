@@ -44,8 +44,6 @@
 #define RIPPLES_LOADERS_H
 
 #include <algorithm>
-#include <fstream>
-#include <iostream>
 #include <numeric>
 #include <sstream>
 #include <stdexcept>
@@ -53,11 +51,18 @@
 #include <type_traits>
 #include <unordered_map>
 
+#include <iostream>
+
+#include "omp.h"
+
 #include "ripples/diffusion_simulation.h"
 #include "ripples/graph.h"
 #include "trng/lcg64.hpp"
 #include "trng/truncated_normal_dist.hpp"
 #include "trng/uniform01_dist.hpp"
+#include <vector>
+#include <deque>
+#include <cstdlib>
 
 namespace ripples {
 
@@ -67,6 +72,58 @@ struct edge_list_tsv {};
 struct weighted_edge_list_tsv {};
 
 namespace {
+
+std::vector<std::pair<size_t, size_t>>
+getSplitPointsFileSizeBased(const std::string& filename, size_t numThreads) {
+  // Open the file in binary mode.
+  std::ifstream file(filename, std::ios::binary);
+
+  // Check if the file is open successfully.
+  if (!file.is_open()) {
+    std::cerr << "Error opening file: " << filename << std::endl;
+    return {};
+  }
+
+  // Get the file size.
+  file.seekg(0, std::ios::end);
+  size_t fileSize = file.tellg();
+
+  // Calculate ideal line chunk size per thread based on file size.
+  size_t chunkSize = fileSize / numThreads;
+
+  // Initialize variables for split points and searching.
+  std::vector<std::pair<size_t, size_t>> splitPoints;
+  size_t currentPos = 0;
+
+  // Iterate through threads, searching for closest newline near the ideal chunk size.
+  for (size_t i = 0; i < numThreads; ++i) {
+    size_t targetPos = currentPos + chunkSize;
+
+    file.seekg(targetPos - 1, std::ios::beg);
+    char prevChar = file.get();
+
+    // Search backwards from target position to find a newline within tolerance.
+    while (targetPos > 0 && prevChar != '\n') {
+      file.seekg(-2, std::ios::cur);
+      prevChar = file.get();
+      targetPos--;
+    }
+
+    // Adjust starting and ending points based on search result.
+    splitPoints.emplace_back(currentPos, targetPos);
+    currentPos = targetPos;
+  }
+
+  // If the last point doesn't reach the end, adjust it.
+  if (splitPoints.back().second != fileSize) {
+    splitPoints.back().second = fileSize;
+  }
+
+  // Close the file.
+  file.close();
+
+  return splitPoints;
+}
 
 //! Load an Edge List in TSV format and generate the weights.
 //!
@@ -151,27 +208,61 @@ std::vector<EdgeTy> load(const std::string &inputFile, const bool undirected,
   std::ifstream GFS(inputFile);
   size_t lineNumber = 0;
 
+  auto splits = getSplitPointsFileSizeBased(inputFile, omp_get_max_threads());
+
+  std::vector<std::deque<EdgeTy>> edges(omp_get_max_threads());
+
   std::vector<EdgeTy> result;
-  for (std::string line; std::getline(GFS, line); ++lineNumber) {
-    if (line.empty()) continue;
-    if (line.find('%') != std::string::npos) continue;
-    if (line.find('#') != std::string::npos) continue;
 
-    std::stringstream SS(line);
 
-    typename EdgeTy::vertex_type source;
-    typename EdgeTy::vertex_type destination;
-    typename EdgeTy::weight_type weight;
-    SS >> source >> destination >> weight;
+  #pragma omp parallel
+  {
+    int thread_id = omp_get_thread_num();
+    size_t chunkSize = splits[thread_id].second - splits[thread_id].first;
+    if (chunkSize != 0) {
+      std::vector<char> buffer(chunkSize);
+      std::ifstream GFS(inputFile);
+      GFS.seekg(splits[thread_id].first, std::ios_base::beg);
 
-    EdgeTy e = {source, destination, weight};
-    result.emplace_back(e);
+      GFS.read(buffer.data(), chunkSize);
+      std::stringstream SS;
+      SS << buffer.data();
 
-    if (undirected) {
-      EdgeTy e = {destination, source, weight};
-      result.emplace_back(e);
+      for (std::string line; std::getline(SS, line); ++lineNumber) {
+        if (line.empty()) continue;
+        if (line.find('%') != std::string::npos) continue;
+        if (line.find('#') != std::string::npos) continue;
+
+        std::stringstream SS(line);
+
+        typename EdgeTy::vertex_type source;
+        typename EdgeTy::vertex_type destination;
+        typename EdgeTy::weight_type weight;
+        SS >> source >> destination >> weight;
+
+        EdgeTy e = {source, destination, weight};
+        edges[thread_id].emplace_back(e);
+
+        if (undirected) {
+          EdgeTy e = {destination, source, weight};
+          edges[thread_id].emplace_back(e);
+        }
+      }
     }
   }
+
+  std::vector<size_t> sizes(omp_get_max_threads() + 1);
+  for (size_t i = 1; i < sizes.size(); ++i) {
+    sizes[i] = edges[i - 1].size() + sizes[i - 1];
+  }
+  result.resize(sizes.back());
+
+  #pragma omp parallel for
+  for (size_t i = 0; i < sizes.size() - 1; ++i) {
+    // result.insert(result.begin() + sizes[i], edges[i].begin(), edges[i].end());
+    std::copy(edges[i].begin(), edges[i].end(), result.begin() + sizes[i]);
+  }
+
   return result;
 }
 
@@ -242,9 +333,9 @@ GraphTy loadGraph_helper(ConfTy &CFG, PrngTy &PRNG, allocator_t allocator = allo
     GraphTy tmpG(edgeList.begin(), edgeList.end(), !CFG.disable_renumbering, allocator);
     G = std::move(tmpG);
   } else {
-    std::ifstream binaryDump(CFG.IFileName, std::ios::binary);
-    G.load_binary(binaryDump);
+    G.load_binary(CFG.IFileName);
   }
+
 
   return G;
 }
@@ -278,6 +369,7 @@ GraphTy loadGraph(ConfTy &CFG, PrngTy &PRNG, allocator_t allocator = allocator_t
   } else {
     throw std::domain_error("Unsupported distribution");
   }
+  // Print system time
   return G;
 }
 

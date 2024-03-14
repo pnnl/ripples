@@ -57,6 +57,7 @@ struct DumpOutputConfiguration {
   std::string OName{"output"};
   bool binaryDump{false};
   bool normalize{false};
+  bool transpose{false};
 
   void addCmdOptions(CLI::App &app) {
     app.add_option("-o,--output", OName, "The name of the output file name")
@@ -67,6 +68,9 @@ struct DumpOutputConfiguration {
         ->group("Output Options");
     app.add_flag("--normalize", normalize,
                  "Dump the Graph in text format with vertices starting from 1")
+        ->group("Output Options");
+    app.add_flag("--transpose", transpose,
+                 "Transpose the graph before dumping it. (Required to use IMM)")
         ->group("Output Options");
   }
 };
@@ -82,8 +86,38 @@ struct DumpConfiguration {
   }
 };
 
+
 using Configuration =
     ripples::ToolConfiguration<DumpConfiguration, DumpOutputConfiguration>;
+
+template <typename GraphTy>
+void dump(GraphTy &G, Configuration &CFG) {
+  if (CFG.binaryDump) {
+    // Dump in binary format
+    G.dump_binary(CFG.OName);
+  } else {
+    auto file = std::fstream(CFG.OName, std::ios::out);
+    dumpGraph(G, file, CFG.normalize);
+    file.close();
+  }
+}
+
+template <typename GraphTy, typename GenTy>
+GraphTy load(Configuration &CFG, GenTy &weightGen) {
+  auto console = spdlog::stdout_color_st("console");
+  console->info("Loading...");
+  auto loading_start = std::chrono::high_resolution_clock::now();
+  GraphTy G = ripples::loadGraph<GraphTy>(CFG, weightGen);
+  auto loading_end = std::chrono::high_resolution_clock::now();
+  console->info("Loading Done!");
+  console->info("Number of Nodes : {}", G.num_nodes());
+  console->info("Number of Edges : {}", G.num_edges());
+  const auto load_time = std::chrono::duration_cast<std::chrono::milliseconds>(
+                             loading_end - loading_start)
+                             .count();
+  console->info("Loading took {}ms", load_time);
+  return G;
+}
 
 int main(int argc, char **argv) {
   Configuration CFG;
@@ -95,29 +129,18 @@ int main(int argc, char **argv) {
 
   spdlog::set_level(spdlog::level::info);
 
-  using Graph = ripples::Graph<uint32_t>;
-  auto console = spdlog::stdout_color_st("console");
-  console->info("Loading...");
-  auto loading_start = std::chrono::high_resolution_clock::now();
-  Graph G = ripples::loadGraph<Graph>(CFG, weightGen);
-  auto loading_end = std::chrono::high_resolution_clock::now();
-  console->info("Loading Done!");
-  console->info("Number of Nodes : {}", G.num_nodes());
-  console->info("Number of Edges : {}", G.num_edges());
-  const auto load_time = std::chrono::duration_cast<std::chrono::milliseconds>(
-                             loading_end - loading_start)
-                             .count();
-  console->info("Loading took {}ms", load_time);
+  using dest_type = ripples::WeightedDestination<uint32_t, float>;
+  using GraphFwd =
+      ripples::Graph<uint32_t, dest_type, ripples::ForwardDirection<uint32_t>>;
+  using GraphBwd =
+      ripples::Graph<uint32_t, dest_type, ripples::BackwardDirection<uint32_t>>;
 
-  if (CFG.binaryDump) {
-    // Dump in binary format
-    auto file = std::fstream(CFG.OName, std::ios::out | std::ios::binary);
-    G.dump_binary(file);
-    file.close();
+  if (CFG.transpose) {
+    auto G = load<GraphBwd>(CFG, weightGen);
+    dump(G, CFG);
   } else {
-    auto file = std::fstream(CFG.OName, std::ios::out);
-    dumpGraph(G, file, CFG.normalize);
-    file.close();
+    auto G = load<GraphFwd>(CFG, weightGen);
+    dump(G, CFG);
   }
 
   return EXIT_SUCCESS;
