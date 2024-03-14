@@ -54,12 +54,33 @@
 #include "trng/lcg64.hpp"
 #include "trng/uniform01_dist.hpp"
 #include "trng/uniform_int_dist.hpp"
+#include "trng/uniform_dist.hpp"
 
 #include <sched.h>
 
 #define NEIGHBOR_COLOR
 
 namespace ripples {
+
+template <typename DistributionTy, typename WeightTy>
+class DistWrapper {
+ public:
+  using result_type = typename DistributionTy::result_type;
+  using weight_type = WeightTy;
+  DistWrapper(DistributionTy &dist) : dist_(dist) {}
+  template <typename PRNGeneratorTy>
+  WeightTy operator()(PRNGeneratorTy &generator) {
+    if constexpr (std::is_floating_point_v<WeightTy>) {
+      return static_cast<WeightTy>(dist_(generator));
+    } else {
+      auto upper_bound = std::numeric_limits<WeightTy>::max();
+      return static_cast<WeightTy>(dist_(generator) * upper_bound);
+    }
+  }
+
+ private:
+  DistributionTy &dist_;
+};
 
 struct BFSCPUContext {
   BFSCPUContext(size_t num_nodes)
@@ -74,6 +95,7 @@ void BatchedBFS(const GraphTy &G, SItrTy B, SItrTy E, OItrTy O,
                 PRNGeneratorTy &generator, diff_model_tag &&tag) {
   assert(std::distance(B, E) <= 64 && "Only up to 64 BFS are supported");
   using vertex_type = typename GraphTy::vertex_type;
+  using weight_type = typename GraphTy::weight_type;
   std::vector<std::vector<bool>> visited_matrix(
       std::distance(B, E), std::vector<bool>(G.num_nodes(), false));
 
@@ -81,7 +103,8 @@ void BatchedBFS(const GraphTy &G, SItrTy B, SItrTy E, OItrTy O,
   using frontier_element = vertex_type;
   std::unordered_map<vertex_type, uint64_t> color_map, new_color_map;
 
-  trng::uniform01_dist<float> value;
+  trng::uniform01_dist<float> dist;
+  DistWrapper<trng::uniform01_dist<float>, weight_type> value(dist);
 
   uint64_t color = 1ul << 63;
   std::vector<frontier_element> frontier, new_frontier;
@@ -188,6 +211,7 @@ void BatchedBFSNeighborColorOMP(const GraphTy &G, SItrTy B, SItrTy E, OItrTy O,
   // std::cout << "Num threads: " << num_threads << std::endl;
   // std::cout << "omp rank: " << omp_get_thread_num() << std::endl;
   using vertex_type = typename GraphTy::vertex_type;
+  using weight_type = typename GraphTy::weight_type;
 // Perform chunk fill
 #pragma omp parallel num_threads(num_threads) proc_bind(close)
   {
@@ -213,7 +237,8 @@ void BatchedBFSNeighborColorOMP(const GraphTy &G, SItrTy B, SItrTy E, OItrTy O,
   bool found_one = true;
   auto &old_visited_matrix = cpu_ctx.old_visited_matrix;
   auto &new_visited_matrix = cpu_ctx.new_visited_matrix;
-  trng::uniform01_dist<float> value;
+  trng::uniform01_dist<float> dist;
+  DistWrapper<trng::uniform01_dist<float>, weight_type> value(dist);
   while (found_one) {
     found_one = false;
 // Iterate over both visited_vertex and new_visited_vertex

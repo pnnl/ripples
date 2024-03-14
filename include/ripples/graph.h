@@ -66,6 +66,8 @@
 #include <metall/container/unordered_map.hpp>
 #endif
 
+enum class WeightTypeEnum : uint64_t { FLOAT = 32UL, UINT16 = 16UL, UINT8 = 8UL };
+
 namespace ripples {
 
 //! \brief Forward Direction Graph loading policy.
@@ -592,13 +594,21 @@ public:
         uint64_t endianess_check = 0xc0ffee;
         uint64_t direction_policy = std::is_same<ForwardDirection<VertexTy>, DirectionPolicy>::value ?
           0xf0cacc1a : 0xa1ccac0f;
+        uint64_t weight_enum = std::is_same<float, weight_type>::value ?
+          static_cast<uint64_t>(WeightTypeEnum::FLOAT) :
+          std::is_same<uint16_t, weight_type>::value ?
+          static_cast<uint64_t>(WeightTypeEnum::UINT16) :
+          static_cast<uint64_t>(WeightTypeEnum::UINT8);
         FS.write(reinterpret_cast<const char *>(&endianess_check), sizeof(uint64_t));
         FS.write(reinterpret_cast<const char *>(&direction_policy), sizeof(uint64_t));
+        FS.write(reinterpret_cast<const char *>(&weight_enum), sizeof(uint64_t));
         FS.write(reinterpret_cast<const char *>(&numNodes), sizeof(uint64_t));
         FS.write(reinterpret_cast<const char *>(&numEdges), sizeof(uint64_t));
       }
 
-      FS.seekp(2 * sizeof(uint64_t) + sizeof(numNodes) + sizeof(numEdges), std::ios_base::beg);
+      constexpr size_t num_metadata_elements = 3;
+
+      FS.seekp(num_metadata_elements * sizeof(uint64_t) + sizeof(numNodes) + sizeof(numEdges), std::ios_base::beg);
 
       write_chunk(FS, numNodes * sizeof(VertexTy),
                   const_cast<char *>(
@@ -737,14 +747,54 @@ public:
         FS.close();
         exit(-1);
       }
+      uint64_t weight_type_check;
+      FS.read(reinterpret_cast<char *>(&weight_type_check), sizeof(uint64_t));
+      const std::unordered_map<uint64_t, std::string> weight_type_map = {
+        {static_cast<uint64_t>(WeightTypeEnum::FLOAT), "float"},
+        {static_cast<uint64_t>(WeightTypeEnum::UINT16), "uint16"},
+        {static_cast<uint64_t>(WeightTypeEnum::UINT8), "uint8"}};
+      uint64_t weight_type_confirm;
+      if constexpr(std::is_same<weight_type, float>::value) {
+        weight_type_confirm = static_cast<uint64_t>(WeightTypeEnum::FLOAT);
+      } else if constexpr(std::is_same<weight_type, uint16_t>::value) {
+        weight_type_confirm = static_cast<uint64_t>(WeightTypeEnum::UINT16);
+      } else if constexpr(std::is_same<weight_type, uint8_t>::value) {
+        weight_type_confirm = static_cast<uint64_t>(WeightTypeEnum::UINT8);
+      } else {
+        std::cout << "The specified weight type for ripples not supported.\n"
+                     "Please recompile to a supported weight type of float,"
+                     "uint16, or uint8" << std::endl;
+        FS.close();
+        exit(-1);
+      }
+      if (weight_type_check != weight_type_confirm) {
+        std::string weight_type_str;
+        if (weight_type_map.count(weight_type_check)){
+          weight_type_str = weight_type_map.at(weight_type_check);
+        }
+        else{
+          // Convert weight_type_check to a string
+          std::string weight_val  = std::to_string(weight_type_check);
+          weight_type_str = "unknown (uint64_t val = " + weight_val + ")";
+        }
+        std::string weight_type_confirm_str = weight_type_map.at(weight_type_confirm);
+        std::cout << "The weight type in the binary file is " << weight_type_str
+                  << " but the weight type specified at compile time is "
+                  << weight_type_confirm_str << ".\nPlease recompile ripples to"
+                  << " the correct weight type or regenerate a new binary file."
+                  << std::endl;
+        FS.close();
+        exit(-1);
+      }
     }
 
 #pragma omp parallel
     {
       std::ifstream FS(FileName, std::ios::binary);
+      constexpr size_t num_metadata_elements = 3;
       #pragma omp single
       {
-        FS.seekg(2 * sizeof(uint64_t), std::ios_base::beg);
+        FS.seekg(num_metadata_elements * sizeof(uint64_t), std::ios_base::beg);
         FS.read(reinterpret_cast<char *>(&numNodes), sizeof(numNodes));
         FS.read(reinterpret_cast<char *>(&numEdges), sizeof(numEdges));
 
@@ -754,7 +804,9 @@ public:
         reverseMap.resize(numNodes);
       }
 
-      FS.seekg(2 * sizeof(uint64_t) + sizeof(numNodes) + sizeof(numEdges), std::ios_base::beg);
+      FS.seekg(num_metadata_elements * sizeof(uint64_t) + sizeof(numNodes) +
+                   sizeof(numEdges),
+               std::ios_base::beg);
       read_chunk(FS, reverseMap.size() * sizeof(VertexTy),
                  reinterpret_cast<char *>(reverseMap.data()));
 

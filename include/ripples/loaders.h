@@ -60,6 +60,7 @@
 #include "trng/lcg64.hpp"
 #include "trng/truncated_normal_dist.hpp"
 #include "trng/uniform01_dist.hpp"
+#include "trng/uniform_int_dist.hpp"
 #include <vector>
 #include <deque>
 #include <cstdlib>
@@ -214,6 +215,12 @@ std::vector<EdgeTy> load(const std::string &inputFile, const bool undirected,
 
   std::vector<EdgeTy> result;
 
+  if constexpr (std::is_floating_point_v<typename EdgeTy::weight_type>) {
+    std::cout << "Floating point weights, no conversion needed." << std::endl;
+  } else {
+    std::cout << "Converting float to integer weights" << std::endl;
+  }
+
 
   #pragma omp parallel
   {
@@ -237,8 +244,24 @@ std::vector<EdgeTy> load(const std::string &inputFile, const bool undirected,
 
         typename EdgeTy::vertex_type source;
         typename EdgeTy::vertex_type destination;
-        typename EdgeTy::weight_type weight;
-        SS >> source >> destination >> weight;
+        using weight_type = typename EdgeTy::weight_type;
+        weight_type weight;
+
+        if constexpr (std::is_floating_point_v<weight_type>) {
+          SS >> source >> destination >> weight;
+        } else {
+          float tsv_weight;
+          SS >> source >> destination >> tsv_weight;
+          #ifdef CHECK_WEIGHT_RANGE
+          // Assert that the weight is in the range (0, 1]
+          if (tsv_weight <= 0.0 || tsv_weight > 1.0) {
+            std::cerr << "Error: Weight out of range [0, 1] at line " << lineNumber << std::endl;
+            std::exit(1);
+          }
+          #endif
+          const auto upper_limit = std::numeric_limits<weight_type>::max();
+          weight = static_cast<weight_type>(tsv_weight * upper_limit);
+        }
 
         EdgeTy e = {source, destination, weight};
         edges[thread_id].emplace_back(e);
@@ -268,7 +291,7 @@ std::vector<EdgeTy> load(const std::string &inputFile, const bool undirected,
 
 }  // namespace
 
-template <typename PRNG, typename Distribution>
+template <typename PRNG, typename Distribution, typename WeightTy>
 class WeightGenerator {
  public:
   WeightGenerator(PRNG &gen, Distribution dist, float scale_factor = 1.0)
@@ -277,7 +300,15 @@ class WeightGenerator {
   WeightGenerator(PRNG &gen, float scale_factor = 1.0)
       : WeightGenerator(gen, Distribution(), scale_factor) {}
 
-  float operator()() { return scale_factor_ * dist_(gen_); }
+  WeightTy operator()() {
+    if constexpr(std::is_floating_point_v<WeightTy>) {
+      return dist_(gen_) * scale_factor_;
+    } else {
+      const auto upper_limit = std::numeric_limits<WeightTy>::max();
+      auto intermediate = dist_(gen_) * scale_factor_;
+      return static_cast<WeightTy>(intermediate * upper_limit);
+    }
+  }
 
  private:
   PRNG gen_;
@@ -352,24 +383,31 @@ GraphTy loadGraph_helper(ConfTy &CFG, PrngTy &PRNG, allocator_t allocator = allo
 //! \return The GraphTy graph loaded from the input file.
 template <typename GraphTy, typename ConfTy, typename PrngTy, typename allocator_t = std::allocator<char>>
 GraphTy loadGraph(ConfTy &CFG, PrngTy &PRNG, allocator_t allocator = allocator_t()) {
+  using weight_type = typename GraphTy::edge_type::edge_weight;
   GraphTy G(allocator);
   if (CFG.distribution == "uniform") {
-    WeightGenerator<trng::lcg64, trng::uniform01_dist<float>> gen(
+    WeightGenerator<trng::lcg64, trng::uniform01_dist<float>, weight_type> gen(
         PRNG, CFG.scale_factor);
     G = loadGraph_helper<GraphTy>(CFG, gen, allocator);
   } else if (CFG.distribution == "normal") {
-    WeightGenerator<trng::lcg64, trng::truncated_normal_dist<float>> gen(
-        PRNG,
-        trng::truncated_normal_dist<float>(CFG.mean, CFG.variance, 0.0, 1.0),
-        CFG.scale_factor);
+    WeightGenerator<trng::lcg64, trng::truncated_normal_dist<float>, weight_type> gen(
+      PRNG,
+      trng::truncated_normal_dist<float>(CFG.mean, CFG.variance, 0.0, 1.0),
+      CFG.scale_factor);
     G = loadGraph_helper<GraphTy>(CFG, gen, allocator);
   } else if (CFG.distribution == "const") {
-    auto gen = [&]() -> float { return CFG.mean; };
-    G = loadGraph_helper<GraphTy>(CFG, gen, allocator);
+    if (CFG.mean <= 1.0) {
+      auto gen = [&]() -> weight_type { return CFG.mean; };
+      G = loadGraph_helper<GraphTy>(CFG, gen, allocator);
+    } else {
+      auto gen = [&]() -> weight_type {
+        return CFG.mean * std::numeric_limits<weight_type>::max();
+      };
+      G = loadGraph_helper<GraphTy>(CFG, gen, allocator);
+    }
   } else {
     throw std::domain_error("Unsupported distribution");
   }
-  // Print system time
   return G;
 }
 
