@@ -365,8 +365,6 @@ class Graph {
     idMap(allocator),
     reverseMap(allocator){
 
-  // std::time_t sys_time = std::time(nullptr);
-  // std::cout << std::asctime(std::localtime(&sys_time)) << " Building map" << std::endl;
 
     VertexTy maxVertexID = 0;
     omp_lock_t mapLock;
@@ -398,8 +396,6 @@ class Graph {
       maxVertexID = std::max(std::max(itr->source, itr->destination), maxVertexID);
     }
 
-    // sys_time = std::time(nullptr);
-    // std::cout << std::asctime(std::localtime(&sys_time)) << " Assigning reverse map" << std::endl;
 
     if (renumbering) {
       // Could utilize the C++ 17 parallel sort
@@ -418,8 +414,6 @@ class Graph {
       }
     }
 
-    // sys_time = std::time(nullptr);
-    // std::cout << std::asctime(std::localtime(&sys_time)) << " Allocating pointers" << std::endl;
 
     numNodes = reverseMap.size();
     numEdges = std::distance(begin, end);
@@ -427,8 +421,6 @@ class Graph {
     edges = allocate_edges(numEdges);
     index = allocate_index(numNodes + 1);
 
-    // sys_time = std::time(nullptr);
-    // std::cout << std::asctime(std::localtime(&sys_time)) << " Assigning pointers and edges" << std::endl;
 
 #pragma omp parallel for
     for (size_t i = 0; i < numNodes + 1; ++i) {
@@ -440,8 +432,6 @@ class Graph {
       edges[i] = DestinationTy();
     }
 
-    // sys_time = std::time(nullptr);
-    // std::cout << std::asctime(std::localtime(&sys_time)) << " Calculating index" << std::endl;
 
     #pragma omp parallel for
     for (auto itr = begin; itr != end; ++itr) {
@@ -449,15 +439,11 @@ class Graph {
       index[DirectionPolicy::Source(itr, idMap) + 1] += 1;
     }
 
-    // sys_time = std::time(nullptr);
-    // std::cout << std::asctime(std::localtime(&sys_time)) << " prefix sum" << std::endl;
 
     for (size_t i = 1; i <= numNodes; ++i) {
       index[i] += index[i - 1] - edges;
     }
 
-    // sys_time = std::time(nullptr);
-    // std::cout << std::asctime(std::localtime(&sys_time)) << " calculating edge ptr" << std::endl;
 
     std::vector<omp_lock_t> ptrLock(numNodes);
     #pragma omp parallel for

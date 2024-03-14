@@ -214,8 +214,6 @@ std::vector<EdgeTy> load(const std::string &inputFile, const bool undirected,
 
   std::vector<EdgeTy> result;
 
-  // std::time_t sys_time = std::time(nullptr);
-  // std::cout << std::asctime(std::localtime(&sys_time)) << " Splitting chunks" << std::endl;
 
   #pragma omp parallel
   {
@@ -253,26 +251,17 @@ std::vector<EdgeTy> load(const std::string &inputFile, const bool undirected,
     }
   }
 
-  // sys_time = std::time(nullptr);
-  // std::cout << std::asctime(std::localtime(&sys_time)) << " Calculating Sizes" << std::endl;
-
   std::vector<size_t> sizes(omp_get_max_threads() + 1);
   for (size_t i = 1; i < sizes.size(); ++i) {
     sizes[i] = edges[i - 1].size() + sizes[i - 1];
   }
   result.resize(sizes.back());
 
-  // sys_time = std::time(nullptr);
-  // std::cout << std::asctime(std::localtime(&sys_time)) << " Copying edges" << std::endl;
-
   #pragma omp parallel for
   for (size_t i = 0; i < sizes.size() - 1; ++i) {
     // result.insert(result.begin() + sizes[i], edges[i].begin(), edges[i].end());
     std::copy(edges[i].begin(), edges[i].end(), result.begin() + sizes[i]);
   }
-  
-  // sys_time = std::time(nullptr);
-  // std::cout << std::asctime(std::localtime(&sys_time)) << " Got " << result.size() << " edges" << std::endl;
 
   return result;
 }
@@ -328,8 +317,6 @@ std::vector<EdgeTy> loadEdgeList(const Configuration &CFG, PRNG &weightGen) {
                               ripples::linear_threshold_tag{});
     }
   }
-  // std::time_t sys_time = std::time(nullptr);
-  // std::cout << std::asctime(std::localtime(&sys_time)) << " Got edgelist" << std::endl;
   return edgeList;
 }
 
@@ -343,18 +330,12 @@ GraphTy loadGraph_helper(ConfTy &CFG, PrngTy &PRNG, allocator_t allocator = allo
     using weight_type = typename GraphTy::edge_type::edge_weight;
     using edge_type = ripples::Edge<vertex_type, weight_type>;
     auto edgeList = ripples::loadEdgeList<edge_type>(CFG, PRNG);
-    std::time_t sys_time = std::time(nullptr);
-    std::cout << std::asctime(std::localtime(&sys_time)) << " Got edgelist, building graph" << std::endl;
     GraphTy tmpG(edgeList.begin(), edgeList.end(), !CFG.disable_renumbering, allocator);
-    sys_time = std::time(nullptr);
-    std::cout << std::asctime(std::localtime(&sys_time)) << " Graph built, moving" << std::endl;
     G = std::move(tmpG);
   } else {
     G.load_binary(CFG.IFileName);
   }
 
-  // std::time_t sys_time = std::time(nullptr);
-  // std::cout << std::asctime(std::localtime(&sys_time)) << " Returning graph" << std::endl;
 
   return G;
 }
@@ -389,8 +370,6 @@ GraphTy loadGraph(ConfTy &CFG, PrngTy &PRNG, allocator_t allocator = allocator_t
     throw std::domain_error("Unsupported distribution");
   }
   // Print system time
-  // std::time_t sys_time = std::time(nullptr);
-  // std::cout << std::asctime(std::localtime(&sys_time)) << " Got loadGraphHelper, returning G" << std::endl;
   return G;
 }
 
