@@ -540,7 +540,7 @@ class Graph {
 
 private:
   size_t total_binary_size() const {
-    return 2 * sizeof(uint64_t)
+    return 3 * sizeof(uint64_t)
       + sizeof(VertexTy) * numNodes
       + sizeof(pointer_to(edges)) * (numNodes + 1)
       + sizeof(edge_type) * numEdges;
@@ -566,16 +566,24 @@ public:
     int file = open(FilePath.c_str(), O_CREAT | O_WRONLY, mode);
 #if defined(__gnu_linux__)
     if (fallocate(file, 0, 0, totalFileSize) != 0) {
-      std::cout << "Preallocation failed. is disk too full?" << std::endl;
-      close(file);
-      exit(-1);
+      // Test posix_fallocate
+      std::cout << "Preallocation of " << totalFileSize  << " bytes failed with fallocate. Trying posix_fallocate..." << std::endl;
+      if(posix_fallocate(file, 0, totalFileSize) != 0) {
+        // Print error message
+        std::cout << "Preallocation of " << totalFileSize  << " bytes failed with posix_fallocate. Is the disk too full?" << std::endl;
+        close(file);
+        exit(-1);
+      }
+      else{
+        std::cout << "Preallocation of " << totalFileSize  << " bytes succeeded with posix_fallocate!" << std::endl;
+      }
     }
 #else
     fstore_t store = {F_ALLOCATEALL, F_PEOFPOSMODE, 0, totalFileSize};
     fcntl(file, F_PREALLOCATE, &store);
 
     if (store.fst_bytesalloc < totalFileSize) {
-      std::cout << "Preallocation failed. is disk too full?" << std::endl;
+      std::cout << "Preallocation of " << totalFileSize  << " bytes failed with fcntl. Is the disk too full?" << std::endl;
       close(file);
       exit(-1);
     }
