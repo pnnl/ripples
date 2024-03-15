@@ -27,7 +27,10 @@ target_link_libraries(rrr-set-generation-tests
 target_compile_definitions(rrr-set-generation-tests PRIVATE
                            $<IF:$<BOOL:${RIPPLES_ENABLE_TCMALLOC}>, gperftools::tcmalloc_minimal,>
                            $<IF:$<BOOL:${RIPPLES_ENABLE_CUDA}>, RIPPLES_ENABLE_CUDA=1,>
-                           $<IF:$<BOOL:${RIPPLES_ENABLE_HIP}>, RIPPLES_ENABLE_HIP=1,>)
+                           $<IF:$<BOOL:${RIPPLES_ENABLE_HIP}>, RIPPLES_ENABLE_HIP=1,>
+                           $<IF:$<BOOL:${RIPPLES_ENABLE_FLOAT_WEIGHTS}>, RIPPLES_ENABLE_FLOAT_WEIGHTS=1,>
+                           $<IF:$<BOOL:${RIPPLES_ENABLE_UINT16_WEIGHTS}>, RIPPLES_ENABLE_UINT16_WEIGHTS=1,>
+                           $<IF:$<BOOL:${RIPPLES_ENABLE_UINT8_WEIGHTS}>, RIPPLES_ENABLE_UINT8_WEIGHTS=1,>)
 
 add_test(NAME RRRSetGeneration COMMAND rrr-set-generation-tests)
 

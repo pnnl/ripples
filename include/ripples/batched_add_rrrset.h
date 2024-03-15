@@ -62,26 +62,6 @@
 
 namespace ripples {
 
-template <typename DistributionTy, typename WeightTy>
-class DistWrapper {
- public:
-  using result_type = typename DistributionTy::result_type;
-  using weight_type = WeightTy;
-  DistWrapper(DistributionTy &dist) : dist_(dist) {}
-  template <typename PRNGeneratorTy>
-  WeightTy operator()(PRNGeneratorTy &generator) {
-    if constexpr (std::is_floating_point_v<WeightTy>) {
-      return static_cast<WeightTy>(dist_(generator));
-    } else {
-      auto upper_bound = std::numeric_limits<WeightTy>::max();
-      return static_cast<WeightTy>(dist_(generator) * upper_bound);
-    }
-  }
-
- private:
-  DistributionTy &dist_;
-};
-
 struct BFSCPUContext {
   BFSCPUContext(size_t num_nodes)
       : old_visited_matrix(num_nodes), new_visited_matrix(num_nodes) {}

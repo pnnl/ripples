@@ -50,32 +50,46 @@
 #include "trng/lcg64.hpp"
 #include <vector>
 
-
-using EdgeT = ripples::Edge<uint32_t, float>;
+#if defined RIPPLES_ENABLE_UINT8_WEIGHTS
+  using EdgeT = ripples::Edge<uint32_t, uint8_t>;
+  constexpr uint8_t wt = std::numeric_limits<uint8_t>::max()/2;
+#elif defined RIPPLES_ENABLE_UINT16_WEIGHTS
+  using EdgeT = ripples::Edge<uint32_t, uint16_t>;
+  constexpr uint16_t wt = std::numeric_limits<uint16_t>::max()/2;
+#else
+  using EdgeT = ripples::Edge<uint32_t, float>;
+  constexpr float wt = 0.5;
+#endif // RIPPLES_WEIGHT_QUANT
 std::vector<EdgeT> karate{
-    {1, 2, 0.5},   {1, 3, 0.5},   {1, 4, 0.5},   {1, 5, 0.5},   {1, 6, 0.5},
-    {1, 7, 0.5},   {1, 8, 0.5},   {1, 9, 0.5},   {1, 11, 0.5},  {1, 12, 0.5},
-    {1, 13, 0.5},  {1, 14, 0.5},  {1, 18, 0.5},  {1, 20, 0.5},  {1, 22, 0.5},
-    {1, 32, 0.5},  {2, 3, 0.5},   {2, 4, 0.5},   {2, 8, 0.5},   {2, 14, 0.5},
-    {2, 18, 0.5},  {2, 20, 0.5},  {2, 22, 0.5},  {2, 31, 0.5},  {3, 4, 0.5},
-    {3, 8, 0.5},   {3, 9, 0.5},   {3, 10, 0.5},  {3, 14, 0.5},  {3, 28, 0.5},
-    {3, 29, 0.5},  {3, 33, 0.5},  {4, 8, 0.5},   {4, 13, 0.5},  {4, 14, 0.5},
-    {5, 7, 0.5},   {5, 11, 0.5},  {6, 7, 0.5},   {6, 11, 0.5},  {6, 17, 0.5},
-    {7, 17, 0.5},  {9, 31, 0.5},  {9, 33, 0.5},  {9, 34, 0.5},  {10, 34, 0.5},
-    {14, 34, 0.5}, {15, 33, 0.5}, {15, 34, 0.5}, {16, 33, 0.5}, {16, 34, 0.5},
-    {19, 33, 0.5}, {19, 34, 0.5}, {20, 34, 0.5}, {21, 33, 0.5}, {21, 34, 0.5},
-    {23, 33, 0.5}, {23, 34, 0.5}, {24, 26, 0.5}, {24, 28, 0.5}, {24, 30, 0.5},
-    {24, 33, 0.5}, {24, 34, 0.5}, {25, 26, 0.5}, {25, 28, 0.5}, {25, 32, 0.5},
-    {26, 32, 0.5}, {27, 30, 0.5}, {27, 34, 0.5}, {28, 34, 0.5}, {29, 32, 0.5},
-    {29, 34, 0.5}, {30, 33, 0.5}, {30, 34, 0.5}, {31, 33, 0.5}, {31, 34, 0.5},
-    {32, 33, 0.5}, {32, 34, 0.5}, {33, 34, 0.5}};
+    {1, 2, wt},   {1, 3, wt},   {1, 4, wt},   {1, 5, wt},   {1, 6, wt},
+    {1, 7, wt},   {1, 8, wt},   {1, 9, wt},   {1, 11, wt},  {1, 12, wt},
+    {1, 13, wt},  {1, 14, wt},  {1, 18, wt},  {1, 20, wt},  {1, 22, wt},
+    {1, 32, wt},  {2, 3, wt},   {2, 4, wt},   {2, 8, wt},   {2, 14, wt},
+    {2, 18, wt},  {2, 20, wt},  {2, 22, wt},  {2, 31, wt},  {3, 4, wt},
+    {3, 8, wt},   {3, 9, wt},   {3, 10, wt},  {3, 14, wt},  {3, 28, wt},
+    {3, 29, wt},  {3, 33, wt},  {4, 8, wt},   {4, 13, wt},  {4, 14, wt},
+    {5, 7, wt},   {5, 11, wt},  {6, 7, wt},   {6, 11, wt},  {6, 17, wt},
+    {7, 17, wt},  {9, 31, wt},  {9, 33, wt},  {9, 34, wt},  {10, 34, wt},
+    {14, 34, wt}, {15, 33, wt}, {15, 34, wt}, {16, 33, wt}, {16, 34, wt},
+    {19, 33, wt}, {19, 34, wt}, {20, 34, wt}, {21, 33, wt}, {21, 34, wt},
+    {23, 33, wt}, {23, 34, wt}, {24, 26, wt}, {24, 28, wt}, {24, 30, wt},
+    {24, 33, wt}, {24, 34, wt}, {25, 26, wt}, {25, 28, wt}, {25, 32, wt},
+    {26, 32, wt}, {27, 30, wt}, {27, 34, wt}, {28, 34, wt}, {29, 32, wt},
+    {29, 34, wt}, {30, 33, wt}, {30, 34, wt}, {31, 33, wt}, {31, 34, wt},
+    {32, 33, wt}, {32, 34, wt}, {33, 34, wt}};
 
 SCENARIO("Generate RRR sets", "[rrrsets]") {
   GIVEN("The Karate Graph") {
-    using destination_type = ripples::WeightedDestination<uint32_t, float>;
-    using GraphFwd = ripples::Graph<uint32_t, destination_type,
+    #if defined RIPPLES_ENABLE_UINT8_WEIGHTS
+      using dest_type = ripples::WeightedDestination<uint32_t, uint8_t>;
+    #elif defined RIPPLES_ENABLE_UINT16_WEIGHTS
+      using dest_type = ripples::WeightedDestination<uint32_t, uint16_t>;
+    #else
+      using dest_type = ripples::WeightedDestination<uint32_t, float>;
+    #endif // RIPPLES_WEIGHT_QUANT
+    using GraphFwd = ripples::Graph<uint32_t, dest_type,
                                     ripples::ForwardDirection<uint32_t>>;
-    using GraphBwd = ripples::Graph<uint32_t, destination_type,
+    using GraphBwd = ripples::Graph<uint32_t, dest_type,
                                     ripples::BackwardDirection<uint32_t>>;
     using vertex_type = typename GraphFwd::vertex_type;
 

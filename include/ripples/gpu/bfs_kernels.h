@@ -61,8 +61,6 @@ namespace ripples {
   using dist_t = thrust::uniform_real_distribution<float>;
 #endif // RIPPLES_WEIGHT_QUANT
 
-#if defined()
-
 // Override popcount for 32 or 64-bit integers
 __device__ __forceinline__ int popcount(uint32_t x) { return __popc(x); }
 

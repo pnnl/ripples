@@ -55,6 +55,26 @@
 
 namespace ripples {
 
+template <typename DistributionTy, typename WeightTy>
+class DistWrapper {
+ public:
+  using result_type = typename DistributionTy::result_type;
+  using weight_type = WeightTy;
+  DistWrapper(DistributionTy &dist) : dist_(dist) {}
+  template <typename PRNGeneratorTy>
+  WeightTy operator()(PRNGeneratorTy &generator) {
+    if constexpr (std::is_floating_point_v<WeightTy>) {
+      return static_cast<WeightTy>(dist_(generator));
+    } else {
+      auto upper_bound = std::numeric_limits<WeightTy>::max();
+      return static_cast<WeightTy>(dist_(generator) * upper_bound);
+    }
+  }
+
+ private:
+  DistributionTy &dist_;
+};
+
 //! \brief Execute a randomize BFS to generate a Random RR Set.
 //!
 //! \tparam GraphTy The type of the graph.
@@ -72,7 +92,8 @@ void AddRRRSet(const GraphTy &G, typename GraphTy::vertex_type r,
                diff_model_tag &&tag) {
   using vertex_type = typename GraphTy::vertex_type;
 
-  trng::uniform01_dist<float> value;
+  trng::uniform01_dist<float> dist;
+  DistWrapper<decltype(dist), typename GraphTy::weight_type> value(dist);
 
   std::queue<vertex_type> queue;
   std::vector<bool> visited(G.num_nodes(), false);

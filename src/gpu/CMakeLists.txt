@@ -8,7 +8,10 @@ if (RIPPLES_ENABLE_CUDA)
 endif()
 target_compile_definitions(gpu_ripples PUBLIC
                            $<IF:$<BOOL:${RIPPLES_ENABLE_CUDA}>, RIPPLES_ENABLE_CUDA=1,>
-                           $<IF:$<BOOL:${RIPPLES_ENABLE_HIP}>, RIPPLES_ENABLE_HIP=1,>)
+                           $<IF:$<BOOL:${RIPPLES_ENABLE_HIP}>, RIPPLES_ENABLE_HIP=1,>
+                           $<IF:$<BOOL:${RIPPLES_ENABLE_FLOAT_WEIGHTS}>, RIPPLES_ENABLE_FLOAT_WEIGHTS=1,>
+                           $<IF:$<BOOL:${RIPPLES_ENABLE_UINT16_WEIGHTS}>, RIPPLES_ENABLE_UINT16_WEIGHTS=1,>
+                           $<IF:$<BOOL:${RIPPLES_ENABLE_UINT8_WEIGHTS}>, RIPPLES_ENABLE_UINT8_WEIGHTS=1,>)
 target_link_libraries(gpu_ripples
                       nlohmann_json::nlohmann_json libtrng::libtrng fmt::fmt
                       spdlog::spdlog)

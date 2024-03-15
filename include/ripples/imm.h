@@ -183,7 +183,7 @@ void Sampling(const GraphTy &G, const ConfTy &CFG, double l,
                                     std::forward<execution_tag>(ex_tag));
     // std::cout << "x_calc = " << x << std::endl;
   }
-  for (x; x < std::log2(G.num_nodes()); ++x) {
+  for (; x < std::log2(G.num_nodes()); ++x) {
     // std::cout << "x = " << x << std::endl;
     // Equation 9
     ssize_t thetaPrime = ThetaPrime(x, epsilonPrime, l, k, G.num_nodes(),
@@ -339,7 +339,7 @@ auto Sampling(const GraphTy &G, const ConfTy &CFG, double l,
                                     std::forward<execution_tag>(ex_tag));
     // std::cout << "x_calc = " << x << std::endl;
   }
-  for (x; x < std::log2(G.num_nodes()); ++x) {
+  for (; x < std::log2(G.num_nodes()); ++x) {
     // std::cout << "x = " << x << std::endl;
     // Equation 9
     ssize_t thetaPrime = ThetaPrime(x, epsilonPrime, l, k, G.num_nodes(),
@@ -454,7 +454,7 @@ void Sampling(const GraphTy &G, const ConfTy &CFG, double l,
                                     std::forward<sequential_tag>(ex_tag));
     // std::cout << "x_calc = " << x << std::endl;
   }
-  for (x; x < std::log2(G.num_nodes()); ++x) {
+  for (; x < std::log2(G.num_nodes()); ++x) {
     // std::cout << "x = " << x << std::endl;
     // Equation 9
     ssize_t thetaPrime = ThetaPrime(x, epsilonPrime, l, k, G.num_nodes(),
@@ -587,7 +587,7 @@ auto Sampling(const GraphTy &G, const ConfTy &CFG, double l,
                                     std::forward<sequential_tag>(ex_tag));
     // std::cout << "x_calc = " << x << std::endl;
   }
-  for (x; x < std::log2(G.num_nodes()); ++x) {
+  for (; x < std::log2(G.num_nodes()); ++x) {
     // std::cout << "x = " << x << std::endl;
     // Equation 9
     ssize_t thetaPrime = ThetaPrime(x, epsilonPrime, l, k, G.num_nodes(),
