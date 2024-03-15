@@ -53,6 +53,15 @@
 #endif
 
 namespace ripples {
+#if defined RIPPLES_ENABLE_UINT8_WEIGHTS
+  using dist_t = thrust::uniform_int_distribution<uint8_t>;
+#elif defined RIPPLES_ENABLE_UINT16_WEIGHTS
+  using dist_t = thrust::uniform_int_distribution<uint16_t>;
+#else
+  using dist_t = thrust::uniform_real_distribution<float>;
+#endif // RIPPLES_WEIGHT_QUANT
+
+#if defined()
 
 // Override popcount for 32 or 64-bit integers
 __device__ __forceinline__ int popcount(uint32_t x) { return __popc(x); }
@@ -288,7 +297,7 @@ __global__ void sim_step_thread_kernel(
   const int global_id = tid + bid * blockDim.x;
   uint64_t seed = clock() + global_id;
   thrust::minstd_rand generator(seed * seed + 19283);
-  thrust::uniform_real_distribution<float> value;
+  dist_t value;
   color_type newColors = 0;
   // Figure out which color set we are working on
   const int input_id =
@@ -341,7 +350,7 @@ __global__ void sim_step_block_kernel(
   const int global_id = tid + bid * blockDim.x;
   uint64_t seed = clock() + global_id;
   thrust::minstd_rand generator(seed * seed + 19283);
-  thrust::uniform_real_distribution<float> value;
+  dist_t value;
   bool color_mask = 0;
   // Number of colors per color_type
   const int num_colors = sizeof(color_type) * 8;
@@ -403,7 +412,7 @@ __global__ void fused_color_thread_scatter_kernel(
   uint64_t seed = clock64() + global_id;
   // uint64_t seed = 0xFFFFFFFFFFFFFFFF;
   thrust::minstd_rand generator(seed * seed + 19283);
-  thrust::uniform_real_distribution<float> value;
+  dist_t value;
   // Figure out which color set we are working on
   const int input_id =
       global_id / color_dim;  // 0, 0, 0, 0, ..., 1, 1, 1, 1, ...
@@ -456,7 +465,7 @@ __global__ void fused_color_set_scatter_kernel(
   uint64_t seed = clock64() + global_id;
   // uint64_t seed = 0xFFFFFFFFFFFFFFFF;
   thrust::minstd_rand generator(seed * seed + 19283);
-  thrust::uniform_real_distribution<float> value;
+  dist_t value;
   // Figure out which color set we are working on
   const int color_id = tid % color_dim;   // 0, 1, 2, 3, ..., 0, 1, 2, 3, ...
   const int color_set = tid / color_dim;  // 0, 0, 0, 0, ..., 1, 1, 1, 1, ...

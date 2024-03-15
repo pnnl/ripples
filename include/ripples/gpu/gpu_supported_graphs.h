@@ -46,11 +46,18 @@
 #include "ripples/graph.h"
 
 namespace ripples {
+#if defined RIPPLES_ENABLE_UINT8_WEIGHTS
+  using dest_type = ripples::WeightedDestination<uint32_t, uint8_t>;
+#elif defined RIPPLES_ENABLE_UINT16_WEIGHTS
+  using dest_type = ripples::WeightedDestination<uint32_t, uint16_t>;
+#else
+  using dest_type = ripples::WeightedDestination<uint32_t, float>;
+#endif // RIPPLES_WEIGHT_QUANT
 using IMMGraphTy =
-  Graph<uint32_t, WeightedDestination<uint32_t, float>, BackwardDirection<uint32_t>>;
+  Graph<uint32_t, dest_type, BackwardDirection<uint32_t>>;
 
 using HCGraphTy =
-  Graph<uint32_t, WeightedDestination<uint32_t, float>, ForwardDirection<uint32_t>>;
+  Graph<uint32_t, dest_type, ForwardDirection<uint32_t>>;
 }
 
 #endif
