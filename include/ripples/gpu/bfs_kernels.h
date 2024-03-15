@@ -53,10 +53,27 @@
 #endif
 
 namespace ripples {
+
+template <typename result_t>
+class uniform_int_chop_gpu {
+ public:
+  // __device__ explicit uniform_int_chop_gpu() = default;
+  template <typename PRNGeneratorTy>
+  __device__ result_t operator()(PRNGeneratorTy &generator){
+    static_assert(sizeof(typename PRNGeneratorTy::result_type) >= sizeof(result_t),
+                  "PRNGeneratorTy::result_type is too small, must be larger than"
+                  " the result type.");
+    constexpr size_t num_bits = sizeof(result_t) * 8;
+    constexpr size_t num_gen_bits = sizeof(typename PRNGeneratorTy::result_type) * 8;
+    constexpr size_t num_leftover = num_gen_bits - num_bits;
+    return static_cast<result_t>(generator() >> num_leftover);
+  }
+};
+
 #if defined RIPPLES_ENABLE_UINT8_WEIGHTS
-  using dist_t = thrust::uniform_int_distribution<uint8_t>;
+  using dist_t = uniform_int_chop_gpu<uint8_t>;
 #elif defined RIPPLES_ENABLE_UINT16_WEIGHTS
-  using dist_t = thrust::uniform_int_distribution<uint16_t>;
+  using dist_t = uniform_int_chop_gpu<uint16_t>;
 #else
   using dist_t = thrust::uniform_real_distribution<float>;
 #endif // RIPPLES_WEIGHT_QUANT

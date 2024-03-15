@@ -83,8 +83,12 @@ void BatchedBFS(const GraphTy &G, SItrTy B, SItrTy E, OItrTy O,
   using frontier_element = vertex_type;
   std::unordered_map<vertex_type, uint64_t> color_map, new_color_map;
 
-  trng::uniform01_dist<float> dist;
-  DistWrapper<trng::uniform01_dist<float>, weight_type> value(dist);
+  using dist_t = std::conditional_t<
+      std::is_floating_point_v<typename GraphTy::weight_type>,
+      trng::uniform01_dist<typename GraphTy::weight_type>,
+      uniform_int_chop<typename GraphTy::weight_type>>;
+
+  dist_t value;
 
   uint64_t color = 1ul << 63;
   std::vector<frontier_element> frontier, new_frontier;
@@ -217,8 +221,12 @@ void BatchedBFSNeighborColorOMP(const GraphTy &G, SItrTy B, SItrTy E, OItrTy O,
   bool found_one = true;
   auto &old_visited_matrix = cpu_ctx.old_visited_matrix;
   auto &new_visited_matrix = cpu_ctx.new_visited_matrix;
-  trng::uniform01_dist<float> dist;
-  DistWrapper<trng::uniform01_dist<float>, weight_type> value(dist);
+  using dist_t = std::conditional_t<
+      std::is_floating_point_v<typename GraphTy::weight_type>,
+      trng::uniform01_dist<typename GraphTy::weight_type>,
+      uniform_int_chop<typename GraphTy::weight_type>>;
+
+  dist_t value;
   while (found_one) {
     found_one = false;
 // Iterate over both visited_vertex and new_visited_vertex
