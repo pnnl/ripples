@@ -229,7 +229,7 @@ class Graph {
   // Pointer type for the edges array
   using edge_pointer_t = rebind_alloc_pointer<allocator_t, edge_type>;
   // Pointer type for the indices array
-  using index_pointer_t = rebind_alloc_pointer<allocator_t, edge_pointer_t>;
+  using index_pointer_t = rebind_alloc_pointer<allocator_t, size_t>;
 
  public:
 
@@ -426,7 +426,7 @@ class Graph {
 
 #pragma omp parallel for
     for (size_t i = 0; i < numNodes + 1; ++i) {
-      index[i] = edges;
+      index[i] = 0;
     }
 
 #pragma omp parallel for
@@ -443,17 +443,17 @@ class Graph {
 
 
     for (size_t i = 1; i <= numNodes; ++i) {
-      index[i] += index[i - 1] - edges;
+      index[i] += index[i - 1];
     }
-
 
     std::vector<omp_lock_t> ptrLock(numNodes);
-    #pragma omp parallel for
-    for (size_t i = 0; i < numNodes; ++i) {
+    std::vector<edge_pointer_t> ptrEdge(numNodes, nullptr);
+#pragma omp parallel for
+    for (int i = 0; i < numNodes; ++i) {
+      ptrEdge[i] = edges + index[i];
       omp_init_lock(&ptrLock[i]);
     }
-    std::vector<edge_pointer_t> ptrEdge(index, index + numNodes);
-    #pragma omp parallel for
+#pragma omp parallel for
     for (auto itr = begin; itr != end; ++itr) {
       omp_set_lock(&ptrLock[DirectionPolicy::Source(itr, idMap)]);
       *ptrEdge[DirectionPolicy::Source(itr, idMap)] =
@@ -478,7 +478,7 @@ class Graph {
   //! \param v The input vertex.
   //! \return  a range containing the out-neighbors of the vertex v in input.
   Neighborhood neighbors(VertexTy v) const {
-    return Neighborhood(index[v], index[v + 1]);
+    return Neighborhood(edges + index[v], edges + index[v + 1]);
   }
 
   //! The number of nodes in the Graph.
@@ -592,7 +592,6 @@ public:
 #endif
 
     // TODO: fix for 64bit vertices IDs.
-    std::vector<uint64_t> tmpIndex(numNodes + 1);
     #pragma omp parallel
     {
       std::ofstream FS(FilePath, std::ios::out | std::ios::binary);
@@ -621,13 +620,9 @@ public:
       write_chunk(FS, numNodes * sizeof(VertexTy),
                   const_cast<char *>(
                       reinterpret_cast<const char *>(reverseMap.data())));
-      #pragma omp for
-      for (size_t i = 0; i < numNodes + 1; ++i) {
-        tmpIndex[i] = std::distance(edges, index[i]);
-      }
 
-      write_chunk(FS, (numNodes + 1)  * sizeof(uint64_t),
-                  reinterpret_cast<char *>(tmpIndex.data()));
+      write_chunk(FS, (numNodes + 1)  * sizeof(size_t),
+                  reinterpret_cast<char *>(pointer_to(index)));
 
       write_chunk(FS, numEdges * sizeof(edge_type),
                   reinterpret_cast<char *>(pointer_to(edges)));
@@ -660,13 +655,9 @@ public:
     G.index = G.allocate_index(G.numNodes + 1);
     G.edges = G.allocate_edges(G.numEdges);
 
-    // Initialize with non-null pointers because the increment (++) operation is
-    // performed to the values in G.index.
-    // Incrementing the null pointer does not work with Boost::offset_ptr and
-    // may be an undefined behavior even with the raw pointer.
 #pragma omp parallel for
     for (auto itr = G.index; itr < G.index + numNodes + 1; ++itr) {
-      *itr = G.edges;
+      *itr = 0;
     }
 
 #pragma omp parallel for
@@ -678,12 +669,12 @@ public:
                   [&](const edge_type &d) { ++G.index[d.vertex + 1]; });
 
     std::partial_sum(G.index, G.index + numNodes + 1, G.index,
-                     [&G](out_dest_ptr_type a, out_dest_ptr_type b) {
-                      const auto degree = std::distance(G.edges, b);
-                      return a + degree;
-                     });
+                     std::plus<size_t>());
 
-    std::vector<out_dest_ptr_type> destPointers(G.index, G.index + numNodes);
+    std::vector<out_dest_ptr_type> destPointers(numNodes + 1);
+    for (size_t i = 0; i < destPointers.size(); ++i) {
+      destPointers[i] = pointer_to(edges) + index[i];
+    }
     for (vertex_type v = 0; v < numNodes; ++v) {
       for (auto u : neighbors(v)) {
         *destPointers[u.vertex] = {v, u.weight};
@@ -740,17 +731,17 @@ public:
       if (std::is_same<ForwardDirection<VertexTy>, DirectionPolicy>::value &&
           direction_check != 0xf0cacc1a) {
         std::cout <<
-          "You are loading a binary that is not compitible with the algorithm you are trying to run.\n"
-          "Please, try to regenerate the binary with passing --transpose."
+          "You are loading a binary that is not compatible with the algorithm you are trying to run.\n"
+          "Please, try to regenerate the binary passing --transpose."
                   << std::endl;
         FS.close();
         exit(-1);
       } else if (std::is_same<BackwardDirection<VertexTy>, DirectionPolicy>::value &&
           direction_check != 0xa1ccac0f) {
         std::cout
-            << "You are loading a binary that is not compitible with the "
+            << "You are loading a binary that is not compatible with the "
                "algorithm you are trying to run.\n"
-               "Please, try to regenerate the binary with passing --transpose or use --avoid-transpose."
+               "Please, try to regenerate the binary passing --transpose."
             << std::endl;
         FS.close();
         exit(-1);
@@ -827,14 +818,6 @@ public:
       read_chunk(FS, (numNodes + 1) * sizeof(ptrdiff_t),
                  reinterpret_cast<char *>(pointer_to(index)));
 
-#pragma omp barrier
-#pragma omp for
-      for (size_t i = 0; i < numNodes + 1; ++i) {
-        uint64_t v = *(reinterpret_cast<uint64_t *>(pointer_to(index)) + i);
-        *(reinterpret_cast<uint64_t *>(pointer_to(index)) + i) =
-          v * sizeof(edge_type) + reinterpret_cast<uint64_t>(pointer_to(edges));
-      }
-
       read_chunk(FS, numEdges * sizeof(edge_type), reinterpret_cast<char *>(pointer_to(edges)));
 
       decltype(idMap) localMap;
@@ -885,7 +868,7 @@ public:
   }
 
   index_pointer_t allocate_index(const std::size_t n) {
-    return general_allocate<allocator_t, edge_pointer_t>(graph_allocator, n);
+    return general_allocate<allocator_t, size_t>(graph_allocator, n);
   }
 
   edge_pointer_t allocate_edges(const std::size_t n) {
