@@ -183,7 +183,9 @@ struct Destination {
 //! \brief The edges stored in the CSR.
 template <typename VertexTy, typename WeightTy>
 struct WeightedDestination : public Destination<VertexTy> {
-  using edge_weight = WeightTy;
+  using vertex_type = VertexTy;
+  using weight_type = WeightTy;
+
   WeightTy weight;  //!< The edge weight.
 
   WeightedDestination(VertexTy v, WeightTy w)
@@ -223,7 +225,7 @@ class Graph {
   using edge_type = DestinationTy;
   //! The integer type representing vertices in the graph.
   using vertex_type = VertexTy;
-  using weight_type = typename DestinationTy::edge_weight;
+  using weight_type = typename DestinationTy::weight_type;
   using index_type = size_t;
 
  private:
@@ -927,7 +929,7 @@ auto getCommunitiesSubgraphs(
       *std::max_element(communityVector.begin(), communityVector.end()) + 1;
   std::vector<BwdGraphTy> communities(num_communities);
 
-  using EdgeTy = Edge<typename FwdGraphTy::vertex_type, typename FwdGraphTy::edge_type::edge_weight>;
+  using EdgeTy = Edge<typename FwdGraphTy::vertex_type, typename FwdGraphTy::edge_type::weight_type>;
   std::vector<std::vector<EdgeTy>> edge_lists(num_communities);
   for (typename FwdGraphTy::vertex_type src = 0; src < Gf.num_nodes(); ++src) {
     vertex_type original_src = Gf.convertID(src);
