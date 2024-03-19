@@ -685,7 +685,7 @@ public:
     return G;
   }
 
-  edge_pointer_t *csr_index() const { return index; }
+  index_pointer_t csr_index() const { return index; }
 
   edge_pointer_t csr_edges() const { return edges; }
 
