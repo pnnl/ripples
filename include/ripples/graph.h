@@ -802,6 +802,8 @@ public:
 
   edge_pointer_t csr_edges() const { return edges; }
 
+  weight_pointer_t csr_weights() const { return weights; }
+
 private:
   template<typename FStreamTy>
   void read_chunk(FStreamTy &FS, size_t TotalBytes, char* O) {

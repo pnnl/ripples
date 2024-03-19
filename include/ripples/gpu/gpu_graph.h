@@ -42,8 +42,6 @@
 
 #include "ripples/gpu/gpu_runtime_trait.h"
 
-#define HOST_SIDE_TRANSFORMATION
-
 namespace ripples {
 
 template <GPURuntime R, typename GraphTy>
@@ -70,27 +68,6 @@ void destroy_gpu_graph(gpu_graph<R, GraphTy> *g) {
   GPU<R>::device_free(g->d_edges_);
   if (g->d_weights_ != nullptr) GPU<R>::device_free(g->d_weights_);
   delete g;
-}
-
-template <GPURuntime R, typename GraphTy>
-void transform_to_gpu_graph(
-  typename gpu_graph<R, GraphTy>::vertex_t *h_edges,
-  typename gpu_graph<R, GraphTy>::weight_t *h_weights,
-  typename GraphTy::edge_type *h_src_weighted_edges,
-  typename GraphTy::index_type *h_src_index, size_t num_nodes) {
-  using index_t = typename gpu_graph<R, GraphTy>::index_t;
-  using vertex_t = typename gpu_graph<R, GraphTy>::vertex_t;
-  using weight_t = typename gpu_graph<R, GraphTy>::weight_t;
-  
-  #pragma omp parallel for
-  for(int tid = 0; tid < num_nodes; ++tid){
-    index_t first = h_src_index[tid];
-    index_t last = h_src_index[tid + 1];
-    for (; first < last; ++first) {
-      h_edges[first] = static_cast<vertex_t>(h_src_weighted_edges[first].vertex);
-      h_weights[first] = static_cast<weight_t>(h_src_weighted_edges[first].weight);
-    }
-  }
 }
 
 template <GPURuntime R, typename GraphTy>
