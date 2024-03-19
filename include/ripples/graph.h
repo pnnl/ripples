@@ -224,12 +224,13 @@ class Graph {
   //! The integer type representing vertices in the graph.
   using vertex_type = VertexTy;
   using weight_type = typename DestinationTy::edge_weight;
+  using index_type = size_t;
 
  private:
   // Pointer type for the edges array
   using edge_pointer_t = rebind_alloc_pointer<allocator_t, edge_type>;
   // Pointer type for the indices array
-  using index_pointer_t = rebind_alloc_pointer<allocator_t, size_t>;
+  using index_pointer_t = rebind_alloc_pointer<allocator_t, index_type>;
 
  public:
 

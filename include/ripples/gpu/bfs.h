@@ -296,7 +296,8 @@ __host__ __device__ __inline__ T clearColor(T colors, T color) {
 
 template <typename VertexTy, typename WeightTy, typename GraphTy>
 struct GPUEdgeScatter {
-  VertexTy d_index;
+  using index_type = typename GraphTy::index_type;
+  index_type d_index;
   VertexTy d_edge;
   WeightTy d_weight;
   template <typename Tuple>
@@ -366,6 +367,7 @@ void GPUBatchedBFS(GraphTy &G, const DeviceContextTy &Context, SItrTy B,
                    SItrTy E, OItrTy O, diff_model_tag &&tag) {
   using DeviceGraphTy = typename DeviceContextTy::device_graph_type;
   using vertex_type = typename GraphTy::vertex_type;
+  using index_type = typename GraphTy::index_type;
   using weight_type = typename GraphTy::weight_type;
 
   constexpr unsigned int NumColors = 8 * sizeof(vertex_type);
@@ -642,6 +644,7 @@ void GPUBatchedScanBFS(GraphTy &G, const DeviceContextTy &Context, SItrTy B,
                        SItrTy E, OItrTy O, diff_model_tag &&tag) {
   using DeviceGraphTy = typename DeviceContextTy::device_graph_type;
   using vertex_type = typename GraphTy::vertex_type;
+  using index_type = typename GraphTy::index_type;
   using weight_type = typename GraphTy::weight_type;
 
   constexpr unsigned int NumColors = 8 * sizeof(vertex_type);
@@ -894,6 +897,7 @@ void GPUBatchedTieredQueueBFS(const GraphTy &G, const DeviceContextTy &Context,
                               ColorTy NumColors = 32) {
   using DeviceGraphTy = typename DeviceContextTy::device_graph_type;
   using vertex_type = typename GraphTy::vertex_type;
+  using index_type = typename GraphTy::index_type;
   using weight_type = typename GraphTy::weight_type;
   using color_type = ColorTy;
 
@@ -1314,6 +1318,7 @@ void GPUBatchedBFSMultiColorFused(const GraphTy &G,
                                   BFSCtxTy &bfs_ctx) {
   using DeviceGraphTy = typename DeviceContextTy::device_graph_type;
   using vertex_type = typename GraphTy::vertex_type;
+  using index_type = typename GraphTy::index_type;
   using weight_type = typename GraphTy::weight_type;
   using color_type = typename BFSCtxTy::color_type;
 
@@ -1645,6 +1650,7 @@ size_t GPUBatchedBFSMultiColorFusedReload(
     const bool reset) {
   using DeviceGraphTy = typename DeviceContextTy::device_graph_type;
   using vertex_type = typename GraphTy::vertex_type;
+  using index_type = typename GraphTy::index_type;
   using weight_type = typename GraphTy::weight_type;
   using color_type = typename BFSCtxTy::color_type;
 
@@ -1952,6 +1958,7 @@ void GPUCalculateDegrees(GraphTy &G, const DeviceContextTy &Context,
                          int &extreme_neighbors) {
   using DeviceGraphTy = typename DeviceContextTy::device_graph_type;
   using vertex_type = typename GraphTy::vertex_type;
+  using index_type = typename GraphTy::index_type;
 
   GPU<RUNTIME>::set_device(Context.gpu_id);
 

@@ -42,19 +42,20 @@
 #include "ripples/gpu/gpu_runtime_trait.h"
 
 namespace ripples {
+// Unused for host-side transformation
 template <GPURuntime R, typename GraphTy>
 __global__ void build_graph_kernel(
     typename gpu_graph<R, GraphTy>::vertex_t *d_edges,
     typename gpu_graph<R, GraphTy>::weight_t *d_weights,
-    typename gpu_graph<R, GraphTy>::vertex_t *d_index,
+    typename gpu_graph<R, GraphTy>::index_t *d_index,
     typename GraphTy::edge_type *d_src_weighted_edges,
-    typename GraphTy::edge_type **d_src_index, size_t num_nodes) {
-  using vertex_t = typename gpu_graph<R, GraphTy>::vertex_t;
+    typename GraphTy::index_pointer_t *d_src_index, size_t num_nodes) {
+  using index_t = typename gpu_graph<R, GraphTy>::index_t;
 
   int tid = blockIdx.x * blockDim.x + threadIdx.x;
   if (tid < num_nodes) {
-    vertex_t first = d_src_index[tid] - d_src_index[0];
-    vertex_t last = d_src_index[tid + 1] - d_src_index[0];
+    index_t first = d_src_index[tid];
+    index_t last = d_src_index[tid + 1];
     if (tid == 0) d_index[0] = 0;
     d_index[tid + 1] = last;
     for (; first < last; ++first) {
@@ -79,8 +80,8 @@ gpu_graph<R, GraphTy> *make_gpu_graph(const GraphTy &hg) {
       hg.num_edges() * sizeof(typename gpu_graph<R, GraphTy>::weight_t));
   GPU<R>::device_malloc(
       reinterpret_cast<void **>(&res->d_index_),
-      (hg.num_nodes() + 1) * sizeof(typename gpu_graph<R, GraphTy>::vertex_t));
-
+      (hg.num_nodes() + 1) * sizeof(typename gpu_graph<R, GraphTy>::index_t));
+#ifndef HOST_SIDE_TRANSFORMATION
   // copy graph to device
   using destination_type = typename GraphTy::edge_type;
   destination_type *d_weighted_edges;
@@ -115,6 +116,19 @@ gpu_graph<R, GraphTy> *make_gpu_graph(const GraphTy &hg) {
   GPU<R>::device_sync();
   GPU<R>::device_free(d_weighted_edges);
   GPU<R>::device_free(d_index);
+#else // HOST_SIDE_TRANSFORMATION
+  using index_t = typename gpu_graph<R, GraphTy>::index_t;
+  using vertex_t = typename gpu_graph<R, GraphTy>::vertex_t;
+  using weight_t = typename gpu_graph<R, GraphTy>::weight_t;
+  vertex_t *h_edges = new vertex_t[hg.num_edges()];
+  weight_t *h_weights = new weight_t[hg.num_edges()];
+  transform_to_gpu_graph<R, GraphTy>(h_edges, h_weights, hg.csr_edges(), hg.csr_index(), hg.num_nodes());
+  GPU<R>::h2d(res->d_index_, hg.csr_index(), (hg.num_nodes() + 1) * sizeof(index_t));
+  GPU<R>::h2d(res->d_edges_, h_edges, hg.num_edges() * sizeof(vertex_t));
+  GPU<R>::h2d(res->d_weights_, h_weights, hg.num_edges() * sizeof(weight_t));
+  delete[] h_edges;
+  delete[] h_weights;
+#endif // !HOST_SIDE_TRANSFORMATION
 
   return res;
 }
@@ -122,12 +136,32 @@ gpu_graph<R, GraphTy> *make_gpu_graph(const GraphTy &hg) {
 #if defined(RIPPLES_ENABLE_CUDA)
 template gpu_graph<CUDA, IMMGraphTy> *make_gpu_graph<CUDA, IMMGraphTy>(
     const IMMGraphTy &);
+template void transform_to_gpu_graph<CUDA, IMMGraphTy>(
+    typename gpu_graph<CUDA, IMMGraphTy>::vertex_t *h_edges,
+    typename gpu_graph<CUDA, IMMGraphTy>::weight_t *h_weights,
+    typename IMMGraphTy::edge_type *h_src_weighted_edges,
+    typename IMMGraphTy::index_type *h_src_index, size_t num_nodes);
 template gpu_graph<CUDA, HCGraphTy> *make_gpu_graph<CUDA, HCGraphTy>(
     const HCGraphTy &);
+template void transform_to_gpu_graph<CUDA, HCGraphTy>(
+    typename gpu_graph<CUDA, IMMGraphTy>::vertex_t *h_edges,
+    typename gpu_graph<CUDA, IMMGraphTy>::weight_t *h_weights,
+    typename IMMGraphTy::edge_type *h_src_weighted_edges,
+    typename IMMGraphTy::index_type *h_src_index, size_t num_nodes);
 #elif defined(RIPPLES_ENABLE_HIP)
 template gpu_graph<HIP, IMMGraphTy> *make_gpu_graph<HIP, IMMGraphTy>(
     const IMMGraphTy &);
+template void transform_to_gpu_graph<HIP, IMMGraphTy>(
+    typename gpu_graph<HIP, IMMGraphTy>::vertex_t *h_edges,
+    typename gpu_graph<HIP, IMMGraphTy>::weight_t *h_weights,
+    typename IMMGraphTy::edge_type *h_src_weighted_edges,
+    typename IMMGraphTy::index_type *h_src_index, size_t num_nodes);
 template gpu_graph<HIP, HCGraphTy> *make_gpu_graph<HIP, HCGraphTy>(
     const HCGraphTy &);
+template void transform_to_gpu_graph<HIP, HCGraphTy>(
+    typename gpu_graph<HIP, IMMGraphTy>::vertex_t *h_edges,
+    typename gpu_graph<HIP, IMMGraphTy>::weight_t *h_weights,
+    typename IMMGraphTy::edge_type *h_src_weighted_edges,
+    typename IMMGraphTy::index_type *h_src_index, size_t num_nodes);
 #endif
 }  // namespace ripples

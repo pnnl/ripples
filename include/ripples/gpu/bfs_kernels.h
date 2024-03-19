@@ -153,13 +153,14 @@ __device__ __forceinline__ T removeColor(T colors, T color) {
 template <GPURuntime R, typename GraphTy,
           typename ColorTy = typename GraphTy::vertex_type>
 __global__ void thread_scatter_kernel(
-    typename GraphTy::vertex_type *index, typename GraphTy::vertex_type *edges,
+    typename GraphTy::index_type *index, typename GraphTy::vertex_type *edges,
     typename GraphTy::weight_type *weights,
     typename GraphTy::vertex_type *vertex, ColorTy *colors,
     typename GraphTy::vertex_type *output_location,
     typename GraphTy::vertex_type *output_vertex, ColorTy *output_colors,
     typename GraphTy::weight_type *output_weights, const size_t num_nodes) {
   using vertex_type = typename GraphTy::vertex_type;
+  using index_type = typename GraphTy::index_type;
   using color_type = ColorTy;
 
   // Thread-parallel scatter
@@ -169,8 +170,8 @@ __global__ void thread_scatter_kernel(
     vertex_type vertex_id = vertex[tid];
     color_type color = colors[tid];
     vertex_type output_offset = output_location[tid];
-    vertex_type start = index[vertex_id];
-    vertex_type end = index[vertex_id + 1];
+    index_type start = index[vertex_id];
+    index_type end = index[vertex_id + 1];
     for (vertex_type i = 0; i < end - start; i++) {
       output_vertex[output_offset + i] = edges[start + i];
       output_colors[output_offset + i] = color;
@@ -182,13 +183,14 @@ __global__ void thread_scatter_kernel(
 template <GPURuntime R, typename GraphTy,
           typename ColorTy = typename GraphTy::vertex_type>
 __global__ void warp_block_scatter_kernel(
-    typename GraphTy::vertex_type *index, typename GraphTy::vertex_type *edges,
+    typename GraphTy::index_type *index, typename GraphTy::vertex_type *edges,
     typename GraphTy::weight_type *weights,
     typename GraphTy::vertex_type *vertex, ColorTy *colors,
     typename GraphTy::vertex_type *output_location,
     typename GraphTy::vertex_type *output_vertex, ColorTy *output_colors,
     typename GraphTy::weight_type *output_weights, const size_t num_nodes) {
   using vertex_type = typename GraphTy::vertex_type;
+  using index_type = typename GraphTy::index_type;
   using color_type = ColorTy;
 
   // Warp/block-parallel scatter
@@ -198,8 +200,8 @@ __global__ void warp_block_scatter_kernel(
     vertex_type vertex_id = vertex[bid];
     color_type color = colors[bid];
     vertex_type output_offset = output_location[bid];
-    vertex_type start = index[vertex_id];
-    vertex_type end = index[vertex_id + 1];
+    index_type start = index[vertex_id];
+    index_type end = index[vertex_id + 1];
     // Write the edges and colors to the output array
     for (vertex_type i = tid; i < end - start; i += blockDim.x) {
       output_vertex[output_offset + i] = edges[start + i];
@@ -211,7 +213,7 @@ __global__ void warp_block_scatter_kernel(
 
 template <GPURuntime R, typename GraphTy, typename ColorTy, size_t NumBlocks>
 __global__ void color_thread_scatter_kernel(
-    const typename GraphTy::vertex_type *__restrict__ index,
+    const typename GraphTy::index_type *__restrict__ index,
     const typename GraphTy::vertex_type *__restrict__ edges,
     const typename GraphTy::weight_type *__restrict__ weights,
     const typename GraphTy::vertex_type *__restrict__ vertex,
@@ -222,6 +224,7 @@ __global__ void color_thread_scatter_kernel(
     typename GraphTy::weight_type *__restrict__ output_weights,
     const size_t num_nodes) {
   using vertex_type = typename GraphTy::vertex_type;
+  using index_type = typename GraphTy::index_type;
   using color_type = ColorTy;
 
   // Chunk-parallel scatter
@@ -239,8 +242,8 @@ __global__ void color_thread_scatter_kernel(
     vertex_type vertex_id = vertex[input_id];
     color_type color = colors[input_id * NumBlocks + color_set_id];
     vertex_type output_offset = output_location[input_id];
-    vertex_type start = index[vertex_id];
-    vertex_type end = index[vertex_id + 1];
+    index_type start = index[vertex_id];
+    index_type end = index[vertex_id + 1];
     // Write the edges and colors to the output array
     for (vertex_type i = color_set_id; i < end - start; i += edges_per_block) {
       output_vertex[output_offset + i] = edges[start + i];
@@ -254,7 +257,7 @@ __global__ void color_thread_scatter_kernel(
 
 template <GPURuntime R, typename GraphTy, typename ColorTy, size_t NumBlocks>
 __global__ void color_set_scatter_kernel(
-    const typename GraphTy::vertex_type *__restrict__ index,
+    const typename GraphTy::index_type *__restrict__ index,
     const typename GraphTy::vertex_type *__restrict__ edges,
     const typename GraphTy::weight_type *__restrict__ weights,
     const typename GraphTy::vertex_type *__restrict__ vertex,
@@ -265,6 +268,7 @@ __global__ void color_set_scatter_kernel(
     typename GraphTy::weight_type *__restrict__ output_weights,
     const size_t num_nodes) {
   using vertex_type = typename GraphTy::vertex_type;
+  using index_type = typename GraphTy::index_type;
   using color_type = ColorTy;
 
   // Warp/block-parallel scatter
@@ -281,8 +285,8 @@ __global__ void color_set_scatter_kernel(
     vertex_type vertex_id = vertex[bid];
     color_type color = colors[bid * NumBlocks + color_set_id];
     vertex_type output_offset = output_location[bid];
-    vertex_type start = index[vertex_id];
-    vertex_type end = index[vertex_id + 1];
+    index_type start = index[vertex_id];
+    index_type end = index[vertex_id + 1];
     // Write the weights and edges to the output array
     for (vertex_type i = tid; i < end - start; i += blockDim.x) {
       output_vertex[output_offset + i] = edges[start + i];
@@ -303,6 +307,7 @@ __global__ void sim_step_thread_kernel(
     ColorTy *__restrict__ visited_matrix, ColorTy *__restrict__ frontier_matrix,
     const size_t num_edges) {
   using vertex_type = typename GraphTy::vertex_type;
+  using index_type = typename GraphTy::index_type;
   using weight_type = typename GraphTy::weight_type;
   using color_type = ColorTy;
 
@@ -356,6 +361,7 @@ __global__ void sim_step_block_kernel(
     ColorTy *__restrict__ visited_matrix, ColorTy *__restrict__ frontier_matrix,
     const size_t num_edges) {
   using vertex_type = typename GraphTy::vertex_type;
+  using index_type = typename GraphTy::index_type;
   using weight_type = typename GraphTy::weight_type;
   using color_type = ColorTy;
 
@@ -409,13 +415,14 @@ __global__ void sim_step_block_kernel(
 
 template <GPURuntime R, typename GraphTy, typename ColorTy>
 __global__ void fused_color_thread_scatter_kernel(
-    const typename GraphTy::vertex_type *__restrict__ index,
+    const typename GraphTy::index_type *__restrict__ index,
     const typename GraphTy::vertex_type *__restrict__ edges,
     const typename GraphTy::weight_type *__restrict__ weights,
     const typename GraphTy::vertex_type *__restrict__ vertex,
     const ColorTy *__restrict__ colors, ColorTy *__restrict__ frontier_matrix,
     const size_t num_nodes, const size_t color_dim) {
   using vertex_type = typename GraphTy::vertex_type;
+  using index_type = typename GraphTy::index_type;
   using weight_type = typename GraphTy::weight_type;
   using color_type = ColorTy;
 
@@ -463,13 +470,14 @@ __global__ void fused_color_thread_scatter_kernel(
 
 template <GPURuntime R, typename GraphTy, typename ColorTy>
 __global__ void fused_color_set_scatter_kernel(
-    const typename GraphTy::vertex_type *__restrict__ index,
+    const typename GraphTy::index_type *__restrict__ index,
     const typename GraphTy::vertex_type *__restrict__ edges,
     const typename GraphTy::weight_type *__restrict__ weights,
     const typename GraphTy::vertex_type *__restrict__ vertex,
     const ColorTy *__restrict__ colors, ColorTy *__restrict__ frontier_matrix,
     const size_t num_nodes, const size_t color_dim) {
   using vertex_type = typename GraphTy::vertex_type;
+  using index_type = typename GraphTy::index_type;
   using weight_type = typename GraphTy::weight_type;
   using color_type = ColorTy;
 
@@ -488,10 +496,10 @@ __global__ void fused_color_set_scatter_kernel(
   if (bid < num_nodes) {
     vertex_type vertex_id = vertex[bid];
     color_type full_colors = colors[bid * color_dim + color_id];
-    vertex_type start_edge = index[vertex_id];
-    vertex_type end_edge = index[vertex_id + 1];
+    index_type start_edge = index[vertex_id];
+    index_type end_edge = index[vertex_id + 1];
     // Write the weights and edges to the output array
-    for (vertex_type i = color_set; i < end_edge - start_edge;
+    for (index_type i = color_set; i < end_edge - start_edge;
          i += edges_per_block) {
       color_type full_colors_temp = full_colors;
       vertex_type edge = edges[start_edge + i];
@@ -517,7 +525,7 @@ __global__ void fused_color_set_scatter_kernel(
 // Workaround for HIP 5.1.0 divergent warp lanes
 template <GPURuntime R, typename GraphTy, typename ColorTy, typename WarpMaskTy>
 __global__ void build_frontier_queues_kernel(
-    const typename GraphTy::vertex_type *__restrict__ index,
+    const typename GraphTy::index_type *__restrict__ index,
     typename GraphTy::vertex_type *__restrict__ small_frontier,
     typename GraphTy::vertex_type *__restrict__ medium_frontier,
     typename GraphTy::vertex_type *__restrict__ large_frontier,
@@ -529,6 +537,7 @@ __global__ void build_frontier_queues_kernel(
     typename GraphTy::vertex_type *__restrict__ frontier_offsets,
     const size_t num_nodes, const size_t num_colors, const size_t color_dim) {
   using vertex_type = typename GraphTy::vertex_type;
+  using index_type = typename GraphTy::index_type;
   using color_type = ColorTy;
 
   constexpr int frontier_bins = 4;
@@ -564,9 +573,9 @@ __global__ void build_frontier_queues_kernel(
 
   if (frontier_mask_filtered) {
     // Retrieve outdegree
-    vertex_type start = index[vertex_id];
-    vertex_type end = index[vertex_id + 1];
-    vertex_type outdegree = end - start;
+    index_type start = index[vertex_id];
+    index_type end = index[vertex_id + 1];
+    index_type outdegree = end - start;
     // Find block-wide offsets for each frontier queue
     if (outdegree < warpSize / color_dim) {
       vertex_frontier = small_frontier;
@@ -609,7 +618,7 @@ __global__ void build_frontier_queues_kernel(
 
 template <GPURuntime R, typename GraphTy, typename ColorTy, typename WarpMaskTy>
 __global__ void build_frontier_queues_kernel_check(
-    const typename GraphTy::vertex_type *__restrict__ index,
+    const typename GraphTy::index_type *__restrict__ index,
     typename GraphTy::vertex_type *__restrict__ small_frontier,
     typename GraphTy::vertex_type *__restrict__ medium_frontier,
     typename GraphTy::vertex_type *__restrict__ large_frontier,
@@ -622,6 +631,7 @@ __global__ void build_frontier_queues_kernel_check(
     ColorTy *__restrict__ reduced_frontier, const size_t num_nodes,
     const size_t num_colors, const size_t color_dim) {
   using vertex_type = typename GraphTy::vertex_type;
+  using index_type = typename GraphTy::index_type;
   using color_type = ColorTy;
 
   // Extern shared memory
@@ -665,9 +675,9 @@ __global__ void build_frontier_queues_kernel_check(
 
     if (frontier_mask_filtered) {
       // Retrieve outdegree
-      vertex_type start = index[vertex_id];
-      vertex_type end = index[vertex_id + 1];
-      vertex_type outdegree = end - start;
+      index_type start = index[vertex_id];
+      index_type end = index[vertex_id + 1];
+      index_type outdegree = end - start;
       // Find block-wide offsets for each frontier queue
       if (outdegree < 64 / color_dim) {
         vertex_frontier = small_frontier;
@@ -800,6 +810,7 @@ __global__ void filter_finished(ColorTy *__restrict__ frontier_matrix,
                                 const size_t color_dim) {
   using color_type = ColorTy;
   using vertex_type = typename GraphTy::vertex_type;
+  using index_type = typename GraphTy::index_type;
   const int tid = threadIdx.x;
   const int bid = blockIdx.x;
   const color_type color_mask = reduced_frontier[tid % color_dim];
