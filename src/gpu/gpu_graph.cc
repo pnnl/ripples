@@ -68,4 +68,18 @@ gpu_graph<R, GraphTy> *make_gpu_graph(const GraphTy &hg) {
 
   return res;
 }
+
+#if defined(RIPPLES_ENABLE_CUDA)
+template gpu_graph<GPURuntime::CUDA, IMMGraphTy> *make_gpu_graph(
+    const IMMGraphTy &hg);
+template gpu_graph<GPURuntime::CUDA, HCGraphTy> *make_gpu_graph(
+    const HCGraphTy &hg);
+#elif defined(RIPPLES_ENABLE_HIP)
+template gpu_graph<GPURuntime::HIP, IMMGraphTy> *make_gpu_graph(
+    const IMMGraphTy &hg);
+template gpu_graph<GPURuntime::HIP, HCGraphTy> *make_gpu_graph(
+    const HCGraphTy &hg);
+#else
+#error "No GPU runtime defined"
+#endif
 }  // namespace ripples

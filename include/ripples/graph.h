@@ -207,93 +207,120 @@ struct WeightedDestination : public Destination<VertexTy> {
 //! Iterator for the edges.
 template <typename EdgePointerTy, typename WeightPointerTy, typename WeightedDestinationTy>
 class WeightedEdgeIterator {
-public:
   using edge_pointer_t = EdgePointerTy;
   using weight_pointer_t = WeightPointerTy;
+  using weighted_destination_t = WeightedDestinationTy;
 
-  using value_type = WeightedDestinationTy;
-  using reference = value_type&;
-  using difference_type = std::ptrdiff_t;
-
+ public:
   using iterator_category = std::random_access_iterator_tag;
+  using value_type = weighted_destination_t;
+  using difference_type = std::ptrdiff_t;
+  using pointer = weighted_destination_t *;
+  using reference = weighted_destination_t &;
 
-  WeightedEdgeIterator(size_t position, edge_pointer_t E,
-                                       weight_pointer_t W)
-      : position_(position), E_(E), W_(W) {}
+  WeightedEdgeIterator(size_t I, edge_pointer_t E, weight_pointer_t W)
+      : index(I), edges(E), weights(W) {}
 
-  WeightedEdgeIterator(const WeightedEdgeIterator &) = default;
-  WeightedEdgeIterator(WeightedEdgeIterator &&) = default;
+  WeightedEdgeIterator(const WeightedEdgeIterator &O)
+      : index(O.index), edges(O.edges), weights(O.weights) {}
 
-  WeightedEdgeIterator & operator=(const WeightedEdgeIterator &) = default;
-  WeightedEdgeIterator & operator=(WeightedEdgeIterator &&) = default;
-
-  WeightedEdgeIterator & operator++() { ++position_; return *this; }
-  WeightedEdgeIterator operator++(int) { auto I = *this; ++position_; return I; }
-  WeightedEdgeIterator &operator--() { --position_; return *this; }
-  WeightedEdgeIterator operator--(int) { auto I = *this; --position_; return I; }
-
-  WeightedEdgeIterator & operator+=(const difference_type n) {
-    position_ += n;
-    return *this;
-  }
-  WeightedEdgeIterator &operator-=(const difference_type n) {
-    position_ -= n;
+  WeightedEdgeIterator &operator=(const WeightedEdgeIterator &O) {
+    index = O.index;
+    edges = O.edges;
+    weights = O.weights;
     return *this;
   }
 
-  WeightedEdgeIterator operator+(const difference_type n) {
-    auto I = *this;
-    I.position_ += n;
-    return I;
-  }
-  WeightedEdgeIterator operator-(const difference_type n) {
-    auto I = *this;
-    I.position_ -= n;
-    return I;
+  WeightedEdgeIterator &operator++() {
+    ++index;
+    return *this;
   }
 
-  WeightedEdgeIterator operator+(const WeightedEdgeIterator &O) {
-    if (O.E_ != this->E_ || O.W_ != this->W_) throw std::bad_exception();
-    auto I = *this;
-    I.position_ += O.position_;
-    return I;
+  WeightedEdgeIterator operator++(int) {
+    WeightedEdgeIterator tmp(*this);
+    operator++();
+    return tmp;
   }
-  difference_type operator-(const WeightedEdgeIterator &O) {
-    if (O.E_ != this->E_ || O.W_ != this->W_) throw std::bad_exception();
-    return position_ - O.position_;
+
+  WeightedEdgeIterator &operator--() {
+    --index;
+    return *this;
+  }
+
+  WeightedEdgeIterator operator--(int) {
+    WeightedEdgeIterator tmp(*this);
+    operator--();
+    return tmp;
+  }
+
+  WeightedEdgeIterator &operator+=(difference_type n) {
+    index += n;
+    return *this;
+  }
+
+  WeightedEdgeIterator &operator-=(difference_type n) {
+    index -= n;
+    return *this;
+  }
+
+  WeightedEdgeIterator operator+(difference_type n) const {
+    WeightedEdgeIterator tmp(*this);
+    return tmp += n;
+  }
+
+  WeightedEdgeIterator operator-(difference_type n) const {
+    WeightedEdgeIterator tmp(*this);
+    return tmp -= n;
+  }
+
+  difference_type operator+(const WeightedEdgeIterator &O) const {
+    if (O.edges != this->edges || O.weights != this->weights) throw std::bad_exception();
+    return index + O.index;
+  }
+
+  difference_type operator-(const WeightedEdgeIterator &O) const {
+    if (O.edges != this->edges || O.weights != this->weights) throw std::bad_exception();
+    return index - O.index;
   }
 
   bool operator==(const WeightedEdgeIterator &O) const {
-    if (O.E_ != this->E_ || O.W_ != this->W_) throw std::bad_exception();
-    return this->position_ == O.position_;
+    if (O.edges != this->edges || O.weights != this->weights) throw std::bad_exception();
+    return index == O.index;
   }
+
   bool operator!=(const WeightedEdgeIterator &O) const {
-    return !operator==(O);
+    return index != O.index;
   }
 
-  bool operator<(const WeightedEdgeIterator &O) const {
-    if (O.E_ != this->E_ || O.W_ != this->W_) throw std::bad_exception();
-    return this->position_ < O.position_;
-  }
+  bool operator<(const WeightedEdgeIterator &O) const { return index < O.index; }
+
+  bool operator>(const WeightedEdgeIterator &O) const { return index > O.index; }
+
   bool operator<=(const WeightedEdgeIterator &O) const {
-    if (O.E_ != this->E_ || O.W_ != this->W_) throw std::bad_exception();
-    return this->position_ <= O.position_;
-  }
-  bool operator>(const WeightedEdgeIterator &O) const {
-    return !operator<=(O);
-  }
-  bool operator>=(const WeightedEdgeIterator &O) const {
-    return !operator<(O);
-  }
-  const value_type operator*() const {
-    value_type V(*(E_ + position_), *(W_ + position_));
-    return V;
+    if (O.edges != this->edges || O.weights != this->weights) throw std::bad_exception();
+    return index <= O.index;
   }
 
-private:
- size_t position_;
- edge_pointer_t E_;
- weight_pointer_t W_;
+  bool operator>=(const WeightedEdgeIterator &O) const {
+    return index >= O.index;
+  }
+
+  weighted_destination_t operator[](difference_type n) const {
+    return weighted_destination_t(edges[index + n], weights[index + n]);
+  }
+
+  const weighted_destination_t operator*() const {
+    return weighted_destination_t(edges[index], weights[index]);
+  }
+
+  const weighted_destination_t *operator->() const {
+    return &weighted_destination_t(edges[index], weights[index]);
+  }
+
+  private:
+  size_t index;
+  edge_pointer_t edges;
+  weight_pointer_t weights;
 };
 
 //! \brief The neighborhood of a vertex.
@@ -555,7 +582,7 @@ class Graph {
     }
 
     std::vector<omp_lock_t> ptrLock(numNodes);
-    std::vector<size_t> ptrEdge(numNodes);
+    std::vector<index_type> ptrEdge(numNodes);
 #pragma omp parallel for
     for (int i = 0; i < numNodes; ++i) {
       ptrEdge[i] = index[i];
@@ -655,8 +682,9 @@ private:
   size_t total_binary_size() const {
     return 3 * sizeof(uint64_t)
       + sizeof(VertexTy) * numNodes
-      + sizeof(pointer_to(edges)) * (numNodes + 1)
-      + sizeof(edge_type) * numEdges;
+      + sizeof(index_type) * (numNodes + 1)
+      + sizeof(vertex_type) * numEdges
+      + sizeof(weight_type) * numEdges;
   }
   void write_chunk(std::ofstream &FS, size_t TotalBytes, char* O) const {
     size_t threadnum = omp_get_thread_num(), numthreads = omp_get_num_threads();
@@ -734,7 +762,7 @@ public:
                   const_cast<char *>(
                       reinterpret_cast<const char *>(reverseMap.data())));
 
-      write_chunk(FS, (numNodes + 1)  * sizeof(size_t),
+      write_chunk(FS, (numNodes + 1)  * sizeof(index_type),
                   reinterpret_cast<char *>(pointer_to(index)));
 
       write_chunk(FS, numEdges * sizeof(vertex_type),
@@ -781,10 +809,11 @@ public:
                   [&](const vertex_type &d) { ++G.index[d + 1]; });
 
     std::partial_sum(G.index, G.index + numNodes + 1, G.index,
-                     std::plus<size_t>());
+                     std::plus<index_type>());
 
-    std::vector<size_t> destPointers(numNodes + 1);
-    for (size_t i = 0; i < destPointers.size(); ++i) {
+    std::vector<index_type> destPointers(numNodes + 1);
+#pragma omp parallel for
+    for (index_type i = 0; i < destPointers.size(); ++i) {
       destPointers[i] = index[i];
     }
     for (vertex_type v = 0; v < numNodes; ++v) {
@@ -931,7 +960,7 @@ public:
         weights = allocate_weights(numEdges);
       }
 
-      read_chunk(FS, (numNodes + 1) * sizeof(ptrdiff_t),
+      read_chunk(FS, (numNodes + 1) * sizeof(index_type),
                  reinterpret_cast<char *>(pointer_to(index)));
 
       read_chunk(FS, numEdges * sizeof(vertex_type), reinterpret_cast<char *>(pointer_to(edges)));
@@ -985,7 +1014,7 @@ public:
   }
 
   index_pointer_t allocate_index(const std::size_t n) {
-    return general_allocate<allocator_t, size_t>(graph_allocator, n);
+    return general_allocate<allocator_t, index_type>(graph_allocator, n);
   }
 
   edge_pointer_t allocate_edges(const std::size_t n) {

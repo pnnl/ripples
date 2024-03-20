@@ -49,7 +49,7 @@ struct gpu_graph {
   using vertex_t = typename GraphTy::vertex_type;  // TODO vertex type hard-coded in nvgraph
   using index_t = typename GraphTy::index_type;
   using edge_t = typename GraphTy::edge_type;
-  using weight_t = typename edge_t::edge_weight;
+  using weight_t = typename edge_t::weight_type;
 
   index_t *d_index_ = nullptr;
   vertex_t *d_edges_ = nullptr;
