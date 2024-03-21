@@ -219,20 +219,20 @@ class WeightedEdgeIterator {
   using reference = weighted_destination_t &;
 
   WeightedEdgeIterator(size_t I, edge_pointer_t E, weight_pointer_t W)
-      : index(I), edges(E), weights(W) {}
+      : position(I), edges(E), weights(W) {}
 
   WeightedEdgeIterator(const WeightedEdgeIterator &O)
-      : index(O.index), edges(O.edges), weights(O.weights) {}
+      : position(O.position), edges(O.edges), weights(O.weights) {}
 
   WeightedEdgeIterator &operator=(const WeightedEdgeIterator &O) {
-    index = O.index;
+    position = O.position;
     edges = O.edges;
     weights = O.weights;
     return *this;
   }
 
   WeightedEdgeIterator &operator++() {
-    ++index;
+    ++position;
     return *this;
   }
 
@@ -243,7 +243,7 @@ class WeightedEdgeIterator {
   }
 
   WeightedEdgeIterator &operator--() {
-    --index;
+    --position;
     return *this;
   }
 
@@ -254,12 +254,12 @@ class WeightedEdgeIterator {
   }
 
   WeightedEdgeIterator &operator+=(difference_type n) {
-    index += n;
+    position += n;
     return *this;
   }
 
   WeightedEdgeIterator &operator-=(difference_type n) {
-    index -= n;
+    position -= n;
     return *this;
   }
 
@@ -275,50 +275,50 @@ class WeightedEdgeIterator {
 
   difference_type operator+(const WeightedEdgeIterator &O) const {
     if (O.edges != this->edges || O.weights != this->weights) throw std::bad_exception();
-    return index + O.index;
+    return position + O.position;
   }
 
   difference_type operator-(const WeightedEdgeIterator &O) const {
     if (O.edges != this->edges || O.weights != this->weights) throw std::bad_exception();
-    return index - O.index;
+    return position - O.position;
   }
 
   bool operator==(const WeightedEdgeIterator &O) const {
     if (O.edges != this->edges || O.weights != this->weights) throw std::bad_exception();
-    return index == O.index;
+    return position == O.position;
   }
 
   bool operator!=(const WeightedEdgeIterator &O) const {
-    return index != O.index;
+    return position != O.position;
   }
 
-  bool operator<(const WeightedEdgeIterator &O) const { return index < O.index; }
+  bool operator<(const WeightedEdgeIterator &O) const { return position < O.position; }
 
-  bool operator>(const WeightedEdgeIterator &O) const { return index > O.index; }
+  bool operator>(const WeightedEdgeIterator &O) const { return position > O.position; }
 
   bool operator<=(const WeightedEdgeIterator &O) const {
     if (O.edges != this->edges || O.weights != this->weights) throw std::bad_exception();
-    return index <= O.index;
+    return position <= O.position;
   }
 
   bool operator>=(const WeightedEdgeIterator &O) const {
-    return index >= O.index;
+    return position >= O.position;
   }
 
   weighted_destination_t operator[](difference_type n) const {
-    return weighted_destination_t(edges[index + n], weights[index + n]);
+    return weighted_destination_t(edges[position + n], weights[position + n]);
   }
 
   const weighted_destination_t operator*() const {
-    return weighted_destination_t(edges[index], weights[index]);
+    return weighted_destination_t(edges[position], weights[position]);
   }
 
   const weighted_destination_t *operator->() const {
-    return &weighted_destination_t(edges[index], weights[index]);
+    return &weighted_destination_t(edges[position], weights[position]);
   }
 
   private:
-  size_t index;
+  size_t position;
   edge_pointer_t edges;
   weight_pointer_t weights;
 };
@@ -413,7 +413,7 @@ class Graph {
 
 #pragma omp parallel for
     for (size_t i = 0; i < numNodes + 1; ++i) {
-      index[i] = edges + std::distance(O.index[0], O.index[i]);
+      index[i] = O.index[i];
     }
   }
 
@@ -441,7 +441,7 @@ class Graph {
 
 #pragma omp parallel for
     for (size_t i = 0; i < numNodes + 1; ++i) {
-      index[i] = edges + std::distance(O.index[0], O.index[i]);
+      index[i] = O.index[i];
     }
     return *this;
   }
@@ -510,31 +510,35 @@ class Graph {
 
 
     VertexTy maxVertexID = 0;
+    idMap.clear();
+    reverseMap.clear();
     omp_lock_t mapLock;
     omp_init_lock(&mapLock);
     #pragma omp parallel for reduction(max : maxVertexID)
     for (auto itr = begin; itr != end; ++itr) {
-      if (idMap.count(itr->source) == 0) {
+      auto source = itr->source;
+      // if (idMap.count(source) == 0) {
         omp_set_lock(&mapLock);
-        if (idMap.count(itr->source) == 0) {
-          idMap[itr->source] = itr->source;
+        if (idMap.count(source) == 0) {
+          idMap[source] = source;
           if (renumbering) {
-            reverseMap.push_back(itr->source);
+            reverseMap.push_back(source);
           }
         }
         omp_unset_lock(&mapLock);
-      }
+      // }
 
-      if (idMap.count(itr->destination) == 0) {
+      auto destination = itr->destination;
+      // if (idMap.count(destination) == 0) {
         omp_set_lock(&mapLock);
-        if (idMap.count(itr->destination) == 0) {
-          idMap[itr->destination] = itr->destination;
+        if (idMap.count(destination) == 0) {
+          idMap[destination] = destination;
           if (renumbering) {
-            reverseMap.push_back(itr->destination);
+            reverseMap.push_back(destination);
           }
         }
         omp_unset_lock(&mapLock);
-      }
+      // }
 
       maxVertexID = std::max(std::max(itr->source, itr->destination), maxVertexID);
     }
@@ -572,7 +576,7 @@ class Graph {
 
     #pragma omp parallel for
     for (auto itr = begin; itr != end; ++itr) {
-      #pragma omp atomic
+      #pragma omp atomic update
       index[DirectionPolicy::Source(itr, idMap) + 1] += 1;
     }
 
@@ -584,7 +588,7 @@ class Graph {
     std::vector<omp_lock_t> ptrLock(numNodes);
     std::vector<index_type> ptrEdge(numNodes);
 #pragma omp parallel for
-    for (int i = 0; i < numNodes; ++i) {
+    for (size_t i = 0; i < numNodes; ++i) {
       ptrEdge[i] = index[i];
       omp_init_lock(&ptrLock[i]);
     }
@@ -593,8 +597,8 @@ class Graph {
       omp_set_lock(&ptrLock[DirectionPolicy::Source(itr, idMap)]);
 
       auto e = edge_type::template Create<DirectionPolicy>(itr, idMap);
-      edges[DirectionPolicy::Source(itr, idMap)] = e.vertex;
-      weights[DirectionPolicy::Source(itr, idMap)] = e.weight;
+      edges[ptrEdge[DirectionPolicy::Source(itr, idMap)]] = e.vertex;
+      weights[ptrEdge[DirectionPolicy::Source(itr, idMap)]] = e.weight;
 
       ++ptrEdge[DirectionPolicy::Source(itr, idMap)];
 
@@ -801,25 +805,33 @@ public:
     G.weights = G.allocate_weights(G.numEdges);
 
 #pragma omp parallel for
-    for (auto itr = G.index; itr < G.index + numNodes + 1; ++itr) {
-      *itr = 0;
+    for (size_t i = 0; i < G.numNodes + 1; ++i) {
+      G.index[i] = 0;
     }
 
-    std::for_each(edges, edges + numEdges,
-                  [&](const vertex_type &d) { ++G.index[d + 1]; });
+#pragma omp parallel for
+    for (index_type i = 0; i < numEdges; ++i) {
+      auto v = edges[i];
+      #pragma omp atomic update
+      G.index[v + 1] += 1;
+    }
 
-    std::partial_sum(G.index, G.index + numNodes + 1, G.index,
-                     std::plus<index_type>());
 
-    std::vector<index_type> destPointers(numNodes + 1);
+    for (size_t i = 1; i <= G.numNodes; ++i) {
+      G.index[i] += G.index[i - 1];
+    }
+
+    std::vector<index_type> destPointers(G.numNodes + 1);
+    
 #pragma omp parallel for
     for (index_type i = 0; i < destPointers.size(); ++i) {
-      destPointers[i] = index[i];
+      destPointers[i] = G.index[i];
     }
+    
     for (vertex_type v = 0; v < numNodes; ++v) {
       for (auto u : neighbors(v)) {
-        edges[destPointers[u.vertex]] = v;
-        weights[destPointers[u.vertex]] = u.weight;
+        G.edges[destPointers[u.vertex]] = v;
+        G.weights[destPointers[u.vertex]] = u.weight;
         destPointers[u.vertex]++;
       }
     }

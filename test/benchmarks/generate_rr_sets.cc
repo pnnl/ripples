@@ -71,9 +71,33 @@ void benchmark(const std::string &report_dir, const std::string &modelName,
     using GraphBwd = ripples::Graph<uint32_t, dest_type,
                                     ripples::BackwardDirection<uint32_t>>;
     std::cout << "Building forward graph" << std::endl;
-    GraphFwd Gfwd(EL.begin(), EL.end(), true);
+    GraphFwd Gfwd(EL.begin(), EL.end(), false);
+
+    // Traverse the graph and all of its edges, ensure ids are within numEdges and numNodes
+    // for (size_t u = 0; u < Gfwd.num_nodes(); ++u) {
+    //   for (auto e : Gfwd.neighbors(u)) {
+    //     if (e.vertex >= Gfwd.num_nodes()) {
+    //       std::cerr << "Invalid forward edge: " << u << " -> " << e.vertex << std::endl;
+    //       std::cerr << "numNodes: " << Gfwd.num_nodes() << std::endl;
+    //       std::cerr << "numEdges: " << Gfwd.num_edges() << std::endl;
+    //       throw std::runtime_error("Invalid forward edge");
+    //     }
+    //   }
+    // }
+
     std::cout << "Building backwards graph" << std::endl;
     GraphBwd Gbwd = Gfwd.get_transpose();
+
+    // for (size_t u = 0; u < Gbwd.num_nodes(); ++u) {
+    //   for (auto e : Gbwd.neighbors(u)) {
+    //     if (e.vertex >= Gbwd.num_nodes()) {
+    //       std::cerr << "Invalid back edge: " << u << " -> " << e.vertex << std::endl;
+    //       std::cerr << "numNodes: " << Gbwd.num_nodes() << std::endl;
+    //       std::cerr << "numEdges: " << Gbwd.num_edges() << std::endl;
+    //       throw std::runtime_error("Invalid back edge");
+    //     }
+    //   }
+    // }
 
     std::vector<ripples::RRRset<GraphBwd>> RRRsets(numRRRsets);
     ripples::IMMExecutionRecord record;
@@ -103,12 +127,12 @@ void benchmark(const std::string &report_dir, const std::string &modelName,
              })
         .render(ankerl::nanobench::templates::json(), OS);
     
-    std::cout << "Finding Most Influential" std::endl;
+    std::cout << "RRR Set Generation Done!" << std::endl;
 
-    auto r = ripples::FindMostInfluentialSet(
-                   Gbwd, CFG, RRRsets.begin(), RRRsets.end(), record,
-                   CFG.seed_select_max_gpu_workers != 0,
-                   ripples::omp_parallel_tag{});
+    // auto r = ripples::FindMostInfluentialSet(
+    //                Gbwd, CFG, RRRsets.begin(), RRRsets.end(), record,
+    //                CFG.seed_select_max_gpu_workers != 0,
+    //                ripples::omp_parallel_tag{});
   }
 }
 
