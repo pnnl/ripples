@@ -374,27 +374,20 @@ class Graph {
     omp_init_lock(&mapLock);
     #pragma omp parallel for reduction(max : maxVertexID)
     for (auto itr = begin; itr != end; ++itr) {
+      omp_set_lock(&mapLock);
       if (idMap.count(itr->source) == 0) {
-        omp_set_lock(&mapLock);
-        if (idMap.count(itr->source) == 0) {
-          idMap[itr->source] = itr->source;
-          if (renumbering) {
-            reverseMap.push_back(itr->source);
-          }
+        idMap[itr->source] = itr->source;
+        if (renumbering) {
+          reverseMap.push_back(itr->source);
         }
-        omp_unset_lock(&mapLock);
       }
-
       if (idMap.count(itr->destination) == 0) {
-        omp_set_lock(&mapLock);
-        if (idMap.count(itr->destination) == 0) {
-          idMap[itr->destination] = itr->destination;
-          if (renumbering) {
-            reverseMap.push_back(itr->destination);
-          }
+        idMap[itr->destination] = itr->destination;
+        if (renumbering) {
+          reverseMap.push_back(itr->destination);
         }
-        omp_unset_lock(&mapLock);
       }
+      omp_unset_lock(&mapLock);
 
       maxVertexID = std::max(std::max(itr->source, itr->destination), maxVertexID);
     }
@@ -438,7 +431,7 @@ class Graph {
 
     #pragma omp parallel for
     for (auto itr = begin; itr != end; ++itr) {
-      #pragma omp atomic
+      #pragma omp atomic update
       index[DirectionPolicy::Source(itr, idMap) + 1] += 1;
     }
 
@@ -674,7 +667,7 @@ public:
 
     std::vector<out_dest_ptr_type> destPointers(numNodes + 1);
     for (size_t i = 0; i < destPointers.size(); ++i) {
-      destPointers[i] = pointer_to(edges) + index[i];
+      destPointers[i] = pointer_to(G.edges) + G.index[i];
     }
     for (vertex_type v = 0; v < numNodes; ++v) {
       for (auto u : neighbors(v)) {
