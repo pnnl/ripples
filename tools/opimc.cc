@@ -113,8 +113,11 @@ auto GetExperimentRecord(
       {"CPUBatchSize", R.CPUBatchSize},
       {"GPUBatchSize", R.GPUBatchSize},
       {"RRRSetSizeBytes", R.RRRSetSize},
-      {"GenerateRRRSets", R.GenerateRRRSets.count()},
-      {"FindMostInfluentialSet", R.FindMostInfluentialSet.count()},
+      {"GenerateRRRSets", ConvertToCounts(R.GenerateRRRSets)},
+      {"FindMostInfluentialSet", ConvertToCounts(R.FindMostInfluentialSet)},
+      {"ThetaZero", R.ThetaZero},
+      {"ThetaMax", R.ThetaMax},
+      {"RRRSetsGenerated", R.RRRSetsGenerated},
       {"Seeds", seeds}};
   for (auto &ri : R.WalkIterations) {
     experiment["Iterations"].push_back(GetWalkIterationRecord(ri));

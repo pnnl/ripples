@@ -87,11 +87,15 @@ inline float LowerBound(size_t coverage, float delta2, size_t n, size_t theta) {
   return (float(n) / theta) * (D - E);
 }
 
-//! Equation (6) in the original paper.
-inline float UpperBound(size_t coverage) {
+//! Equation (8) in the original paper.
+inline float UpperBound(size_t coverage, float delta1, size_t n, size_t theta) {
   constexpr float A = 0.6321203113733684;  // 1 - 1/e
+  float B = coverage / A;
+  float C = log(1 / delta1) / 2;
+  float D = sqrt(B + C);
+  float E = (D + sqrt(C)) * (D + sqrt(C));
 
-  return A * coverage;
+  return (float(n) / theta) * E;
 }
 
 template <typename RRRSetsTy, typename SeedSetTy>
@@ -139,33 +143,53 @@ std::vector<typename GraphTy::vertex_type> OPIMC(const GraphTy &G,
   auto console = spdlog::get("console");
 
   size_t thetaZero = ThetaZero(G.num_nodes(), CFG.epsilon, CFG.k, CFG.delta);
+  record.ThetaZero = thetaZero;
   size_t thetaMax = ThetaMax(G.num_nodes(), CFG.epsilon, CFG.k, CFG.delta);
+  record.ThetaMax = thetaMax;
 
   RRRsetAllocator<GraphTy> allocator;
   RRRsets<GraphTy> R1(thetaZero, RRRset<GraphTy>(allocator));
   RRRsets<GraphTy> R2(thetaZero, RRRset<GraphTy>(allocator));
 
+  auto timeGenerateRRRSetStart = std::chrono::high_resolution_clock::now();
   GenerateRRRSets(G, gen, R1.begin(), R1.end(), record,
                   std::forward<diff_model_tag>(model_tag),
                   std::forward<omp_parallel_tag>(ex_tag));
   GenerateRRRSets(G, gen, R2.begin(), R2.end(), record,
                   std::forward<diff_model_tag>(model_tag),
                   std::forward<omp_parallel_tag>(ex_tag));
+  auto timeGenerateRRRSetEnd = std::chrono::high_resolution_clock::now();
+
+  record.GenerateRRRSets.push_back(timeGenerateRRRSetEnd -
+                                   timeGenerateRRRSetStart);
+  record.RRRSetsGenerated.push_back(R1.size() + R2.size());
 
   size_t iMax = ceil(log2(thetaMax / thetaZero));
   float delta = CFG.delta / (3 * iMax);
   std::vector<vertex_type> results;
   for (size_t i = 0;; ++i) {
+    console->info("Round {}", i);
+
+    auto timeFindMostInfluentialStart =
+        std::chrono::high_resolution_clock::now();
     const auto &[coverage1, seeds] = FindMostInfluentialSet(
         G, CFG, R1.begin(), R1.end(), record, gen.isGpuEnabled(),
         std::forward<omp_parallel_tag>(ex_tag));
+    auto timeFindMostInfluentialEnd = std::chrono::high_resolution_clock::now();
 
+    record.FindMostInfluentialSet.push_back(timeFindMostInfluentialEnd -
+                                            timeFindMostInfluentialStart);
+
+    console->info("Coverage1: {}/{}", coverage1 * R1.size(), R1.size());
     size_t coverage2 = FindCoverage(R2, seeds);
+    console->info("Coverage2: {}/{}", coverage2, R2.size());
 
-    float upperBound = UpperBound(coverage1 * R1.size());
+    float upperBound = UpperBound(coverage1 * R1.size(), delta, G.num_nodes(), R1.size());
     float lowerBound = LowerBound(coverage2, delta, G.num_nodes(), R2.size());
 
-    float alpha = upperBound / lowerBound;
+    float alpha = lowerBound / upperBound;
+
+    console->info("Alpha: {}/{} = {}", lowerBound, upperBound, alpha);
 
     results = std::move(seeds);
     if (alpha >= (A - CFG.epsilon)) break;
@@ -180,12 +204,19 @@ std::vector<typename GraphTy::vertex_type> OPIMC(const GraphTy &G,
     auto begin1 = R1.end() - delta;
     auto begin2 = R2.end() - delta;
 
+    auto timeGenerateRRRSetStart = std::chrono::high_resolution_clock::now();
     GenerateRRRSets(G, gen, begin1, R1.end(), record,
                     std::forward<diff_model_tag>(model_tag),
                     std::forward<omp_parallel_tag>(ex_tag));
     GenerateRRRSets(G, gen, begin2, R2.end(), record,
                     std::forward<diff_model_tag>(model_tag),
                     std::forward<omp_parallel_tag>(ex_tag));
+    auto timeGenerateRRRSetEnd = std::chrono::high_resolution_clock::now();
+
+    record.GenerateRRRSets.push_back(timeGenerateRRRSetEnd -
+                                     timeGenerateRRRSetStart);
+    record.RRRSetsGenerated.push_back(std::distance(begin1, R1.end()) +
+                                      std::distance(begin2, R2.end()));
   }
 
   return results;

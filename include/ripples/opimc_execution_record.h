@@ -61,8 +61,7 @@ struct OPIMCExecutionRecord : public GenerateRRRSetsRecord,
       : GenerateRRRSetsRecord(),
         FindMostInfluentialSetRecord(),
         NumThreads(),
-        Counting(),
-        Pivoting(),
+        ThetaMax(),
         GenerateRRRSets(),
         FindMostInfluentialSet(),
         Total(),
@@ -70,14 +69,16 @@ struct OPIMCExecutionRecord : public GenerateRRRSetsRecord,
 
   //! Number of threads used during the execution.
   size_t NumThreads;
-  //! Execution time of the Theta estimation phase.
-  ex_time_ms ThetaEstimationTotal;
-  std::vector<ex_time_ms> Counting;
-  std::vector<ex_time_ms> Pivoting;
+  //! ThetaMax
+  size_t ThetaMax;
+  //! ThetaZero
+  size_t ThetaZero;
+  //! Number of RRR sets generated.
+  std::vector<size_t> RRRSetsGenerated;
   //! Execution time of the RRR sets generation phase.
-  ex_time_ms GenerateRRRSets;
+  std::vector<ex_time_ms> GenerateRRRSets;
   //! Execution time of the maximum coverage phase.
-  ex_time_ms FindMostInfluentialSet;
+  std::vector<ex_time_ms> FindMostInfluentialSet;
   //! Total execution time.
   ex_time_ms Total;
   size_t RRRSetSize;
