@@ -54,6 +54,7 @@
 #include <iterator>
 #include <type_traits>
 #include <unordered_map>
+#include <unordered_set>
 #include <numeric>
 #include <vector>
 #include <fcntl.h>
@@ -510,38 +511,29 @@ class Graph {
 
 
     VertexTy maxVertexID = 0;
-    idMap.clear();
-    reverseMap.clear();
-    omp_lock_t mapLock;
-    omp_init_lock(&mapLock);
+    // With openmp, create an unordered set containing all the vertex IDs.
+    std::unordered_set<VertexTy> vertexSet;
+    std::vector<std::unordered_set<VertexTy>> localVertexSet(omp_get_max_threads());
+    // std::cout << "Parallel set creation" << std::endl;
     #pragma omp parallel for reduction(max : maxVertexID)
     for (auto itr = begin; itr != end; ++itr) {
-      auto source = itr->source;
-      // if (idMap.count(source) == 0) {
-        omp_set_lock(&mapLock);
-        if (idMap.count(source) == 0) {
-          idMap[source] = source;
-          if (renumbering) {
-            reverseMap.push_back(source);
-          }
-        }
-        omp_unset_lock(&mapLock);
-      // }
-
-      auto destination = itr->destination;
-      // if (idMap.count(destination) == 0) {
-        omp_set_lock(&mapLock);
-        if (idMap.count(destination) == 0) {
-          idMap[destination] = destination;
-          if (renumbering) {
-            reverseMap.push_back(destination);
-          }
-        }
-        omp_unset_lock(&mapLock);
-      // }
-
-      maxVertexID = std::max(std::max(itr->source, itr->destination), maxVertexID);
+      auto threadnum = omp_get_thread_num();
+      localVertexSet[threadnum].insert(itr->source);
+      localVertexSet[threadnum].insert(itr->destination);
+      maxVertexID = std::max(maxVertexID, std::max(itr->source, itr->destination));
     }
+    // std::cout << "Sequential idMap Creation" << std::endl;
+    for (auto &s : localVertexSet) {
+      for (auto v : s) {
+        bool inserted = idMap.insert({v, v}).second;
+        if(inserted) {
+          reverseMap.push_back(v);
+        }
+      }
+    }
+    
+    // std::cout << "Sequential idMap created!" << std::endl;
+
 
 
     if (renumbering) {
