@@ -59,7 +59,7 @@
 
 #include "ripples/add_rrrset.h"
 #include "ripples/batched_add_rrrset.h"
-#include "ripples/imm_execution_record.h"
+#include "ripples/generate_rrr_sets_record.h"
 
 #if defined(RIPPLES_ENABLE_CUDA) || defined(RIPPLES_ENABLE_HIP)
 #include "ripples/gpu/bfs.h"
@@ -117,7 +117,7 @@ class WalkWorker {
 #if GPU_PROFILE
  public:
   virtual void begin_prof_iter() = 0;
-  virtual void prof_record(typename IMMExecutionRecord::walk_iteration_prof &,
+  virtual void prof_record(typename GenerateRRRSetsRecord::walk_iteration_prof &,
                            size_t) = 0;
 #endif
 };
@@ -276,10 +276,10 @@ class CPUWalkWorker : public WalkWorker<GraphTy, ItrTy> {
     else
       console->info("> idle worker");
   }
-  void prof_record(typename IMMExecutionRecord::walk_iteration_prof &r,
+  void prof_record(typename GenerateRRRSetsRecord::walk_iteration_prof &r,
                    size_t i) {
     assert(i < prof_bd.size());
-    typename IMMExecutionRecord::cpu_walk_prof res;
+    typename GenerateRRRSetsRecord::cpu_walk_prof res;
     auto &p(prof_bd[i]);
     res.NumSets = p.n_;
     res.Total = std::chrono::duration_cast<decltype(res.Total)>(p.d_);
@@ -515,10 +515,10 @@ class GPUWalkWorker<GraphTy, PRNGeneratorTy, ItrTy, linear_threshold_tag>
     } else
       console->info("> idle worker");
   }
-  void prof_record(typename IMMExecutionRecord::walk_iteration_prof &r,
+  void prof_record(typename GenearteRRRSetsRecord::walk_iteration_prof &r,
                    size_t i) {
     assert(i < prof_bd.size());
-    typename IMMExecutionRecord::gpu_walk_prof res;
+    typename GenerateRRRSetsRecord::gpu_walk_prof res;
     auto &p(prof_bd[i]);
     res.NumSets = p.n_;
     res.Total = std::chrono::duration_cast<decltype(res.Total)>(p.d_);
@@ -955,7 +955,7 @@ class StreamingRRRGenerator {
 #endif
   }
 
-  void generate(ItrTy begin, ItrTy end, IMMExecutionRecord &record) {
+  void generate(ItrTy begin, ItrTy end, GenerateRRRSetsRecord &record) {
 #if GPU_PROFILE
     auto start = std::chrono::high_resolution_clock::now();
     for (auto &w : workers) w->begin_prof_iter();
@@ -1076,7 +1076,7 @@ class StreamingRRRGenerator {
 
 #if defined(RIPPLES_ENABLE_CUDA) || defined(RIPPLES_ENABLE_HIP)
   void benchmark(size_t num_batches, size_t iterations,
-                 IMMExecutionRecord &record) {
+                 GenerateRRRSetsRecord&record) {
     console->info("Microbenchmarking");
     // Measure time of for loop
     auto micro_start = std::chrono::high_resolution_clock::now();

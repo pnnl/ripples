@@ -6,7 +6,7 @@
 //
 //===----------------------------------------------------------------------===//
 //
-// Copyright (c) 2019, Battelle Memorial Institute
+// Copyright (c) 2024, Battelle Memorial Institute
 //
 // Battelle Memorial Institute (hereinafter Battelle) hereby grants permission
 // to any person or entity lawfully obtaining a copy of this software and
@@ -40,57 +40,59 @@
 //
 //===----------------------------------------------------------------------===//
 
-#ifndef RIPPLES_IMM_EXECUTION_RECORD_H
-#define RIPPLES_IMM_EXECUTION_RECORD_H
+#ifndef RIPPLES_GENERATE_RRR_SETS_RECORD_H
+#define RIPPLES_GENERATE_RRR_SETS_RECORD_H
 
 #include <chrono>
 #include <vector>
 
-#include "ripples/generate_rrr_sets_record.h"
-#include "ripples/find_most_influential_record.h"
-
 namespace ripples {
 
-//! IMM execution record.
-struct IMMExecutionRecord : public GenerateRRRSetsRecord,
-                            public FindMostInfluentialSetRecord {
+//! Generate RRR sets Record.
+struct GenerateRRRSetsRecord {
   using ex_time_ms = std::chrono::duration<double, std::milli>;
   using ex_time_ns = std::chrono::nanoseconds;
 
-  IMMExecutionRecord()
-      : GenerateRRRSetsRecord(),
-        FindMostInfluentialSetRecord(),
-        NumThreads(),
-        Theta(),
-        ThetaPrimeDeltas(),
-        ThetaEstimationTotal(),
-        ThetaEstimationMostInfluential(),
-        GenerateRRRSets(),
-        FindMostInfluentialSet(),
-        Total(),
-        RRRSetSize() {}
+  struct cpu_walk_prof {
+    size_t NumSets;
+    ex_time_ms Total;
 
-  //! Number of threads used during the execution.
-  size_t NumThreads;
-  //! Number of RRR sets generated.
-  size_t Theta;
-  //! The list of how many RRR sets are produced during the estimation phase.
-  std::vector<size_t> ThetaPrimeDeltas;
-  //! Execution time of the Theta estimation phase.
-  ex_time_ms ThetaEstimationTotal;
-  //! Execution times of the GenerateRRRSets steps in Theta estimation.
-  std::vector<ex_time_ms> ThetaEstimationGenerateRRR;
-  //! Execution times of the FindMostInfluentialSet steps in Theta estimation.
-  std::vector<ex_time_ms> ThetaEstimationMostInfluential;
-  //! Execution time of the RRR sets generation phase.
-  ex_time_ms GenerateRRRSets;
-  //! Execution time of the maximum coverage phase.
-  ex_time_ms FindMostInfluentialSet;
-  //! Total execution time.
-  ex_time_ms Total;
-  size_t RRRSetSize;
+    cpu_walk_prof() : NumSets(), Total() {}
+  };
+
+  struct gpu_walk_prof {
+    size_t NumSets;
+    ex_time_ms Total;
+    ex_time_ns Kernel, D2H, Post;
+
+    gpu_walk_prof() : NumSets(), Total(), Kernel(), D2H(), Post() {}
+  };
+
+  struct walk_iteration_prof {
+    std::vector<cpu_walk_prof> CPUWalks{};
+    std::vector<gpu_walk_prof> GPUWalks{};
+    size_t NumSets{0};
+    ex_time_ms Total{0};
+
+    walk_iteration_prof() : CPUWalks(), GPUWalks(), NumSets(), Total() {}
+  };
+
+  GenerateRRRSetsRecord()
+      : CPUBatchSize(64),
+        GPUBatchSize(64),
+        WalkIterations(),
+        Microbenchmarking() {}
+
+  //! CPU Batch Size
+  size_t CPUBatchSize;
+  //! GPU Batch Size
+  size_t GPUBatchSize;
+  //! Iterations breakdown
+  std::vector<walk_iteration_prof> WalkIterations;
+  //! Total microbenchmarking time.
+  ex_time_ms Microbenchmarking;
 };
 
 }  // namespace ripples
 
-#endif  // RIPPLES_IMM_EXECUTION_RECORD_H
+#endif

@@ -50,7 +50,7 @@
 
 #include <omp.h>
 #include "ripples/counting.h"
-#include "ripples/imm_execution_record.h"
+#include "ripples/find_most_influential_record.h"
 #include "ripples/partition.h"
 #include "ripples/streaming_find_most_influential.h"
 #include "ripples/utility.h"
@@ -85,7 +85,7 @@ namespace ripples {
 template <typename GraphTy, typename ConfTy, typename RRRsetsItr>
 auto FindMostInfluentialSet(const GraphTy &G, const ConfTy &CFG,
                             RRRsetsItr rrr_begin, RRRsetsItr rrr_end,
-                            IMMExecutionRecord &record, bool enableGPU,
+                            FindMostInfluentialSetRecord &record, bool enableGPU,
                             sequential_tag &&ex_tag) {
   using vertex_type = typename GraphTy::vertex_type;
   size_t k = CFG.k;
@@ -124,7 +124,7 @@ auto FindMostInfluentialSet(const GraphTy &G, const ConfTy &CFG,
   // std::cout << "Uncovered = " << uncovered << std::endl;
 
   auto end = rrr_end;
-  typename IMMExecutionRecord::ex_time_ms pivoting;
+  typename FindMostInfluentialSetRecord::ex_time_ms pivoting;
 
   while (result.size() < k && uncovered != 0) {
     auto element = queue.top();
@@ -167,7 +167,7 @@ auto FindMostInfluentialSet(const GraphTy &G, const ConfTy &CFG,
   double f = double(RRSize - uncovered) / RRSize;
 
   record.Counting.push_back(
-      std::chrono::duration_cast<typename IMMExecutionRecord::ex_time_ms>(
+      std::chrono::duration_cast<typename FindMostInfluentialSetRecord::ex_time_ms>(
           counting));
   record.Pivoting.push_back(pivoting);
   return std::make_pair(f, result);
@@ -176,7 +176,7 @@ auto FindMostInfluentialSet(const GraphTy &G, const ConfTy &CFG,
 template <typename GraphTy, typename ConfTy, typename RRRsetsItr>
 auto FindMostInfluentialSet(const GraphTy &G, const ConfTy &CFG,
                             RRRsetsItr rrr_begin, RRRsetsItr rrr_end,
-                            IMMExecutionRecord &record, bool enableGPU,
+                            FindMostInfluentialSetRecord &record, bool enableGPU,
                             omp_parallel_tag &&ex_tag) {
   size_t num_gpu = 0;
   size_t num_max_cpu = 0;
@@ -224,7 +224,7 @@ void MoveRRRSets(Itr in_begin, Itr in_end, uint32_t *d_rrr_index,
 template <typename GraphTy, typename RRRset>
 auto FindMostInfluentialSet(const GraphTy &G, size_t k,
                             std::vector<RRRset> &RRRsets,
-                            IMMExecutionRecord &record,
+                            FindMostInfluentialSetRecord &record,
                             cuda_parallel_tag &&ex_tag) {
   using vertex_type = typename GraphTy::vertex_type;
 
@@ -290,7 +290,7 @@ auto FindMostInfluentialSet(const GraphTy &G, size_t k,
 
   double f = double(RRRsets.size() - uncovered) / RRRsets.size();
   record.Counting.push_back(
-      std::chrono::duration_cast<typename IMMExecutionRecord::ex_time_ms>(
+      std::chrono::duration_cast<typename FindMostInfluentialSetRecord::ex_time_ms>(
           counting));
   return std::make_pair(f, result);
 }
