@@ -122,8 +122,30 @@ auto GetExperimentRecord(
   return experiment;
 }
 
+void parse_command_line(int argc, char **argv) {
+  CFG.ParseCmdOptions(argc, argv);
+#pragma omp single
+  CFG.streaming_workers = omp_get_max_threads();
+
+  if (CFG.seed_select_max_workers == 0)
+    CFG.seed_select_max_workers = CFG.streaming_workers;
+  if (CFG.seed_select_max_gpu_workers == std::numeric_limits<size_t>::max())
+    CFG.seed_select_max_gpu_workers = CFG.streaming_gpu_workers;
+}
+
 int main(int argc, char **argv) {
   auto console = spdlog::stdout_color_st("console");
+
+  // process command line
+  parse_command_line(argc, argv);
+  if (CFG.parallel) {
+    if (ripples::streaming_command_line(
+                                        CFG.worker_to_gpu, CFG.streaming_workers, CFG.streaming_cpu_teams, CFG.streaming_gpu_workers,
+                                        CFG.gpu_mapping_string) != 0) {
+      console->error("invalid command line");
+      return -1;
+    }
+  }
 
   spdlog::set_level(spdlog::level::info);
 
