@@ -56,6 +56,7 @@
 #include "ripples/imm_execution_record.h"
 #include "ripples/mpi/find_most_influential.h"
 #include "ripples/utility.h"
+#include "ripples/mpi/utility.h"
 
 namespace ripples {
 namespace mpi {
@@ -87,22 +88,6 @@ inline size_t ThetaPrime(ssize_t x, double epsilonPrime, double l, size_t k,
   return (ThetaPrime(x, epsilonPrime, l, k, num_nodes, omp_parallel_tag{}) /
           world_size) +
          1;
-}
-
-//! Split a random number generator into one sequence per MPI rank.
-//!
-//! \tparam PRNG The type of the random number generator.
-//!
-//! \param gen The parallel random number generator to split.
-template <typename PRNG>
-void split_generator(PRNG &gen) {
-  // Find out rank, size
-  int world_rank;
-  MPI_Comm_rank(MPI_COMM_WORLD, &world_rank);
-  int world_size;
-  MPI_Comm_size(MPI_COMM_WORLD, &world_size);
-
-  gen.split(world_size, world_rank);
 }
 
 template <typename PRNG>

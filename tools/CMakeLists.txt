@@ -74,6 +74,24 @@ target_link_libraries(hill-climbing
                       nlohmann_json::nlohmann_json CLI11::CLI11 OpenMP::OpenMP_CXX)
 
 if (MPI_FOUND)
+add_executable(mpi-opimc mpi-opimc.cc)
+if (RIPPLES_ENABLE_CUDA)
+  set_source_files_properties(mpi-opimc.cc PROPERTIES LANGUAGE CUDA)
+  target_link_libraries(mpi-opimc CUDA::cudart)
+endif()
+target_link_libraries(mpi-opimc
+                      $<IF:$<BOOL:${RIPPLES_ENABLE_TCMALLOC}>, gperftools::tcmalloc_minimal,>
+                      spdlog::spdlog fmt::fmt libtrng::libtrng
+                      nlohmann_json::nlohmann_json CLI11::CLI11 OpenMP::OpenMP_CXX
+                      MPI::MPI_CXX infmax)
+
+target_compile_definitions(mpi-opimc PRIVATE
+                           $<IF:$<BOOL:${RIPPLES_ENABLE_CUDA}>, RIPPLES_ENABLE_CUDA=1,>
+                           $<IF:$<BOOL:${RIPPLES_ENABLE_HIP}>, RIPPLES_ENABLE_HIP=1,>
+                           $<IF:$<BOOL:${RIPPLES_ENABLE_FLOAT_WEIGHTS}>, RIPPLES_ENABLE_FLOAT_WEIGHTS=1,>
+                           $<IF:$<BOOL:${RIPPLES_ENABLE_UINT16_WEIGHTS}>, RIPPLES_ENABLE_UINT16_WEIGHTS=1,>
+                           $<IF:$<BOOL:${RIPPLES_ENABLE_UINT8_WEIGHTS}>, RIPPLES_ENABLE_UINT8_WEIGHTS=1,>)
+
 add_executable(mpi-imm mpi-imm.cc)
 if (RIPPLES_ENABLE_CUDA)
   set_source_files_properties(mpi-imm.cc PROPERTIES LANGUAGE CUDA)
