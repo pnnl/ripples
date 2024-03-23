@@ -75,6 +75,14 @@ struct mpi_omp_parallel_tag {};
 //! Execution tag for the CUDA parallel algorithms.
 struct cuda_parallel_tag {};
 
+//! Approximate logarithm of n chose k.
+//! \param n
+//! \param k
+//! \return an approximation of log(n choose k).
+inline double logBinomial(size_t n, size_t k) {
+  return n * log(n) - k * log(k) - (n - k) * log(n - k);
+}
+
 //! Utility for measurements.
 template <typename TimeTy = std::chrono::milliseconds>
 struct measure {

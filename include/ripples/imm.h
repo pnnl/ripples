@@ -65,14 +65,6 @@
 
 namespace ripples {
 
-//! Approximate logarithm of n chose k.
-//! \param n
-//! \param k
-//! \return an approximation of log(n choose k).
-inline double logBinomial(size_t n, size_t k) {
-  return n * log(n) - k * log(k) - (n - k) * log(n - k);
-}
-
 //! Compute ThetaPrime.
 //!
 //! \tparam execution_tag The execution policy
