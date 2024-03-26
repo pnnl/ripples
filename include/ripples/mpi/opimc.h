@@ -129,13 +129,13 @@ std::vector<typename GraphTy::vertex_type> OPIMC(const GraphTy &G,
     record.FindMostInfluentialSet.push_back(timeFindMostInfluentialEnd -
                                             timeFindMostInfluentialStart);
 
-    console->info("Coverage1: {}/{}", coverage1 * R1.size(), R1.size());
+    console->info("Coverage1: {}/{}", coverage1 * R1.size() * world_size, R1.size() * world_size);
     size_t coverage2 = FindGlobalCoverage(R2, seeds);
-    console->info("Coverage2: {}/{}", coverage2, R2.size());
+    console->info("Coverage2: {}/{}", coverage2, R2.size() * world_size);
 
     float upperBound = UpperBound(coverage1 * R1.size() * world_size, delta,
-                                  G.num_nodes(), R1.size());
-    float lowerBound = LowerBound(coverage2, delta, G.num_nodes(), R2.size());
+                                  G.num_nodes(), R1.size() * world_size);
+    float lowerBound = LowerBound(coverage2, delta, G.num_nodes(), R2.size() * world_size);
 
     float alpha = lowerBound / upperBound;
 
