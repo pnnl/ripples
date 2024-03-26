@@ -197,15 +197,14 @@ std::vector<EdgeTy> load(const std::string &inputFile, const bool undirected,
 //! Load a Weighted Edge List in TSV format.
 //!
 //! \tparam EdgeTy The type of edges.
-//! \tparam PRNG The type of the parallel random number generator.
 //! \tparam diff_model_tag The Type-Tag for the diffusion model.
 //!
 //! \param inputFile The name of the input file.
 //! \param undirected When true, the edge list is from an undirected graph.
-//! \param rand The random number generator.
-template <typename EdgeTy, typename PRNG, typename diff_model_tag>
+//! \param scale_factor The scale factor for loaded weights
+template <typename EdgeTy, typename diff_model_tag>
 std::vector<EdgeTy> load(const std::string &inputFile, const bool undirected,
-                         PRNG &rand, const weighted_edge_list_tsv &&,
+                         float scale_factor, const weighted_edge_list_tsv &&,
                          diff_model_tag &&) {
   std::ifstream GFS(inputFile);
   size_t lineNumber = 0;
@@ -262,6 +261,12 @@ std::vector<EdgeTy> load(const std::string &inputFile, const bool undirected,
           #endif
           const auto upper_limit = std::numeric_limits<weight_type>::max();
           weight = static_cast<weight_type>(tsv_weight * upper_limit);
+        }
+        if(scale_factor < 1.0){
+          weight *= scale_factor;
+        }
+        else if(scale_factor > 1.0){
+          throw std::domain_error("Scale factor must be <= 1.0");
         }
 
         EdgeTy e = {source, destination, weight};
@@ -330,11 +335,11 @@ std::vector<EdgeTy> loadEdgeList(const Configuration &CFG, PRNG &weightGen) {
   std::vector<EdgeTy> edgeList;
   if (CFG.weighted) {
     if (CFG.diffusionModel == "IC") {
-      edgeList = load<EdgeTy>(CFG.IFileName, CFG.undirected, weightGen,
+      edgeList = load<EdgeTy>(CFG.IFileName, CFG.undirected, CFG.scale_factor,
                               ripples::weighted_edge_list_tsv{},
                               ripples::independent_cascade_tag{});
     } else if (CFG.diffusionModel == "LT") {
-      edgeList = load<EdgeTy>(CFG.IFileName, CFG.undirected, weightGen,
+      edgeList = load<EdgeTy>(CFG.IFileName, CFG.undirected, CFG.scale_factor,
                               ripples::weighted_edge_list_tsv{},
                               ripples::linear_threshold_tag{});
     }
@@ -365,7 +370,7 @@ GraphTy loadGraph_helper(ConfTy &CFG, PrngTy &PRNG, allocator_t allocator = allo
     GraphTy tmpG(edgeList.begin(), edgeList.end(), !CFG.disable_renumbering, allocator);
     G = std::move(tmpG);
   } else {
-    G.load_binary(CFG.IFileName);
+    G.load_binary(CFG.IFileName, CFG.scale_factor);
   }
 
 

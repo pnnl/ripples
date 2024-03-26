@@ -851,7 +851,7 @@ private:
   }
 
 public:
-  void load_binary(const std::string & FileName) {
+  void load_binary(const std::string & FileName, float scale_factor = 1.0) {
     #ifdef ENABLE_METALL
     // Static assert 0
     throw 0 && "Not implemented yet, don't use with Metall";
@@ -969,6 +969,15 @@ public:
 
       read_chunk(FS, numEdges * sizeof(vertex_type), reinterpret_cast<char *>(pointer_to(edges)));
       read_chunk(FS, numEdges * sizeof(weight_type), reinterpret_cast<char *>(pointer_to(weights)));
+      if(scale_factor < 1.0) {
+        #pragma omp for
+        for (size_t i = 0; i < numEdges; ++i) {
+          weights[i] *= scale_factor;
+        }
+      }
+      else if(scale_factor > 1.0){
+        throw std::domain_error("The scale factor must be <= 1.0");
+      }
 
       decltype(idMap) localMap;
       #pragma omp for
