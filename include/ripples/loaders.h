@@ -142,86 +142,57 @@ std::vector<EdgeTy> load(const std::string &inputFile, const bool undirected,
   std::ifstream GFS(inputFile);
   size_t lineNumber = 0;
 
-  auto splits = getSplitPointsFileSizeBased(inputFile, omp_get_max_threads());
-
-  std::vector<std::deque<EdgeTy>> edges(omp_get_max_threads());
-
   std::vector<EdgeTy> result;
+  for (std::string line; std::getline(GFS, line); ++lineNumber) {
+    if (line.empty()) continue;
+    if (line.find('%') != std::string::npos) continue;
+    if (line.find('#') != std::string::npos) continue;
 
-  if constexpr (std::is_floating_point_v<typename EdgeTy::weight_type>) {
-    std::cout << "Floating point weights, no conversion needed." << std::endl;
-  } else {
-    std::cout << "Converting float to integer weights" << std::endl;
-  }
+    std::stringstream SS(line);
 
+    typename EdgeTy::vertex_type source;
+    typename EdgeTy::vertex_type destination;
+    typename EdgeTy::weight_type weight;
+    SS >> source >> destination;
 
-  #pragma omp parallel
-  {
-    int thread_id = omp_get_thread_num();
-    size_t chunkSize = splits[thread_id].second - splits[thread_id].first;
-    if (chunkSize != 0) {
-      std::vector<char> buffer(chunkSize);
-      std::ifstream GFS(inputFile);
-      GFS.seekg(splits[thread_id].first, std::ios_base::beg);
+    weight = rand();
+    EdgeTy e = {source, destination, weight};
+    result.emplace_back(e);
 
-      GFS.read(buffer.data(), chunkSize);
-      std::stringstream SS;
-      SS << buffer.data();
-
-      for (std::string line; std::getline(SS, line); ++lineNumber) {
-        if (line.empty()) continue;
-        if (line.find('%') != std::string::npos) continue;
-        if (line.find('#') != std::string::npos) continue;
-
-        std::stringstream SS(line);
-
-        typename EdgeTy::vertex_type source;
-        typename EdgeTy::vertex_type destination;
-        using weight_type = typename EdgeTy::weight_type;
-        weight_type weight;
-
-        if constexpr (std::is_floating_point_v<weight_type>) {
-          SS >> source >> destination;
-          weight = rand();
-        } else {
-          float tsv_weight = rand();
-          SS >> source >> destination;
-          #ifdef CHECK_WEIGHT_RANGE
-          // Assert that the weight is in the range (0, 1]
-          if (tsv_weight <= 0.0 || tsv_weight > 1.0) {
-            std::cerr << "Error: Weight out of range [0, 1] at line " << lineNumber << std::endl;
-            std::exit(1);
-          }
-          #endif
-          const auto upper_limit = std::numeric_limits<weight_type>::max();
-          weight = static_cast<weight_type>(tsv_weight * upper_limit);
-        }
-
-        EdgeTy e = {source, destination, weight};
-        edges[thread_id].emplace_back(e);
-
-        if (undirected) {
-          EdgeTy e = {destination, source, weight};
-          edges[thread_id].emplace_back(e);
-        }
-      }
+    if (undirected) {
+      weight = rand();
+      EdgeTy e = {destination, source, weight};
+      result.emplace_back(e);
     }
   }
 
-  std::vector<size_t> sizes(omp_get_max_threads() + 1);
-  for (size_t i = 1; i < sizes.size(); ++i) {
-    sizes[i] = edges[i - 1].size() + sizes[i - 1];
-  }
-  result.resize(sizes.back());
+  if (std::is_same<diff_model_tag, ripples::linear_threshold_tag>::value) {
+    auto cmp = [](const EdgeTy &a, const EdgeTy &b) -> bool {
+      return a.source < b.source;
+    };
 
-  #pragma omp parallel for
-  for (size_t i = 0; i < sizes.size() - 1; ++i) {
-    // result.insert(result.begin() + sizes[i], edges[i].begin(), edges[i].end());
-    std::copy(edges[i].begin(), edges[i].end(), result.begin() + sizes[i]);
+    std::sort(result.begin(), result.end(), cmp);
+
+    for (auto begin = result.begin(); begin != result.end();) {
+      auto end = std::upper_bound(begin, result.end(), *begin, cmp);
+      typename EdgeTy::weight_type not_taking = rand();
+      typename EdgeTy::weight_type total = std::accumulate(
+          begin, end, not_taking,
+          [](const typename EdgeTy::weight_type &a, const EdgeTy &b) ->
+          typename EdgeTy::weight_type { return a + b.weight; });
+
+      std::transform(begin, end, begin, [=](EdgeTy &e) -> EdgeTy {
+        e.weight /= total;
+        return e;
+      });
+
+      begin = end;
+    }
   }
 
   return result;
 }
+
 
 //! Load a Weighted Edge List in TSV format.
 //!
