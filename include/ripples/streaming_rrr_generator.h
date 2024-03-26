@@ -180,12 +180,19 @@ class CPUWalkWorker : public WalkWorker<GraphTy, ItrTy> {
       std::advance(first, i);
       auto last = first;
       std::advance(last, batch_size);
-      if (last > root_nodes_begin + worksize)
+      if (last > root_nodes_begin + worksize){
         last = root_nodes_begin + worksize;
+      }
       auto out_begin = std::min(begin + i, begin + worksize);
-      BatchedBFSNeighborColorOMP(this->G_, first, last, out_begin, local_rng,
+      if(cpu_threads_per_team_ == 1){
+        BatchedBFSNeighborColor(this->G_, first, last, out_begin, local_rng,
+                                 diff_model_tag{}, cpu_ctx_);
+      }
+      else{
+        BatchedBFSNeighborColorOMP(this->G_, first, last, out_begin, local_rng,
                                  diff_model_tag{}, cpu_ctx_,
                                  cpu_threads_per_team_);
+      }
     }
   }
 
@@ -236,9 +243,15 @@ class CPUWalkWorker : public WalkWorker<GraphTy, ItrTy> {
     auto local_rng = rng_;
     auto v_end = std::min(v_start + max_batch_size_, v_start + size);
     while (v_start < (root_nodes_first + size)) {
-      BatchedBFSNeighborColorOMP(this->G_, v_start, v_end, first, local_rng,
+      if(cpu_threads_per_team_ == 1){
+        BatchedBFSNeighborColor(this->G_, v_start, v_end, first, local_rng,
+                                 diff_model_tag{}, cpu_ctx_);
+      }
+      else{
+        BatchedBFSNeighborColorOMP(this->G_, v_start, v_end, first, local_rng,
                                  diff_model_tag{}, cpu_ctx_,
                                  cpu_threads_per_team_);
+      }
       first += std::distance(v_start, v_end);
       v_start += max_batch_size_;
       v_end = std::min(v_start + max_batch_size_, root_nodes_first + size);

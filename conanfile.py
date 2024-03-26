@@ -9,14 +9,16 @@ class RipplesConan(ConanFile):
                'enable_benchmarks' : [True, False],
                'gpu' : [None, 'amd', 'nvidia'],
                'metall_checkpointing' : [True, False],
-               'weight_type' : ['float', 'uint16', 'uint8']}
+               'weight_type' : ['float', 'uint16', 'uint8'],
+               'disable_sorting' : [True, False]}
     default_options = {'gperftools': True,
                        'nvidia_cub': False,
                        'enable_benchmarks' : False,
                        'metall': False,
                        'gpu' : None,
                        'metall_checkpointing' : True,
-                       'weight_type' : 'float'}
+                       'weight_type' : 'float',
+                       'disable_sorting' : False}
     settings = "os", "compiler", "build_type", "arch"
 
     def configure(self):
@@ -43,6 +45,7 @@ class RipplesConan(ConanFile):
         tc.cache_variables['RIPPLES_ENABLE_FLOAT_WEIGHTS'] = self.options.weight_type == 'float'
         tc.cache_variables['RIPPLES_ENABLE_UINT16_WEIGHTS'] = self.options.weight_type == 'uint16'
         tc.cache_variables['RIPPLES_ENABLE_UINT8_WEIGHTS'] = self.options.weight_type == 'uint8'
+        tc.cache_variables['RIPPLES_DISABLE_SORTING'] = self.options.disable_sorting
         tc.generate()
         deps = CMakeDeps(self)
         deps.generate()

@@ -48,10 +48,13 @@
 #include <algorithm>
 #include <cstddef>
 #include <cstdio>
+#include <exception>
 #include <fstream>
 #include <ios>
+#include <iterator>
 #include <type_traits>
 #include <unordered_map>
+#include <unordered_set>
 #include <numeric>
 #include <vector>
 #include <fcntl.h>
@@ -183,7 +186,9 @@ struct Destination {
 //! \brief The edges stored in the CSR.
 template <typename VertexTy, typename WeightTy>
 struct WeightedDestination : public Destination<VertexTy> {
-  using edge_weight = WeightTy;
+  using vertex_type = VertexTy;
+  using weight_type = WeightTy;
+
   WeightTy weight;  //!< The edge weight.
 
   WeightedDestination(VertexTy v, WeightTy w)
@@ -198,6 +203,151 @@ struct WeightedDestination : public Destination<VertexTy> {
     WeightedDestination dst{Direction::Destination(itr, IM), itr->weight};
     return dst;
   }
+};
+
+//! Iterator for the edges.
+template <typename EdgePointerTy, typename WeightPointerTy, typename WeightedDestinationTy>
+class WeightedEdgeIterator {
+  using edge_pointer_t = EdgePointerTy;
+  using weight_pointer_t = WeightPointerTy;
+  using weighted_destination_t = WeightedDestinationTy;
+
+ public:
+  using iterator_category = std::random_access_iterator_tag;
+  using value_type = weighted_destination_t;
+  using difference_type = std::ptrdiff_t;
+  using pointer = weighted_destination_t *;
+  using reference = weighted_destination_t &;
+
+  WeightedEdgeIterator(size_t I, edge_pointer_t E, weight_pointer_t W)
+      : position(I), edges(E), weights(W) {}
+
+  WeightedEdgeIterator(const WeightedEdgeIterator &O)
+      : position(O.position), edges(O.edges), weights(O.weights) {}
+
+  WeightedEdgeIterator &operator=(const WeightedEdgeIterator &O) {
+    position = O.position;
+    edges = O.edges;
+    weights = O.weights;
+    return *this;
+  }
+
+  WeightedEdgeIterator &operator++() {
+    ++position;
+    return *this;
+  }
+
+  WeightedEdgeIterator operator++(int) {
+    WeightedEdgeIterator tmp(*this);
+    operator++();
+    return tmp;
+  }
+
+  WeightedEdgeIterator &operator--() {
+    --position;
+    return *this;
+  }
+
+  WeightedEdgeIterator operator--(int) {
+    WeightedEdgeIterator tmp(*this);
+    operator--();
+    return tmp;
+  }
+
+  WeightedEdgeIterator &operator+=(difference_type n) {
+    position += n;
+    return *this;
+  }
+
+  WeightedEdgeIterator &operator-=(difference_type n) {
+    position -= n;
+    return *this;
+  }
+
+  WeightedEdgeIterator operator+(difference_type n) const {
+    WeightedEdgeIterator tmp(*this);
+    return tmp += n;
+  }
+
+  WeightedEdgeIterator operator-(difference_type n) const {
+    WeightedEdgeIterator tmp(*this);
+    return tmp -= n;
+  }
+
+  difference_type operator+(const WeightedEdgeIterator &O) const {
+    if (O.edges != this->edges || O.weights != this->weights) throw std::bad_exception();
+    return position + O.position;
+  }
+
+  difference_type operator-(const WeightedEdgeIterator &O) const {
+    if (O.edges != this->edges || O.weights != this->weights) throw std::bad_exception();
+    return position - O.position;
+  }
+
+  bool operator==(const WeightedEdgeIterator &O) const {
+    if (O.edges != this->edges || O.weights != this->weights) throw std::bad_exception();
+    return position == O.position;
+  }
+
+  bool operator!=(const WeightedEdgeIterator &O) const {
+    return position != O.position;
+  }
+
+  bool operator<(const WeightedEdgeIterator &O) const { return position < O.position; }
+
+  bool operator>(const WeightedEdgeIterator &O) const { return position > O.position; }
+
+  bool operator<=(const WeightedEdgeIterator &O) const {
+    if (O.edges != this->edges || O.weights != this->weights) throw std::bad_exception();
+    return position <= O.position;
+  }
+
+  bool operator>=(const WeightedEdgeIterator &O) const {
+    return position >= O.position;
+  }
+
+  weighted_destination_t operator[](difference_type n) const {
+    return weighted_destination_t(edges[position + n], weights[position + n]);
+  }
+
+  const weighted_destination_t operator*() const {
+    return weighted_destination_t(edges[position], weights[position]);
+  }
+
+  const weighted_destination_t *operator->() const {
+    return &weighted_destination_t(edges[position], weights[position]);
+  }
+
+  private:
+  size_t position;
+  edge_pointer_t edges;
+  weight_pointer_t weights;
+};
+
+//! \brief The neighborhood of a vertex.
+template<typename EdgePointerTy, typename WeightPointerTy, typename WeightedDestinationTy>
+class Neighborhood {
+ public:
+  using iterator_type = WeightedEdgeIterator<EdgePointerTy, WeightPointerTy,
+                                             WeightedDestinationTy>;
+  //! Construct the neighborhood.
+  //!
+  //! \param B The begin of the neighbor list.
+  //! \param E The end of the neighbor list.
+  Neighborhood(size_t B, size_t E, EdgePointerTy edges, WeightPointerTy weights)
+    : begin_(B, edges, weights),
+      end_(E, edges, weights) {}
+
+  //! Begin of the neighborhood.
+  //! \return an iterator to the begin of the neighborhood.
+  iterator_type begin() const { return begin_; }
+  //! End of the neighborhood.
+  //! \return an iterator to the begin of the neighborhood.
+  iterator_type end() const { return end_; }
+
+ private:
+  iterator_type begin_;
+  iterator_type end_;
 };
 
 //! \brief The Graph data structure.
@@ -223,44 +373,25 @@ class Graph {
   using edge_type = DestinationTy;
   //! The integer type representing vertices in the graph.
   using vertex_type = VertexTy;
-  using weight_type = typename DestinationTy::edge_weight;
+  using weight_type = typename DestinationTy::weight_type;
   using index_type = size_t;
 
- private:
+ public:
   // Pointer type for the edges array
-  using edge_pointer_t = rebind_alloc_pointer<allocator_t, edge_type>;
+  using edge_pointer_t = rebind_alloc_pointer<allocator_t, vertex_type>;
   // Pointer type for the indices array
   using index_pointer_t = rebind_alloc_pointer<allocator_t, index_type>;
+  using weight_pointer_t = rebind_alloc_pointer<allocator_t, weight_type>;
 
- public:
+  using neighborhood_range = Neighborhood<edge_pointer_t, weight_pointer_t, edge_type>;
 
-  //! \brief The neighborhood of a vertex.
-  class Neighborhood {
-   public:
-    //! Construct the neighborhood.
-    //!
-    //! \param B The begin of the neighbor list.
-    //! \param E The end of the neighbor list.
-    Neighborhood(edge_pointer_t B, edge_pointer_t E) : begin_(B), end_(E) {}
-
-    //! Begin of the neighborhood.
-    //! \return an iterator to the begin of the neighborhood.
-    edge_pointer_t begin() const { return begin_; }
-    //! End of the neighborhood.
-    //! \return an iterator to the begin of the neighborhood.
-    edge_pointer_t end() const { return end_; }
-
-   private:
-    edge_pointer_t begin_;
-    edge_pointer_t end_;
-  };
-
- //! Allocator Graph Constructor.
+  //! Allocator Graph Constructor.
   Graph(allocator_t allocator = allocator_t())
       : numNodes(0),
         numEdges(0),
         index(nullptr),
         edges(nullptr),
+        weights(nullptr),
         graph_allocator(allocator),
         idMap(allocator),
         reverseMap(allocator) {}
@@ -272,16 +403,18 @@ class Graph {
         reverseMap(O.reverseMap),
         graph_allocator(O.graph_allocator) {
     edges = allocate_edges(numEdges);
+    weights = allocate_weights(numEdges);
     index = allocate_index(numNodes + 1);
 
 #pragma omp parallel for
     for (size_t i = 0; i < numEdges; ++i) {
       edges[i] = O.edges[i];
+      weights[i] = O.weights[i];
     }
 
 #pragma omp parallel for
     for (size_t i = 0; i < numNodes + 1; ++i) {
-      index[i] = edges + std::distance(O.index[0], O.index[i]);
+      index[i] = O.index[i];
     }
   }
 
@@ -296,17 +429,20 @@ class Graph {
 
     deallocate_index(index, numNodes + 1);
     deallocate_edges(edges, numEdges);
+    deallocate_weights(weights, numEdges);
 
     index = allocate_index(numNodes + 1);
     edges = allocate_edges(numEdges);
+    weights = allocate_weights(numEdges);
 #pragma omp parallel for
     for (size_t i = 0; i < numEdges; ++i) {
       edges[i] = O.edges[i];
+      weights[i] = O.weights[i];
     }
 
 #pragma omp parallel for
     for (size_t i = 0; i < numNodes + 1; ++i) {
-      index[i] = edges + std::distance(O.index[0], O.index[i]);
+      index[i] = O.index[i];
     }
     return *this;
   }
@@ -318,6 +454,7 @@ class Graph {
         numEdges(O.numEdges),
         index(O.index),
         edges(O.edges),
+        weights(O.weights),
         graph_allocator(std::move(O.graph_allocator)),
         idMap(std::move(O.idMap)),
         reverseMap(std::move(O.reverseMap)) {
@@ -325,6 +462,7 @@ class Graph {
     O.numEdges = 0;
     O.index = nullptr;
     O.edges = nullptr;
+    O.weights = nullptr;
   }
 
   //! Move assignment operator.
@@ -335,11 +473,13 @@ class Graph {
 
     deallocate_index(index, numNodes + 1);
     deallocate_edges(edges, numEdges);
+    deallocate_weights(weights, numEdges);
 
     numNodes = O.numNodes;
     numEdges = O.numEdges;
     index = O.index;
     edges = O.edges;
+    weights = O.weights;
     idMap = std::move(O.idMap);
     reverseMap = std::move(O.reverseMap);
 
@@ -347,6 +487,7 @@ class Graph {
     O.numEdges = 0;
     O.index = nullptr;
     O.edges = nullptr;
+    O.weights = nullptr;
 
     return *this;
   }
@@ -370,27 +511,29 @@ class Graph {
 
 
     VertexTy maxVertexID = 0;
-    omp_lock_t mapLock;
-    omp_init_lock(&mapLock);
+    // With openmp, create an unordered set containing all the vertex IDs.
+    std::unordered_set<VertexTy> vertexSet;
+    std::vector<std::unordered_set<VertexTy>> localVertexSet(omp_get_max_threads());
+    // std::cout << "Parallel set creation" << std::endl;
     #pragma omp parallel for reduction(max : maxVertexID)
     for (auto itr = begin; itr != end; ++itr) {
-      omp_set_lock(&mapLock);
-      if (idMap.count(itr->source) == 0) {
-        idMap[itr->source] = itr->source;
-        if (renumbering) {
-          reverseMap.push_back(itr->source);
-        }
-      }
-      if (idMap.count(itr->destination) == 0) {
-        idMap[itr->destination] = itr->destination;
-        if (renumbering) {
-          reverseMap.push_back(itr->destination);
-        }
-      }
-      omp_unset_lock(&mapLock);
-
-      maxVertexID = std::max(std::max(itr->source, itr->destination), maxVertexID);
+      auto threadnum = omp_get_thread_num();
+      localVertexSet[threadnum].insert(itr->source);
+      localVertexSet[threadnum].insert(itr->destination);
+      maxVertexID = std::max(maxVertexID, std::max(itr->source, itr->destination));
     }
+    // std::cout << "Sequential idMap Creation" << std::endl;
+    for (auto &s : localVertexSet) {
+      for (auto v : s) {
+        bool inserted = idMap.insert({v, v}).second;
+        if(inserted) {
+          reverseMap.push_back(v);
+        }
+      }
+    }
+    
+    // std::cout << "Sequential idMap created!" << std::endl;
+
 
 
     if (renumbering) {
@@ -410,11 +553,11 @@ class Graph {
       }
     }
 
-
     numNodes = reverseMap.size();
     numEdges = std::distance(begin, end);
 
     edges = allocate_edges(numEdges);
+    weights = allocate_weights(numEdges);
     index = allocate_index(numNodes + 1);
 
 
@@ -422,12 +565,6 @@ class Graph {
     for (size_t i = 0; i < numNodes + 1; ++i) {
       index[i] = 0;
     }
-
-#pragma omp parallel for
-    for (size_t i = 0; i < numEdges; ++i) {
-      edges[i] = DestinationTy();
-    }
-
 
     #pragma omp parallel for
     for (auto itr = begin; itr != end; ++itr) {
@@ -441,18 +578,22 @@ class Graph {
     }
 
     std::vector<omp_lock_t> ptrLock(numNodes);
-    std::vector<edge_pointer_t> ptrEdge(numNodes, nullptr);
+    std::vector<index_type> ptrEdge(numNodes);
 #pragma omp parallel for
-    for (int i = 0; i < numNodes; ++i) {
-      ptrEdge[i] = edges + index[i];
+    for (size_t i = 0; i < numNodes; ++i) {
+      ptrEdge[i] = index[i];
       omp_init_lock(&ptrLock[i]);
     }
 #pragma omp parallel for
     for (auto itr = begin; itr != end; ++itr) {
       omp_set_lock(&ptrLock[DirectionPolicy::Source(itr, idMap)]);
-      *ptrEdge[DirectionPolicy::Source(itr, idMap)] =
-          edge_type::template Create<DirectionPolicy>(itr, idMap);
+
+      auto e = edge_type::template Create<DirectionPolicy>(itr, idMap);
+      edges[ptrEdge[DirectionPolicy::Source(itr, idMap)]] = e.vertex;
+      weights[ptrEdge[DirectionPolicy::Source(itr, idMap)]] = e.weight;
+
       ++ptrEdge[DirectionPolicy::Source(itr, idMap)];
+
       omp_unset_lock(&ptrLock[DirectionPolicy::Source(itr, idMap)]);
     }
   }
@@ -461,6 +602,7 @@ class Graph {
   ~Graph() {
     deallocate_index(index, numNodes + 1);
     deallocate_edges(edges, numEdges);
+    deallocate_weights(weights, numEdges);
   }
 
   //! Returns the out-degree of a vertex.
@@ -471,8 +613,8 @@ class Graph {
   //! Returns the neighborhood of a vertex.
   //! \param v The input vertex.
   //! \return  a range containing the out-neighbors of the vertex v in input.
-  Neighborhood neighbors(VertexTy v) const {
-    return Neighborhood(edges + index[v], edges + index[v + 1]);
+  neighborhood_range neighbors(VertexTy v) const {
+    return neighborhood_range(index[v], index[v + 1], edges, weights);
   }
 
   //! The number of nodes in the Graph.
@@ -536,8 +678,9 @@ private:
   size_t total_binary_size() const {
     return 3 * sizeof(uint64_t)
       + sizeof(VertexTy) * numNodes
-      + sizeof(pointer_to(edges)) * (numNodes + 1)
-      + sizeof(edge_type) * numEdges;
+      + sizeof(index_type) * (numNodes + 1)
+      + sizeof(vertex_type) * numEdges
+      + sizeof(weight_type) * numEdges;
   }
   void write_chunk(std::ofstream &FS, size_t TotalBytes, char* O) const {
     size_t threadnum = omp_get_thread_num(), numthreads = omp_get_num_threads();
@@ -615,11 +758,14 @@ public:
                   const_cast<char *>(
                       reinterpret_cast<const char *>(reverseMap.data())));
 
-      write_chunk(FS, (numNodes + 1)  * sizeof(size_t),
+      write_chunk(FS, (numNodes + 1)  * sizeof(index_type),
                   reinterpret_cast<char *>(pointer_to(index)));
 
-      write_chunk(FS, numEdges * sizeof(edge_type),
+      write_chunk(FS, numEdges * sizeof(vertex_type),
                   reinterpret_cast<char *>(pointer_to(edges)));
+
+      write_chunk(FS, numEdges * sizeof(weight_type),
+                  reinterpret_cast<char *>(pointer_to(weights)));
     }
     close(file);
   }
@@ -648,30 +794,36 @@ public:
     G.idMap = idMap;
     G.index = G.allocate_index(G.numNodes + 1);
     G.edges = G.allocate_edges(G.numEdges);
+    G.weights = G.allocate_weights(G.numEdges);
 
 #pragma omp parallel for
-    for (auto itr = G.index; itr < G.index + numNodes + 1; ++itr) {
-      *itr = 0;
+    for (size_t i = 0; i < G.numNodes + 1; ++i) {
+      G.index[i] = 0;
     }
 
 #pragma omp parallel for
-    for (auto itr = G.edges; itr < G.edges + numEdges; ++itr) {
-      *itr = out_dest_type();
+    for (index_type i = 0; i < numEdges; ++i) {
+      auto v = edges[i];
+      #pragma omp atomic update
+      G.index[v + 1] += 1;
     }
 
-    std::for_each(edges, edges + numEdges,
-                  [&](const edge_type &d) { ++G.index[d.vertex + 1]; });
 
-    std::partial_sum(G.index, G.index + numNodes + 1, G.index,
-                     std::plus<size_t>());
-
-    std::vector<out_dest_ptr_type> destPointers(numNodes + 1);
-    for (size_t i = 0; i < destPointers.size(); ++i) {
-      destPointers[i] = pointer_to(G.edges) + G.index[i];
+    for (size_t i = 1; i <= G.numNodes; ++i) {
+      G.index[i] += G.index[i - 1];
     }
+
+    std::vector<index_type> destPointers(G.numNodes + 1);
+    
+#pragma omp parallel for
+    for (index_type i = 0; i < destPointers.size(); ++i) {
+      destPointers[i] = G.index[i];
+    }
+    
     for (vertex_type v = 0; v < numNodes; ++v) {
       for (auto u : neighbors(v)) {
-        *destPointers[u.vertex] = {v, u.weight};
+        G.edges[destPointers[u.vertex]] = v;
+        G.weights[destPointers[u.vertex]] = u.weight;
         destPointers[u.vertex]++;
       }
     }
@@ -682,6 +834,8 @@ public:
   index_pointer_t csr_index() const { return index; }
 
   edge_pointer_t csr_edges() const { return edges; }
+
+  weight_pointer_t csr_weights() const { return weights; }
 
 private:
   template<typename FStreamTy>
@@ -807,12 +961,14 @@ public:
       {
         index = allocate_index(numNodes + 1);
         edges = allocate_edges(numEdges);
+        weights = allocate_weights(numEdges);
       }
 
-      read_chunk(FS, (numNodes + 1) * sizeof(ptrdiff_t),
+      read_chunk(FS, (numNodes + 1) * sizeof(index_type),
                  reinterpret_cast<char *>(pointer_to(index)));
 
-      read_chunk(FS, numEdges * sizeof(edge_type), reinterpret_cast<char *>(pointer_to(edges)));
+      read_chunk(FS, numEdges * sizeof(vertex_type), reinterpret_cast<char *>(pointer_to(edges)));
+      read_chunk(FS, numEdges * sizeof(weight_type), reinterpret_cast<char *>(pointer_to(weights)));
 
       decltype(idMap) localMap;
       #pragma omp for
@@ -862,11 +1018,15 @@ public:
   }
 
   index_pointer_t allocate_index(const std::size_t n) {
-    return general_allocate<allocator_t, size_t>(graph_allocator, n);
+    return general_allocate<allocator_t, index_type>(graph_allocator, n);
   }
 
   edge_pointer_t allocate_edges(const std::size_t n) {
-    return general_allocate<allocator_t, edge_type>(graph_allocator, n);
+    return general_allocate<allocator_t, vertex_type>(graph_allocator, n);
+  }
+
+  weight_pointer_t allocate_weights(const std::size_t n) {
+    return general_allocate<allocator_t, weight_type>(graph_allocator, n);
   }
 
   void deallocate_index(index_pointer_t index, const std::size_t n) {
@@ -877,8 +1037,13 @@ public:
     general_deallocate<allocator_t, edge_pointer_t>(graph_allocator, edges, n);
   }
 
+  void deallocate_weights(weight_pointer_t edges, const std::size_t n) {
+    general_deallocate<allocator_t, weight_pointer_t>(graph_allocator, weights, n);
+  }
+
   index_pointer_t index;
   edge_pointer_t edges;
+  weight_pointer_t weights;
   allocator_t graph_allocator;
 
     // Allocator and vector types for the indices array
@@ -920,7 +1085,7 @@ auto getCommunitiesSubgraphs(
       *std::max_element(communityVector.begin(), communityVector.end()) + 1;
   std::vector<BwdGraphTy> communities(num_communities);
 
-  using EdgeTy = Edge<typename FwdGraphTy::vertex_type, typename FwdGraphTy::edge_type::edge_weight>;
+  using EdgeTy = Edge<typename FwdGraphTy::vertex_type, typename FwdGraphTy::edge_type::weight_type>;
   std::vector<std::vector<EdgeTy>> edge_lists(num_communities);
   for (typename FwdGraphTy::vertex_type src = 0; src < Gf.num_nodes(); ++src) {
     vertex_type original_src = Gf.convertID(src);

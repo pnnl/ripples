@@ -358,7 +358,7 @@ GraphTy loadGraph_helper(ConfTy &CFG, PrngTy &PRNG, allocator_t allocator = allo
 
   if (!CFG.reload) {
     using vertex_type = typename GraphTy::vertex_type;
-    using weight_type = typename GraphTy::edge_type::edge_weight;
+    using weight_type = typename GraphTy::edge_type::weight_type;
     using edge_type = ripples::Edge<vertex_type, weight_type>;
     auto edgeList = ripples::loadEdgeList<edge_type>(CFG, PRNG);
     GraphTy tmpG(edgeList.begin(), edgeList.end(), !CFG.disable_renumbering, allocator);
@@ -383,7 +383,7 @@ GraphTy loadGraph_helper(ConfTy &CFG, PrngTy &PRNG, allocator_t allocator = allo
 //! \return The GraphTy graph loaded from the input file.
 template <typename GraphTy, typename ConfTy, typename PrngTy, typename allocator_t = std::allocator<char>>
 GraphTy loadGraph(ConfTy &CFG, PrngTy &PRNG, allocator_t allocator = allocator_t()) {
-  using weight_type = typename GraphTy::edge_type::edge_weight;
+  using weight_type = typename GraphTy::edge_type::weight_type;
   GraphTy G(allocator);
   if (CFG.distribution == "uniform") {
     WeightGenerator<trng::lcg64, trng::uniform01_dist<float>, weight_type> gen(

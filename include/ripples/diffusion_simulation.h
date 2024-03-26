@@ -75,7 +75,7 @@ auto run_simulation(const GraphTy &G, Iterator begin, Iterator end,
                     PRNG &generator, const independent_cascade_tag &) {
   using vertex_type = typename GraphTy::vertex_type;
   using edge_type = typename GraphTy::edge_type;
-  using edge_weight_type = typename edge_type::edge_weight;
+  using edge_weight_type = typename edge_type::weight_type;
 
   trng::uniform01_dist<edge_weight_type> value;
 
@@ -130,7 +130,7 @@ auto run_simulation(const GraphTy &G, Iterator begin, Iterator end,
                     PRNG &generator, const linear_threshold_tag &) {
   using vertex_type = typename GraphTy::vertex_type;
   using edge_type = typename GraphTy::edge_type;
-  using edge_weight_type = typename edge_type::edge_weight;
+  using edge_weight_type = typename edge_type::weight_type;
 
   auto transposedG = G.get_transpose();
 
