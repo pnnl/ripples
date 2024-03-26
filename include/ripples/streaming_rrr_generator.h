@@ -822,12 +822,12 @@ class StreamingRRRGenerator {
     typename gpu_worker_t::config_t gpu_conf(num_gpu_workers_);
     auto num_gpu_threads_per_worker = gpu_conf.num_gpu_threads();
     auto num_rng_sequences =
-        num_cpu_workers_ * cpu_batch_size +
+        num_cpu_workers_ * cpu_batch_size_ +
         num_gpu_workers_ * (num_gpu_threads_per_worker + 1);
-    auto gpu_seq_offset = num_cpu_workers_ * cpu_batch_size + num_gpu_workers_;
+    auto gpu_seq_offset = num_cpu_workers_ * cpu_batch_size_ + num_gpu_workers_;
 #else
     assert(num_gpu_workers_ == 0);
-    size_t num_rng_sequences = num_cpu_workers_ * cpu_batch_size;
+    size_t num_rng_sequences = num_cpu_workers_ * cpu_batch_size_;
 #endif
 
     console->info("CPU Workers {}", num_cpu_workers);
@@ -867,15 +867,15 @@ class StreamingRRRGenerator {
         console->info("> mapping: omp={}\t->\tCPU", omp_num);
         console->info("cpu_worker_id = {}", cpu_worker_id);
         std::vector<std::vector<PRNGeneratorTy>> rng(
-            cpu_threads_per_team_, std::vector<PRNGeneratorTy>(cpu_batch_size));
+            cpu_threads_per_team_, std::vector<PRNGeneratorTy>(cpu_batch_size_));
 #pragma omp parallel for
         for (size_t i = 0; i < cpu_threads_per_team_; ++i) {
-          for (size_t j = 0; j < cpu_batch_size; ++j) {
+          for (size_t j = 0; j < cpu_batch_size_; ++j) {
             rng[i][j] = master_rng;
             rng[i][j].split(
                 num_rng_sequences,
-                cpu_worker_id * cpu_threads_per_team_ * cpu_batch_size +
-                    i * cpu_batch_size + j);
+                cpu_worker_id * cpu_threads_per_team_ * cpu_batch_size_ +
+                    i * cpu_batch_size_ + j);
           }
         }
         workers.push_back(new cpu_worker_t(G, rng, cpu_threads_per_team_));
@@ -1167,8 +1167,8 @@ class StreamingRRRGenerator {
                                        (double)gpu_avg / (double)cpu_avg)),
                    (size_t)64);
       // Print adjusted
-      // std::cout << "Adjusted CPU batch size: " << cpu_batch_size_ <<
-      // std::endl;
+      std::cout << "Adjusted CPU batch size: " << cpu_batch_size_ <<
+      std::endl;
       if (cpu_batch_size_ == old_cpu_batch_size) {
         break;
       }

@@ -115,6 +115,7 @@ auto GetExperimentRecord(
       {"RRRSetSizeBytes", R.RRRSetSize},
       {"GenerateRRRSets", ConvertToCounts(R.GenerateRRRSets)},
       {"FindMostInfluentialSet", ConvertToCounts(R.FindMostInfluentialSet)},
+      {"Microbenchmarking", R.Microbenchmarking.count()},
       {"ThetaZero", R.ThetaZero},
       {"ThetaMax", R.ThetaMax},
       {"RRRSetsGenerated", R.RRRSetsGenerated},
