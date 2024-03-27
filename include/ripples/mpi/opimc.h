@@ -113,6 +113,15 @@ std::vector<typename GraphTy::vertex_type> OPIMC(const GraphTy &G,
   record.GenerateRRRSets.push_back(timeGenerateRRRSetEnd -
                                    timeGenerateRRRSetStart);
   record.RRRSetsGenerated.push_back(R1.size() + R2.size());
+  #ifdef PRINTF_TIL_YOU_DROP
+  int world_rank;
+  MPI_Comm_rank(MPI_COMM_WORLD, &world_rank);
+  auto duration_ms = std::chrono::duration_cast<std::chrono::milliseconds>(
+      timeGenerateRRRSetEnd - timeGenerateRRRSetStart);
+  console->info("Rank = {}, RRSetsGenerated = {}, Time = {}", world_rank,
+                R1.size() + R2.size(),
+                duration_ms.count());
+  #endif // PRINTF_TIL_YOU_DROP
 
   std::vector<vertex_type> results;
 
@@ -167,6 +176,16 @@ std::vector<typename GraphTy::vertex_type> OPIMC(const GraphTy &G,
                                      timeGenerateRRRSetStart);
     record.RRRSetsGenerated.push_back(std::distance(begin1, R1.end()) +
                                       std::distance(begin2, R2.end()));
+    #ifdef PRINTF_TIL_YOU_DROP
+    int world_rank;
+    MPI_Comm_rank(MPI_COMM_WORLD, &world_rank);
+    auto duration_ms = std::chrono::duration_cast<std::chrono::milliseconds>(
+      timeGenerateRRRSetEnd - timeGenerateRRRSetStart);
+    console->info(
+        "Rank = {}, RRSetsGenerated = {}, Time = {}", world_rank,
+        std::distance(begin1, R1.end()) + std::distance(begin2, R2.end()),
+        duration_ms.count());
+    #endif  // PRINTF_TIL_YOU_DROP
   }
 
   return results;

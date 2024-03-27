@@ -374,7 +374,7 @@ class Graph {
   //! The integer type representing vertices in the graph.
   using vertex_type = VertexTy;
   using weight_type = typename DestinationTy::weight_type;
-  using index_type = size_t;
+  using index_type = uint64_t;
 
  public:
   // Pointer type for the edges array

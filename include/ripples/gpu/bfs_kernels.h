@@ -443,8 +443,8 @@ __global__ void fused_color_thread_scatter_kernel(
   if (input_id < num_nodes) {
     vertex_type vertex_id = vertex[input_id];
     const color_type full_colors = colors[global_id];
-    vertex_type start_edge = index[vertex_id];
-    vertex_type end_edge = index[vertex_id + 1];
+    index_type start_edge = index[vertex_id];
+    index_type end_edge = index[vertex_id + 1];
     // Write the edges and colors to the output array
     for (vertex_type i = 0; i < end_edge - start_edge; ++i) {
       color_type full_colors_temp = full_colors;
@@ -540,6 +540,8 @@ __global__ void build_frontier_queues_kernel(
   using index_type = typename GraphTy::index_type;
   using color_type = ColorTy;
 
+  static_assert(sizeof(index_type) == 8);
+
   constexpr int frontier_bins = 4;
 
   // Warp/block-parallel scatter
@@ -575,21 +577,29 @@ __global__ void build_frontier_queues_kernel(
     // Retrieve outdegree
     index_type start = index[vertex_id];
     index_type end = index[vertex_id + 1];
-    index_type outdegree = end - start;
+    vertex_type outdegree = end - start;
     // Find block-wide offsets for each frontier queue
-    if (outdegree < warpSize / color_dim) {
+    // if (outdegree < warpSize / color_dim) {
+    if (outdegree < warpSize) {
       vertex_frontier = small_frontier;
       color_frontier = small_color;
       frontier_bin = 0;
-    } else if (outdegree < 256 / color_dim) {
+    // } else if (outdegree < 256 / color_dim) {
+    } else if (outdegree < 256) {
       vertex_frontier = medium_frontier;
       color_frontier = medium_color;
       frontier_bin = 1;
-    } else if (outdegree < 65536 / color_dim) {
+    // } else if (outdegree < 65536 / color_dim) {
+    } else if (outdegree < 65536) {
       vertex_frontier = large_frontier;
       color_frontier = large_color;
       frontier_bin = 2;
     } else {
+      // Print vertex id, throw error
+      // printf("Vertex %d has outdegree %d\n", vertex_id, outdegree);
+      // assert(
+      //     false &&
+      //     "Outdegree too large for this graph. Something is terribly wrong!");
       vertex_frontier = extreme_frontier;
       color_frontier = extreme_color;
       frontier_bin = 3;
@@ -601,7 +611,7 @@ __global__ void build_frontier_queues_kernel(
     vertex_type offset;
     WarpMaskTy active_threads =
         intrinsic<R>::ballot_sync(color_id == 0 && frontier_bin == i);
-    uint32_t thread_leader = ffs(active_threads) - 1;
+    int thread_leader = ffs(active_threads) - 1;
     WarpMaskTy offset_mask = active_threads & warp_offset_mask;
     if (warp_tid == thread_leader) {
       offset = atomicAdd(frontier_offsets + i, popcount(active_threads));
