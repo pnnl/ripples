@@ -115,7 +115,7 @@ void benchmark(const std::string &report_dir, const std::string &modelName,
     std::cout << "Generating RRR sets" << std::endl;
 
     bench.complexityN(scale)
-        .title("Sampling Array of Structs")
+        .title("Sampling Struct of Arrays")
         .performanceCounters(true)
         .output(nullptr)
         .run(modelName,

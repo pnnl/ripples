@@ -378,8 +378,7 @@ size_t BFS(GraphTy &G, GraphMaskTy &M, Itr b, Itr e, Bitmask<int> &visited) {
     queue.pop();
     visited.set(u);
 
-    size_t edge_number =
-        std::distance(G.neighbors(0).begin(), G.neighbors(u).begin());
+    size_t edge_number = std::begin(G.neighbors(u)) - std::begin(G.neighbors(0));
 
     for (auto v : G.neighbors(u)) {
       if (M.get(edge_number) && !visited.get(v.vertex)) {
@@ -406,8 +405,7 @@ size_t BFS(GraphTy &G, GraphMaskTy &M, typename GraphTy::vertex_type v,
     vertex_type u = queue.front();
     queue.pop();
 
-    size_t edge_number =
-        std::distance(G.neighbors(0).begin(), G.neighbors(u).begin());
+    size_t edge_number = std::begin(G.neighbors(u)) - std::begin(G.neighbors(0));
     for (auto v : G.neighbors(u)) {
       if (M.get(edge_number) && !visited.get(v.vertex)) {
         queue.push(v.vertex);

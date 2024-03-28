@@ -268,6 +268,14 @@ int main(int argc, char **argv) {
         });
         R.ThetaEstimationGenerateRRR.push_back(timeRRRSets);
         R.ThetaEstimationMostInfluential.push_back(timeRRRSets - timeRRRSets);
+        #if 0
+        // Output size of RR sets to a file
+        std::ofstream rr_size_file(CFG.OutputFile + ".rrr_size");
+        for(auto &rr : RR){
+          rr_size_file << rr.size() << std::endl;
+        }
+        rr_size_file.close();
+        #endif
         seeds = std::vector<typename ripples::GraphBwd::vertex_type>(CFG.k, 1);
         #endif
       }

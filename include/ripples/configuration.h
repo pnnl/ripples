@@ -95,7 +95,7 @@ struct GraphInputConfiguration {
                    "The variance for the normal distribution")
         ->group("Input Options");
     app.add_option("--scale-factor", scale_factor,
-                   "Scaling Factor for the generated weights")
+                   "Scaling Factor for the generated or loaded weights")
         ->group("Input Options");
     app.add_flag("--disable-renumbering", disable_renumbering,
                  "Load the graph as is from the input.")
