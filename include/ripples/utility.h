@@ -46,6 +46,7 @@
 #include <chrono>
 #include <utility>
 #include <memory>
+#include <cmath>
 
 #ifdef __APPLE__
 #include <libkern/OSByteOrder.h>
@@ -80,7 +81,8 @@ struct cuda_parallel_tag {};
 //! \param k
 //! \return an approximation of log(n choose k).
 inline double logBinomial(size_t n, size_t k) {
-  return n * log(n) - k * log(k) - (n - k) * log(n - k);
+  // return n * log(n) - k * log(k) - (n - k) * log(n - k);
+  return lgamma(n + 1) - lgamma(n - k + 1) - lgamma(k + 1);
 }
 
 //! Utility for measurements.
