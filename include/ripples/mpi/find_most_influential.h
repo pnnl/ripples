@@ -164,6 +164,15 @@ class MPIStreamingFindMostInfluential {
     uint32_t *dest = reduced_vertex_coverage_.data();
     uint32_t *src = vertex_coverage_.data();
 
+    int world_size;
+    MPI_Comm_size(MPI_COMM_WORLD, &world_size);
+    int mpi_rank;
+    MPI_Comm_rank(MPI_COMM_WORLD, &mpi_rank);
+
+    MPI_Request request;
+    uint32_t chunk_size = vertex_coverage_.size() / world_size;
+    uint32_t last_block_size = chunk_size + vertex_coverage_.size() % world_size;
+
 #if defined(RIPPLES_ENABLE_CUDA) || defined(RIPPLES_ENABLE_HIP)
     if (num_gpu_workers_ != 0) {
       dest = d_cpu_reduced_counters_;
@@ -194,32 +203,23 @@ class MPIStreamingFindMostInfluential {
 
       // MPI_Reduce(src, dest, vertex_coverage_.size(),
       // 	    MPI_UINT32_T, MPI_SUM, 0, MPI_COMM_WORLD);
+      for (size_t i = 0; i < world_size; ++i) {
+        MPI_Ireduce(tmp.data() + i * chunk_size,
+                    reduced_vertex_coverage_.data() + i * chunk_size,
+                    i != (world_size - 1) ? chunk_size : last_block_size,
+                    MPI_UINT32_T, MPI_SUM, i, MPI_COMM_WORLD, &request);
+      }
 
-      MPI_Reduce(tmp.data(), reduced_vertex_coverage_.data(),
-                 vertex_coverage_.size(), MPI_UINT32_T, MPI_SUM, 0,
-                 MPI_COMM_WORLD);
-
-      // if (mpi_rank == 0) {
-      //   for (size_t i = 0; i < 10; ++i) {
-      //     std::cout << "Reduce[" << i << "] = "<< reduced_vertex_coverage_[i]
-      //     << std::endl;
-      //   }
-      // }
-
-      // for (size_t i = 0; i < 10; ++i) {
-      // 	  std::cout << "P[" << mpi_rank << "](" << i << ") = " << tmp[i]
-      // << std::endl;
-      // }
-
-      GPU<RUNTIME>::h2d(reinterpret_cast<void *>(dest),
-                        reinterpret_cast<void *>(reduced_vertex_coverage_.data()),
-                        sizeof(uint32_t) * vertex_coverage_.size());
     } else
 #endif
     {
-      MPI_Reduce(src, dest, vertex_coverage_.size(), MPI_UINT32_T, MPI_SUM, 0,
-                 MPI_COMM_WORLD);
+      for (size_t i = 0; i < world_size; ++i) {
+        MPI_Ireduce(src + i * chunk_size, dest + i * chunk_size,
+                    i != (world_size - 1) ? chunk_size : last_block_size,
+                    MPI_UINT32_T, MPI_SUM, i, MPI_COMM_WORLD, &request);
+      }
     }
+    MPI_Wait(&request, MPI_STATUS_IGNORE);
   }
 
   void UpdateCounters(vertex_type last_seed) {
@@ -237,58 +237,59 @@ class MPIStreamingFindMostInfluential {
 
   std::pair<vertex_type, size_t> getNextSeed(priorityQueue &queue_) {
     ReduceCounters();
-#if defined(RIPPLES_ENABLE_CUDA) || defined(RIPPLES_ENABLE_HIP)
-    if (num_gpu_workers_ != 0) {
-      uint32_t *global_counter = d_cpu_reduced_counters_;
 
-      if (mpi_rank == 0) {
-        GPURuntimeTrait<RUNTIME>::set_device(0);
-        auto result = GPUMaxElement(global_counter, vertex_coverage_.size());
-        // std::cout << "Max Element " << result.first << " " << result.second
-        // << std::endl;
-        coveredAndSelected[0] += result.second;
-        coveredAndSelected[1] = result.first;
+    int world_size;
+    MPI_Comm_size(MPI_COMM_WORLD, &world_size);
+    int mpi_rank;
+    MPI_Comm_rank(MPI_COMM_WORLD, &mpi_rank);
+    uint32_t chunk_size = vertex_coverage_.size() / world_size;
+    uint32_t last_block_size = chunk_size + vertex_coverage_.size() % world_size;
+
+    uint32_t vertex = 0;
+    uint32_t coverage = 0;
+    // auto itr = std::max_element(reduced_vertex_coverage_.begin(), reduced_vertex_coverage_.end());
+#pragma omp parallel
+    {
+      uint32_t vertex_local = 0;
+      uint32_t coverage_local = 0;
+
+      uint32_t end = std::min<uint32_t>((mpi_rank + 1) * chunk_size, reduced_vertex_coverage_.size());
+
+#pragma omp for
+      for (uint32_t i = mpi_rank * chunk_size; i < end; ++i) {
+        if (coverage_local < reduced_vertex_coverage_[i]) {
+          coverage_local = reduced_vertex_coverage_[i];
+          vertex_local = i;
+        }
       }
 
-      MPI_Bcast(&coveredAndSelected, 2, MPI_UINT32_T, 0, MPI_COMM_WORLD);
-      // std::cout << "$$$$ " << mpi_rank << " "<< coveredAndSelected[0] <<
-      // std::endl;
-      return std::pair<vertex_type, size_t>(coveredAndSelected[1],
-                                            coveredAndSelected[0]);
-    }
-#endif
-    if (mpi_rank == 0) {
-
-      uint32_t vertex = 0;
-      uint32_t coverage = 0;
-      // auto itr = std::max_element(reduced_vertex_coverage_.begin(), reduced_vertex_coverage_.end());
-      #pragma omp parallel
+#pragma omp critical
       {
-        uint32_t vertex_local = 0;
-        uint32_t coverage_local = 0;
-
-        #pragma omp for
-        for (uint32_t i = 0; i < reduced_vertex_coverage_.size(); ++i) {
-          if (coverage_local < reduced_vertex_coverage_[i]) {
-            coverage_local = reduced_vertex_coverage_[i];
-            vertex_local = i;
-          }
-        }
-
-        #pragma omp critical
-        {
-          if (coverage < coverage_local) {
-            coverage = coverage_local;
-            vertex = vertex_local;
-          }
+        if (coverage < coverage_local) {
+          coverage = coverage_local;
+          vertex = vertex_local;
         }
       }
-
-      coveredAndSelected[0] += coverage;
-      coveredAndSelected[1] = vertex;
-
     }
-    MPI_Bcast(&coveredAndSelected, 2, MPI_UINT32_T, 0, MPI_COMM_WORLD);
+
+    // for (size_t i = 0; i < world_size; ++i) {
+    //   if (mpi_rank == i) {
+    //     for (auto v : reduced_vertex_coverage_) {
+    //       std::cout << "[" << i << "] " << v << std::endl;
+    //     }
+    //   }
+    //   MPI_Barrier(MPI_COMM_WORLD);
+    // }
+
+    coveredAndSelected[0] += coverage;
+    coveredAndSelected[1] = vertex;
+
+    uint32_t result[2];
+    MPI_Allreduce(coveredAndSelected, result, 1, MPI_2INT, MPI_MAXLOC, MPI_COMM_WORLD);
+  // MPI_Bcast(&coveredAndSelected, 2, MPI_UINT32_T, 0, MPI_COMM_WORLD);
+
+    coveredAndSelected[0] = result[0];
+    coveredAndSelected[1] = result[1];
 
     return std::pair<vertex_type, size_t>(coveredAndSelected[1],
                                           coveredAndSelected[0]);
