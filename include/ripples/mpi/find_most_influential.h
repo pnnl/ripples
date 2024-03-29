@@ -169,7 +169,7 @@ class MPIStreamingFindMostInfluential {
     int mpi_rank;
     MPI_Comm_rank(MPI_COMM_WORLD, &mpi_rank);
 
-    MPI_Request request;
+    std::vector<MPI_Request> requests(world_size);
     uint32_t chunk_size = vertex_coverage_.size() / world_size;
     uint32_t last_block_size = chunk_size + vertex_coverage_.size() % world_size;
 
@@ -207,7 +207,7 @@ class MPIStreamingFindMostInfluential {
         MPI_Ireduce(tmp.data() + i * chunk_size,
                     reduced_vertex_coverage_.data() + i * chunk_size,
                     i != (world_size - 1) ? chunk_size : last_block_size,
-                    MPI_UINT32_T, MPI_SUM, i, MPI_COMM_WORLD, &request);
+                    MPI_UINT32_T, MPI_SUM, i, MPI_COMM_WORLD, &requests[i]);
       }
 
     } else
@@ -216,10 +216,11 @@ class MPIStreamingFindMostInfluential {
       for (size_t i = 0; i < world_size; ++i) {
         MPI_Ireduce(src + i * chunk_size, dest + i * chunk_size,
                     i != (world_size - 1) ? chunk_size : last_block_size,
-                    MPI_UINT32_T, MPI_SUM, i, MPI_COMM_WORLD, &request);
+                    MPI_UINT32_T, MPI_SUM, i, MPI_COMM_WORLD, &requests[i]);
       }
     }
-    MPI_Wait(&request, MPI_STATUS_IGNORE);
+    for (auto & request : requests)
+      MPI_Wait(&request, MPI_STATUS_IGNORE);
   }
 
   void UpdateCounters(vertex_type last_seed) {
