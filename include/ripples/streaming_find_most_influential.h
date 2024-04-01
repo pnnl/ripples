@@ -82,6 +82,10 @@ class FindMostInfluentialWorker {
   virtual void set_first_rrr_set(rrr_set_iterator I) = 0;
 
   virtual bool has_work() = 0;
+
+  virtual size_t get_num_rr_sets() = 0;
+
+  virtual size_t get_rr_set_size() = 0;
 };
 
 #if defined(RIPPLES_ENABLE_CUDA) || defined(RIPPLES_ENABLE_HIP)
@@ -266,6 +270,14 @@ class GPUFindMostInfluentialWorker : public FindMostInfluentialWorker<GraphTy> {
                                num_nodes_);
   }
 
+  size_t get_num_rr_sets() {
+    throw std::logic_error("get_num_rr_sets() not implemented for GPU, only for CPU");
+  }
+
+  size_t get_rr_set_size() {
+    throw std::logic_error("get_rr_set_size() not implemented for GPU, only for CPU");
+  }
+
  private:
   typename GPU<RUNTIME>::stream_type stream_;
   size_t device_number_;
@@ -355,6 +367,17 @@ class CPUFindMostInfluentialWorker : public FindMostInfluentialWorker<GraphTy> {
                         sizeof(uint32_t) * global_count_.size());
     }
 #endif
+  }
+
+  size_t get_num_rr_sets() { return std::distance(begin_, end_); }
+
+  size_t get_rr_set_size() {
+    size_t size = 0;
+    #pragma omp parallel for reduction(+ : size) num_threads(num_threads_)
+    for (auto itr = begin_; itr != end_; ++itr){
+      size += itr->size();
+    }
+    return size;
   }
 
  private:
