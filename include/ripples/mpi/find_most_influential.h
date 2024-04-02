@@ -199,6 +199,11 @@ class MPIStreamingFindMostInfluential {
   }
 
   void To1D() {
+    #ifdef PRINTF_TIL_YOU_DROP
+    auto console = spdlog::get("console");
+    console->info("Rank = {}, To1D", mpi_rank);
+    auto timeTo1DStart = std::chrono::high_resolution_clock::now();
+    #endif // PRINTF_TIL_YOU_DROP
     assert(workers_.size() == 1);
     rr_sizes_1d_.resize(workers_[0]->get_num_rr_sets());
     rr_sets_1d_.resize(workers_[0]->get_rr_set_size());
@@ -212,6 +217,12 @@ class MPIStreamingFindMostInfluential {
       running_size += itr->size();
       std::copy(itr->begin(), itr->end(), rr_sets_1d_.begin() + running_size);
     }
+    #ifdef PRINTF_TIL_YOU_DROP
+    auto timeTo1DEnd = std::chrono::high_resolution_clock::now();
+    auto duration_ms = std::chrono::duration_cast<std::chrono::milliseconds>(
+        timeTo1DEnd - timeTo1DStart);
+    console->info("Rank = {}, Finished To1D: {} ms", mpi_rank, duration_ms.count());
+    #endif // PRINTF_TIL_YOU_DROP
   }
 
   void From1D() {
@@ -284,7 +295,7 @@ class MPIStreamingFindMostInfluential {
     }
     MPI_Bcast(&converged, 1, MPI_C_BOOL, 0, MPI_COMM_WORLD);
 
-    int world_size;
+    int world_size = 0;
     MPI_Comm_size(MPI_COMM_WORLD, &world_size);
 
     if(converged) {
@@ -301,10 +312,14 @@ class MPIStreamingFindMostInfluential {
       int int32_num_rr_sets = static_cast<int>(num_rr_sets);
       int int32_rr_set_size = static_cast<int>(rr_set_size);
       #ifdef PRINTF_TIL_YOU_DROP
-      console->info("Rank = {}, Broadcasting RR Set Size: {}", mpi_rank, int32_rr_set_size);
+      console->info("Rank = {}, Broadcasting Num RR Sets: {}", mpi_rank, int32_num_rr_sets);
       #endif // PRINTF_TIL_YOU_DROP
       MPI_Allgather(&int32_num_rr_sets, 1, MPI_INT32_T, rr_sizes_1d_gathered_recv.data(), 1,
               MPI_INT32_T, MPI_COMM_WORLD);
+      #ifdef PRINTF_TIL_YOU_DROP
+      console->info("Rank = {}, RR Set Size Broadcasted", mpi_rank);
+      console->info("Rank = {}, Broadcasting RR Set Size: {}", mpi_rank, int32_rr_set_size);
+      #endif // PRINTF_TIL_YOU_DROP
       MPI_Allgather(&int32_rr_set_size, 1, MPI_INT32_T, rr_sets_1d_gathered_recv.data(), 1,
               MPI_INT32_T, MPI_COMM_WORLD);
       #ifdef PRINTF_TIL_YOU_DROP
@@ -312,8 +327,11 @@ class MPIStreamingFindMostInfluential {
       #endif // PRINTF_TIL_YOU_DROP
       size_t total_rr_sets = std::accumulate(rr_sizes_1d_gathered_recv.begin(),
                                               rr_sizes_1d_gathered_recv.end(), 0);
-      rr_sizes_1d_gathered.resize(total_rr_sets);
-      rr_sets_1d_gathered.resize(total_rr_set_size);
+      if(mpi_rank == 0) {
+        console->info("Total RR Sets: {}", total_rr_sets);
+        rr_sizes_1d_gathered.resize(total_rr_sets);
+        rr_sets_1d_gathered.resize(total_rr_set_size);
+      }
       rr_sizes_1d_gathered_displ.resize(world_size+1);
       rr_sets_1d_gathered_displ.resize(world_size+1);
 
