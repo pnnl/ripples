@@ -214,8 +214,8 @@ class MPIStreamingFindMostInfluential {
     size_t i = 0;
     for (auto itr = begin; itr != end; ++itr, ++i) {
       rr_sizes_1d_[i] = itr->size();
-      running_size += itr->size();
       std::copy(itr->begin(), itr->end(), rr_sets_1d_.begin() + running_size);
+      running_size += itr->size();
     }
     #ifdef PRINTF_TIL_YOU_DROP
     auto timeTo1DEnd = std::chrono::high_resolution_clock::now();
