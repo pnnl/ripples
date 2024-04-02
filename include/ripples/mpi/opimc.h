@@ -118,9 +118,15 @@ std::vector<typename GraphTy::vertex_type> OPIMC(const GraphTy &G,
   MPI_Comm_rank(MPI_COMM_WORLD, &world_rank);
   auto duration_ms = std::chrono::duration_cast<std::chrono::milliseconds>(
       timeGenerateRRRSetEnd - timeGenerateRRRSetStart);
-  console->info("Rank = {}, RRSetsGenerated = {}, Time = {}", world_rank,
-                R1.size() + R2.size(),
-                duration_ms.count());
+  size_t rr_set_size = 0;
+  for (const auto &rr_set : R1) {
+    rr_set_size += rr_set.size();
+  }
+  for (const auto &rr_set : R2) {
+    rr_set_size += rr_set.size();
+  }
+  console->info("Rank = {}, RRSetsGenerated = {}, Time = {}, Total RRSetSize = {}", world_rank,
+                R1.size() + R2.size(), duration_ms.count(), rr_set_size);
   #endif // PRINTF_TIL_YOU_DROP
 
   std::vector<vertex_type> results;
@@ -181,10 +187,17 @@ std::vector<typename GraphTy::vertex_type> OPIMC(const GraphTy &G,
     MPI_Comm_rank(MPI_COMM_WORLD, &world_rank);
     auto duration_ms = std::chrono::duration_cast<std::chrono::milliseconds>(
       timeGenerateRRRSetEnd - timeGenerateRRRSetStart);
+    size_t rr_set_size = 0;
+    for (const auto &rr_set : R1) {
+      rr_set_size += rr_set.size();
+    }
+    for (const auto &rr_set : R2) {
+      rr_set_size += rr_set.size();
+    }
     console->info(
-        "Rank = {}, RRSetsGenerated = {}, Time = {}", world_rank,
+        "Rank = {}, RRSetsGenerated = {}, Time = {}, Total RRSetSize = {}", world_rank,
         std::distance(begin1, R1.end()) + std::distance(begin2, R2.end()),
-        duration_ms.count());
+        duration_ms.count(), rr_set_size);
     #endif  // PRINTF_TIL_YOU_DROP
   }
 

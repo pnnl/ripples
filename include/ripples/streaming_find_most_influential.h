@@ -86,6 +86,10 @@ class FindMostInfluentialWorker {
   virtual size_t get_num_rr_sets() = 0;
 
   virtual size_t get_rr_set_size() = 0;
+
+  virtual rrr_set_iterator get_begin() = 0;
+
+  virtual rrr_set_iterator get_end() = 0;
 };
 
 #if defined(RIPPLES_ENABLE_CUDA) || defined(RIPPLES_ENABLE_HIP)
@@ -278,6 +282,14 @@ class GPUFindMostInfluentialWorker : public FindMostInfluentialWorker<GraphTy> {
     throw std::logic_error("get_rr_set_size() not implemented for GPU, only for CPU");
   }
 
+  rrr_set_iterator get_begin(){
+    throw std::logic_error("get_begin() not implemented for GPU, only for CPU");
+  }
+
+  rrr_set_iterator get_end(){
+    throw std::logic_error("get_end() not implemented for GPU, only for CPU");
+  }
+
  private:
   typename GPU<RUNTIME>::stream_type stream_;
   size_t device_number_;
@@ -327,11 +339,14 @@ class CPUFindMostInfluentialWorker : public FindMostInfluentialWorker<GraphTy> {
   void set_first_rrr_set(rrr_set_iterator I) { begin_ = I; }
 
   void InitialCount() {
+    std::cout << "Initial Count" << std::endl;
     CountOccurrencies(begin_, end_, global_count_.begin(), global_count_.end(),
                       num_threads_);
 
     // We have GPU workers so we won't use the heap.
     if (d_cpu_counters_ != nullptr) return;
+
+    std::cout << "Init Heap" << std::endl;
 
     InitHeapStorage(global_count_.begin(), global_count_.end(),
                     queue_storage_.begin(), queue_storage_.end(), num_threads_);
@@ -379,6 +394,9 @@ class CPUFindMostInfluentialWorker : public FindMostInfluentialWorker<GraphTy> {
     }
     return size;
   }
+
+  rrr_set_iterator get_begin() { return begin_; }
+  rrr_set_iterator get_end() { return end_; }
 
  private:
   std::vector<vertex_type> &global_count_;

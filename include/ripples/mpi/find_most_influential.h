@@ -53,6 +53,39 @@
 #endif
 #include "spdlog/spdlog.h"
 
+#define PRINTF_TIL_YOU_DROP
+
+#ifdef _WIN32
+#include <windows.h>
+
+// Function to get memory information on Windows
+size_t GetAvailableMemory() {
+  MEMORYSTATUSEX memoryStatus;
+  memoryStatus.dwSize = sizeof(MEMORYSTATUSEX);
+  if (!GlobalMemoryStatusEx(&memoryStatus)) {
+    std::cerr << "Error: Failed to get memory status." << std::endl;
+    exit(1);
+  }
+  return memoryStatus.ullAvailPhys;
+}
+
+#elif __linux__
+#include <sys/sysinfo.h>
+
+// Function to get memory information on Linux
+size_t GetAvailableMemory() {
+  struct sysinfo info;
+  if (sysinfo(&info) == -1) {
+    std::cerr << "Error: Failed to get memory status." << std::endl;
+    exit(1);
+  }
+  return info.freeram;
+}
+
+#else
+#error "Unsupported platform"
+#endif
+
 namespace ripples {
 
 template <typename GraphTy>
@@ -156,11 +189,200 @@ class MPIStreamingFindMostInfluential {
 #pragma omp parallel num_threads(num_gpu_workers_ + 1)
     {
       size_t rank = omp_get_thread_num();
+      #ifdef PRINTF_TIL_YOU_DROP
+      auto console = spdlog::get("console");
+      console->info("Rank = {}, InitialCount {}", mpi_rank, rank);
+      auto timeInitialCountStart = std::chrono::high_resolution_clock::now();
+      #endif // PRINTF_TIL_YOU_DROP
       workers_[rank]->InitialCount();
     }
   }
 
+  void To1D() {
+    assert(workers_.size() == 1);
+    rr_sizes_1d_.resize(workers_[0]->get_num_rr_sets());
+    rr_sets_1d_.resize(workers_[0]->get_rr_set_size());
+
+    auto begin = workers_[0]->get_begin();
+    auto end = workers_[0]->get_end();
+    size_t running_size = 0;
+    size_t i = 0;
+    for (auto itr = begin; itr != end; ++itr, ++i) {
+      rr_sizes_1d_[i] = itr->size();
+      running_size += itr->size();
+      std::copy(itr->begin(), itr->end(), rr_sets_1d_.begin() + running_size);
+    }
+  }
+
+  void From1D() {
+    assert(workers_.size() == 1);
+    #ifdef PRINTF_TIL_YOU_DROP
+    auto console = spdlog::get("console");
+    console->info("Rank = {}, From1D", mpi_rank);
+    auto timeFrom1DStart = std::chrono::high_resolution_clock::now();
+    #endif // PRINTF_TIL_YOU_DROP
+    RRRsets_gathered_.resize(rr_sizes_1d_.size());
+    // Prefix sum to get the offsets
+    std::vector<size_t> rr_sizes_1d_prefix_sum(rr_sizes_1d_.size() + 1);
+    rr_sizes_1d_prefix_sum[0] = 0;
+    #ifdef PRINTF_TIL_YOU_DROP
+    console->info("Rank = {}, Prefix Sum {} offsets", mpi_rank, rr_sizes_1d_.size());
+    #endif // PRINTF_TIL_YOU_DROP
+    std::partial_sum(rr_sizes_1d_.begin(), rr_sizes_1d_.end(),
+                     rr_sizes_1d_prefix_sum.begin() + 1);
+    #pragma omp parallel for
+    for (size_t i = 0; i < rr_sizes_1d_.size(); ++i) {
+      RRRsets_gathered_[i].resize(rr_sizes_1d_[i]);
+      std::copy(rr_sets_1d_.begin() + rr_sizes_1d_prefix_sum[i],
+                rr_sets_1d_.begin() + rr_sizes_1d_prefix_sum[i + 1],
+                RRRsets_gathered_[i].begin());
+    }
+    #ifdef PRINTF_TIL_YOU_DROP
+    // Sanity check on the gathered RRR sets
+    size_t rr_set_size = 0;
+    size_t num_rr_sets = RRRsets_gathered_.size();
+    for (size_t i = 0; i < RRRsets_gathered_.size(); ++i) {
+      rr_set_size += RRRsets_gathered_[i].size();
+    }
+    console->info("Rank = {}, Sanity Aggregated RR Set Size: {}, Num RR Sets: {}", mpi_rank, rr_set_size, num_rr_sets);
+    #endif
+  }
+
+  void ConvergenceCheck() {
+    assert(workers_.size() == 1);
+    auto console = spdlog::get("console");
+    #ifdef PRINTF_TIL_YOU_DROP
+    console->info("Rank = {}, Checking Convergence", mpi_rank);
+    auto timeConvergenceCheckStart = std::chrono::high_resolution_clock::now();
+    #endif // PRINTF_TIL_YOU_DROP
+    // Gather total size of all RR sets across ranks, send to rank 0
+    constexpr int max_int32 = std::numeric_limits<int32_t>::max();
+    size_t rr_set_size = workers_[0]->get_rr_set_size();
+    size_t total_rr_set_size;
+    size_t num_rr_sets = workers_[0]->get_num_rr_sets();
+    MPI_Reduce(&rr_set_size, &total_rr_set_size, 1, MPI_UINT64_T,
+               MPI_SUM, 0, MPI_COMM_WORLD);
+    bool converged = false;
+    if (mpi_rank == 0) {
+      // Get available free memory on the host
+      size_t free_memory = GetAvailableMemory();
+      if (total_rr_set_size < max_int32) {
+        if (total_rr_set_size * sizeof(vertex_type) < free_memory / 4) {
+          converged = true;
+          console->info("Converged: {} < {}",
+                        total_rr_set_size * sizeof(vertex_type),
+                        free_memory / 4);
+        } else {
+          console->info("Not Converged: {} >= {}",
+                        total_rr_set_size * sizeof(vertex_type),
+                        free_memory / 4);
+        }
+      } else {
+        console->info("Not Converged (maxint32): {} >= {}", total_rr_set_size,
+                      max_int32);
+      }
+    }
+    MPI_Bcast(&converged, 1, MPI_C_BOOL, 0, MPI_COMM_WORLD);
+
+    int world_size;
+    MPI_Comm_size(MPI_COMM_WORLD, &world_size);
+
+    if(converged) {
+      To1D();
+      // Allocate enough memory on rank 0 to receive all RR offsets
+      std::vector<size_t> rr_sizes_1d_gathered;
+      std::vector<int> rr_sizes_1d_gathered_recv;
+      std::vector<int> rr_sizes_1d_gathered_displ;
+      std::vector<vertex_type> rr_sets_1d_gathered;
+      std::vector<int> rr_sets_1d_gathered_recv;
+      std::vector<int> rr_sets_1d_gathered_displ;
+      rr_sizes_1d_gathered_recv.resize(world_size);
+      rr_sets_1d_gathered_recv.resize(world_size);
+      int int32_num_rr_sets = static_cast<int>(num_rr_sets);
+      int int32_rr_set_size = static_cast<int>(rr_set_size);
+      #ifdef PRINTF_TIL_YOU_DROP
+      console->info("Rank = {}, Broadcasting RR Set Size: {}", mpi_rank, int32_rr_set_size);
+      #endif // PRINTF_TIL_YOU_DROP
+      MPI_Allgather(&int32_num_rr_sets, 1, MPI_INT32_T, rr_sizes_1d_gathered_recv.data(), 1,
+              MPI_INT32_T, MPI_COMM_WORLD);
+      MPI_Allgather(&int32_rr_set_size, 1, MPI_INT32_T, rr_sets_1d_gathered_recv.data(), 1,
+              MPI_INT32_T, MPI_COMM_WORLD);
+      #ifdef PRINTF_TIL_YOU_DROP
+      console->info("Rank = {}, RR Set Size Broadcasted", mpi_rank);
+      #endif // PRINTF_TIL_YOU_DROP
+      size_t total_rr_sets = std::accumulate(rr_sizes_1d_gathered_recv.begin(),
+                                              rr_sizes_1d_gathered_recv.end(), 0);
+      rr_sizes_1d_gathered.resize(total_rr_sets);
+      rr_sets_1d_gathered.resize(total_rr_set_size);
+      rr_sizes_1d_gathered_displ.resize(world_size+1);
+      rr_sets_1d_gathered_displ.resize(world_size+1);
+
+      rr_sizes_1d_gathered_displ[0] = 0;
+      std::partial_sum(rr_sizes_1d_gathered_recv.begin(),
+                        rr_sizes_1d_gathered_recv.end(),
+                        rr_sizes_1d_gathered_displ.begin()+1);
+
+      rr_sets_1d_gathered_displ[0] = 0;
+      std::partial_sum(rr_sets_1d_gathered_recv.begin(),
+                        rr_sets_1d_gathered_recv.end(),
+                        rr_sets_1d_gathered_displ.begin()+1);
+      #ifdef PRINTF_TIL_YOU_DROP
+      console->info("Rank = {}, RR Set Size Displacement Calculated", mpi_rank);
+      for (int i = 0; i < world_size; ++i) {
+        console->info("Rank = {}, Index = {}, RR Set Size Recv: {}", mpi_rank, i, rr_sets_1d_gathered_recv[i]);
+        console->info("Rank = {}, Index = {}, RR Set Size Dipl: {}", mpi_rank, i, rr_sets_1d_gathered_displ[i]);
+        console->info("Rank = {}, Index = {}, RR Sizes Recv: {}", mpi_rank, i, rr_sizes_1d_gathered_recv[i]);
+        console->info("Rank = {}, Index = {}, RR Sizes Displ: {}", mpi_rank, i, rr_sizes_1d_gathered_displ[i]);
+      }
+      #endif // PRINTF_TIL_YOU_DROP
+      // Gather all RR sets on rank 0
+      MPI_Gatherv(rr_sizes_1d_.data(), static_cast<int>(rr_sizes_1d_.size()), MPI_UINT64_T,
+                  rr_sizes_1d_gathered.data(), rr_sizes_1d_gathered_recv.data(),
+                  rr_sizes_1d_gathered_displ.data(), MPI_UINT64_T, 0, MPI_COMM_WORLD);
+      
+      MPI_Gatherv(rr_sets_1d_.data(), static_cast<int>(rr_sets_1d_.size()), MPI_UINT32_T,
+                  rr_sets_1d_gathered.data(), rr_sets_1d_gathered_recv.data(),
+                  rr_sets_1d_gathered_displ.data(), MPI_UINT32_T, 0, MPI_COMM_WORLD);
+      #ifdef PRINTF_TIL_YOU_DROP
+      console->info("Rank = {}, RR Sets Gathered", mpi_rank);
+      #endif // PRINTF_TIL_YOU_DROP
+      if (mpi_rank == 0) {
+        #ifdef PRINTF_TIL_YOU_DROP
+        console->info("Rank = {}, From1D", mpi_rank);
+        #endif // PRINTF_TIL_YOU_DROP
+        rr_sets_1d_ = std::move(rr_sets_1d_gathered);
+        rr_sizes_1d_ = std::move(rr_sizes_1d_gathered);
+        From1D();
+        #ifdef PRINTF_TIL_YOU_DROP
+        console->info("Rank = {}, From1D Done", mpi_rank);
+        #endif // PRINTF_TIL_YOU_DROP
+        // Fill vertex_coverage_ to 0 in parallel
+        std::fill(vertex_coverage_.begin(), vertex_coverage_.end(), 0);
+        workers_[0] = new CPUFindMostInfluentialWorker<GraphTy>(
+            vertex_coverage_, queue_storage_, RRRsets_gathered_.begin(),
+            RRRsets_gathered_.end(), num_cpu_workers_, d_cpu_counters_);
+        #ifdef PRINTF_TIL_YOU_DROP
+        console->info("Rank = {}, Re-Initial Count", mpi_rank);
+        #endif // PRINTF_TIL_YOU_DROP
+        CountOccurrencies(RRRsets_gathered_.begin(), RRRsets_gathered_.end(),
+                            vertex_coverage_.begin(), vertex_coverage_.end(),
+                            num_cpu_workers_);
+        #ifdef PRINTF_TIL_YOU_DROP
+        console->info("Rank = {}, Re-Initial Count Done", mpi_rank);
+        #endif // PRINTF_TIL_YOU_DROP
+      }
+    }
+    #ifdef PRINTF_TIL_YOU_DROP
+    auto timeConvergenceCheckEnd = std::chrono::high_resolution_clock::now();
+    auto duration_ms = std::chrono::duration_cast<std::chrono::milliseconds>(
+        timeConvergenceCheckEnd - timeConvergenceCheckStart);
+    console->info("Rank = {}, Finished Convergence Check: {} ms", mpi_rank, duration_ms.count());
+    #endif // PRINTF_TIL_YOU_DROP
+    mpi_converged_ = converged;
+  }
+
   void ReduceCounters() {
+    if(mpi_converged_) return;
     uint32_t *dest = reduced_vertex_coverage_.data();
     uint32_t *src = vertex_coverage_.data();
 
@@ -237,7 +459,50 @@ class MPIStreamingFindMostInfluential {
   }
 
   std::pair<vertex_type, size_t> getNextSeed(priorityQueue &queue_) {
+    if (mpi_converged_) {
+#if defined(RIPPLES_ENABLE_CUDA) || defined(RIPPLES_ENABLE_HIP)
+      if (num_gpu_workers_ != 0) {
+        ReduceCounters();
+
+        uint32_t *global_counter = d_counters_[0];
+        if (workers_[0]->has_work()) global_counter = d_cpu_counters_;
+
+        GPU<RUNTIME>::set_device(0);
+        auto result = GPUMaxElement(global_counter, vertex_coverage_.size());
+        return result;
+      }
+#endif
+
+      while (!queue_.empty()) {
+        auto element = queue_.top();
+        queue_.pop();
+
+        if (element.second > vertex_coverage_[element.first]) {
+          element.second = vertex_coverage_[element.first];
+          queue_.push(element);
+          continue;
+        }
+        coveredAndSelected[0] += element.second;
+        coveredAndSelected[1] = element.first;
+        return element;
+      }
+      throw std::logic_error("Reached a mighty Unreachable State");
+    }
+#ifdef PRINTF_TIL_YOU_DROP
+    auto console = spdlog::get("console");
+    int world_rank;
+    MPI_Comm_rank(MPI_COMM_WORLD, &world_rank);
+    console->info("Rank = {}, Reducing Counters", world_rank);
+    auto timeReduceCountersStart = std::chrono::high_resolution_clock::now();
+    #endif // PRINTF_TIL_YOU_DROP
     ReduceCounters();
+    #ifdef PRINTF_TIL_YOU_DROP
+    auto timeReduceCountersEnd = std::chrono::high_resolution_clock::now();
+    auto duration_ms = std::chrono::duration_cast<std::chrono::milliseconds>(
+        timeReduceCountersEnd - timeReduceCountersStart);
+    console->info("Rank = {}, Reduced Counters: {} ms", world_rank, duration_ms.count());
+    auto timeFindMaxStart = std::chrono::high_resolution_clock::now();
+    #endif // PRINTF_TIL_YOU_DROP
 
     int world_size;
     MPI_Comm_size(MPI_COMM_WORLD, &world_size);
@@ -285,9 +550,30 @@ class MPIStreamingFindMostInfluential {
     coveredAndSelected[0] += coverage;
     coveredAndSelected[1] = vertex;
 
+    #ifdef PRINTF_TIL_YOU_DROP
+    auto timeFindMaxEnd = std::chrono::high_resolution_clock::now();
+    duration_ms = std::chrono::duration_cast<std::chrono::milliseconds>(
+        timeFindMaxEnd - timeFindMaxStart);
+    std::string duration_str;
+    if (duration_ms.count() == 0){
+      duration_str = std::to_string(std::chrono::duration_cast<std::chrono::microseconds>(
+          timeFindMaxEnd - timeFindMaxStart).count()) + " us";
+    } else {
+      duration_str = std::to_string(duration_ms.count()) + " ms";
+    }
+    console->info("Rank = {}, Found Local Max: {}", world_rank, duration_str);
+    auto timeMPIAllReduceStart = std::chrono::high_resolution_clock::now();
+    #endif // PRINTF_TIL_YOU_DROP
     uint32_t result[2];
     MPI_Allreduce(coveredAndSelected, result, 1, MPI_2INT, MPI_MAXLOC, MPI_COMM_WORLD);
-  // MPI_Bcast(&coveredAndSelected, 2, MPI_UINT32_T, 0, MPI_COMM_WORLD);
+    // MPI_Bcast(&coveredAndSelected, 2, MPI_UINT32_T, 0, MPI_COMM_WORLD);
+
+    #ifdef PRINTF_TIL_YOU_DROP
+    auto timeMPIAllReduceEnd = std::chrono::high_resolution_clock::now();
+    duration_ms = std::chrono::duration_cast<std::chrono::milliseconds>(
+        timeMPIAllReduceEnd - timeMPIAllReduceStart);
+    console->info("Rank = {}, MPI Allreduce End: {} ms", world_rank, duration_ms.count());
+    #endif // PRINTF_TIL_YOU_DROP
 
     coveredAndSelected[0] = result[0];
     coveredAndSelected[1] = result[1];
@@ -334,8 +620,24 @@ class MPIStreamingFindMostInfluential {
 
     LoadDataToDevice();
 
+    #ifdef PRINTF_TIL_YOU_DROP
+    auto console = spdlog::get("console");
+    int world_rank;
+    MPI_Comm_rank(MPI_COMM_WORLD, &world_rank);
+    console->info("Rank = {}, Entering InitialCount", world_rank);
+    auto timeInitialCountStart = std::chrono::high_resolution_clock::now();
+    #endif // PRINTF_TIL_YOU_DROP
+
     InitialCount();
     // std::cout << "Initial Count Done" << std::endl;
+
+    #ifdef PRINTF_TIL_YOU_DROP
+    auto timeInitialCountEnd = std::chrono::high_resolution_clock::now();
+    auto duration_ms = std::chrono::duration_cast<std::chrono::milliseconds>(
+        timeInitialCountEnd - timeInitialCountStart);
+    console->info("Rank = {}, Finished InitialCount: {} ms. Entering while loop!", world_rank,
+                  duration_ms.count());
+    #endif // PRINTF_TIL_YOU_DROP
 
     auto queue = getHeap();
     std::vector<vertex_type> result;
@@ -344,9 +646,19 @@ class MPIStreamingFindMostInfluential {
     std::chrono::duration<double, std::milli> seedSelection(0);
     while (true) {
       //      std::cout << "Get Seed" << std::endl;
+      #ifdef PRINTF_TIL_YOU_DROP
+      console->info("Rank = {}, Getting {}th Seed", world_rank, result.size());
+      #endif // PRINTF_TIL_YOU_DROP
       auto start = std::chrono::high_resolution_clock::now();
       auto element = getNextSeed(queue);
       auto end = std::chrono::high_resolution_clock::now();
+
+      #ifdef PRINTF_TIL_YOU_DROP
+      auto duration_ms = std::chrono::duration_cast<std::chrono::milliseconds>(
+          end - start);
+      console->info("Rank = {}, Got {}th Seed: {} ms, SeedId = {}", world_rank,
+                    result.size(), duration_ms.count(), element.first);
+#endif // PRINTF_TIL_YOU_DROP
 
       seedSelection += end - start;
 
@@ -356,9 +668,42 @@ class MPIStreamingFindMostInfluential {
 
       // std::cout << "Update counters" << std::endl;
       // std::cout << *std::max_element(vertex_coverage_.begin(), vertex_coverage_.end()) << std::endl;
+      #ifdef PRINTF_TIL_YOU_DROP
+      console->info("Rank = {}, Updating Counters", world_rank);
+      auto timeUpdateCountersStart = std::chrono::high_resolution_clock::now();
+      #endif // PRINTF_TIL_YOU_DROP
       UpdateCounters(element.first);
+      #ifdef PRINTF_TIL_YOU_DROP
+      auto timeUpdateCountersEnd = std::chrono::high_resolution_clock::now();
+      duration_ms = std::chrono::duration_cast<std::chrono::milliseconds>(
+          timeUpdateCountersEnd - timeUpdateCountersStart);
+      std::string duration_time;
+      if (duration_ms.count() == 0){
+        duration_time = std::to_string(std::chrono::duration_cast<std::chrono::microseconds>(
+            timeUpdateCountersEnd - timeUpdateCountersStart).count()) + " us";
+      } else {
+        duration_time = std::to_string(duration_ms.count()) + " ms";
+      }
+      console->info(
+          "Rank = {}, Current Seed = {}, Updated Counters: {} RR Sets Remaning: {} Local RR "
+          "Set Size {}",
+          world_rank, result.size(), duration_time, workers_[0]->get_num_rr_sets(),
+          workers_[0]->get_rr_set_size());
+#endif // PRINTF_TIL_YOU_DROP
+      if(!mpi_converged_){
+        ConvergenceCheck();
+      }
+      if (mpi_converged_ && mpi_rank != 0) break;
       // std::cout << "Done update counters" << std::endl;
       // std::cout << *std::max_element(vertex_coverage_.begin(), vertex_coverage_.end()) << std::endl;
+    }
+
+    if(mpi_converged_) {
+      // Broadcast from rank 0 coveredAndSelected
+      MPI_Bcast(coveredAndSelected, 2, MPI_UINT32_T, 0, MPI_COMM_WORLD);
+      // Broadcast result from rank 0
+      result.resize(k);
+      MPI_Bcast(result.data(), k, MPI_UINT32_T, 0, MPI_COMM_WORLD);
     }
 
     int world_size = 0;
@@ -389,6 +734,10 @@ class MPIStreamingFindMostInfluential {
   std::vector<uint32_t> vertex_coverage_;
   std::vector<uint32_t> reduced_vertex_coverage_;
   std::vector<std::pair<vertex_type, size_t>> queue_storage_;
+  std::vector<size_t> rr_sizes_1d_;
+  std::vector<vertex_type> rr_sets_1d_;
+  RRRsets<GraphTy> RRRsets_gathered_;
+  bool mpi_converged_ = false;
   int mpi_rank;
   uint32_t coveredAndSelected[2] = {0, 0};
 };
