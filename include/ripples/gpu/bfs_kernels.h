@@ -58,13 +58,13 @@ template <typename result_t>
 class uniform_int_chop_gpu {
  public:
   // __device__ explicit uniform_int_chop_gpu() = default;
-  template <typename PRNGeneratorTy>
-  __device__ result_t operator()(PRNGeneratorTy &generator){
-    static_assert(sizeof(typename PRNGeneratorTy::result_type) >= sizeof(result_t),
-                  "PRNGeneratorTy::result_type is too small, must be larger than"
+  template <typename gpu_PRNGeneratorTy>
+  __device__ result_t operator()(gpu_PRNGeneratorTy &generator){
+    static_assert(sizeof(typename gpu_PRNGeneratorTy::result_type) >= sizeof(result_t),
+                  "gpu_PRNGeneratorTy::result_type is too small, must be larger than"
                   " the result type.");
     constexpr size_t num_bits = sizeof(result_t) * 8;
-    constexpr size_t num_gen_bits = sizeof(typename PRNGeneratorTy::result_type) * 8;
+    constexpr size_t num_gen_bits = sizeof(typename gpu_PRNGeneratorTy::result_type) * 8;
     constexpr size_t num_leftover = num_gen_bits - num_bits;
     return static_cast<result_t>(generator() >> num_leftover);
   }
@@ -299,7 +299,8 @@ __global__ void color_set_scatter_kernel(
   }
 }
 
-template <GPURuntime R, typename GraphTy, typename ColorTy, size_t NumBlocks>
+template <GPURuntime R, typename GraphTy, typename ColorTy,
+          size_t NumBlocks>
 __global__ void sim_step_thread_kernel(
     const typename GraphTy::vertex_type *__restrict__ vertex_ptr,
     const ColorTy *__restrict__ color_ptr,
@@ -353,7 +354,8 @@ __global__ void sim_step_thread_kernel(
   }
 }
 
-template <GPURuntime R, typename GraphTy, typename ColorTy, size_t NumBlocks>
+template <GPURuntime R, typename GraphTy, typename ColorTy,
+          size_t NumBlocks>
 __global__ void sim_step_block_kernel(
     const typename GraphTy::vertex_type *__restrict__ vertex_ptr,
     const ColorTy *__restrict__ color_ptr,
@@ -413,13 +415,15 @@ __global__ void sim_step_block_kernel(
   }
 }
 
-template <GPURuntime R, typename GraphTy, typename ColorTy>
+template <GPURuntime R, typename GraphTy, typename ColorTy,
+          typename gpu_PRNGeneratorTy>
 __global__ void fused_color_thread_scatter_kernel(
     const typename GraphTy::index_type *__restrict__ index,
     const typename GraphTy::vertex_type *__restrict__ edges,
     const typename GraphTy::weight_type *__restrict__ weights,
     const typename GraphTy::vertex_type *__restrict__ vertex,
     const ColorTy *__restrict__ colors, ColorTy *__restrict__ frontier_matrix,
+    gpu_PRNGeneratorTy *__restrict__ d_trng_states,
     const size_t num_nodes, const size_t color_dim) {
   using vertex_type = typename GraphTy::vertex_type;
   using index_type = typename GraphTy::index_type;
@@ -431,9 +435,7 @@ __global__ void fused_color_thread_scatter_kernel(
   const int tid = threadIdx.x;
   const int bid = blockIdx.x;
   const int global_id = tid + bid * blockDim.x;
-  uint64_t seed = clock64() + global_id;
   // uint64_t seed = 0xFFFFFFFFFFFFFFFF;
-  thrust::minstd_rand generator(seed * seed + 19283);
   dist_t value;
   // Figure out which color set we are working on
   const int input_id =
@@ -441,6 +443,7 @@ __global__ void fused_color_thread_scatter_kernel(
   const int color_set_id =
       global_id % color_dim;  // 0, 1, 2, 3, ..., 0, 1, 2, 3, ...
   if (input_id < num_nodes) {
+    auto generator(d_trng_states[global_id]);
     vertex_type vertex_id = vertex[input_id];
     const color_type full_colors = colors[global_id];
     index_type start_edge = index[vertex_id];
@@ -465,16 +468,19 @@ __global__ void fused_color_thread_scatter_kernel(
         atomicOr(frontier_addr, color_mask);
       }
     }
+    d_trng_states[global_id] = generator;
   }
 }
 
-template <GPURuntime R, typename GraphTy, typename ColorTy>
+template <GPURuntime R, typename GraphTy, typename ColorTy,
+          typename gpu_PRNGeneratorTy>
 __global__ void fused_color_set_scatter_kernel(
     const typename GraphTy::index_type *__restrict__ index,
     const typename GraphTy::vertex_type *__restrict__ edges,
     const typename GraphTy::weight_type *__restrict__ weights,
     const typename GraphTy::vertex_type *__restrict__ vertex,
     const ColorTy *__restrict__ colors, ColorTy *__restrict__ frontier_matrix,
+    gpu_PRNGeneratorTy *__restrict__ d_trng_states,
     const size_t num_nodes, const size_t color_dim) {
   using vertex_type = typename GraphTy::vertex_type;
   using index_type = typename GraphTy::index_type;
@@ -485,15 +491,14 @@ __global__ void fused_color_set_scatter_kernel(
   const int tid = threadIdx.x;
   const int bid = blockIdx.x;
   const int global_id = tid + bid * blockDim.x;
-  uint64_t seed = clock64() + global_id;
   // uint64_t seed = 0xFFFFFFFFFFFFFFFF;
-  thrust::minstd_rand generator(seed * seed + 19283);
   dist_t value;
   // Figure out which color set we are working on
   const int color_id = tid % color_dim;   // 0, 1, 2, 3, ..., 0, 1, 2, 3, ...
   const int color_set = tid / color_dim;  // 0, 0, 0, 0, ..., 1, 1, 1, 1, ...
   const int edges_per_block = blockDim.x / color_dim;
   if (bid < num_nodes) {
+    auto generator(d_trng_states[global_id]);
     vertex_type vertex_id = vertex[bid];
     color_type full_colors = colors[bid * color_dim + color_id];
     index_type start_edge = index[vertex_id];
@@ -519,6 +524,7 @@ __global__ void fused_color_set_scatter_kernel(
         atomicOr(frontier_addr, color_mask);
       }
     }
+    d_trng_states[global_id] = generator;
   }
 }
 

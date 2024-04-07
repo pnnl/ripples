@@ -84,7 +84,8 @@ void gpu_lt_rng_setup(gpu_PRNGeneratorTy *d_trng_state,
 
 void gpu_ic_rng_setup(gpu_PRNGeneratorTy *d_trng_state,
                       const gpu_PRNGeneratorTy &r, size_t num_seqs,
-                      size_t first_seq, size_t n_blocks, size_t block_size);
+                      size_t first_seq, size_t n_blocks, size_t block_size, 
+                      size_t chunk_size);
 
 template <GPURuntime R, typename GraphTy, typename gpu_PRNGeneratorTy>
 extern void gpu_lt_kernel(size_t n_blocks, size_t block_size, size_t batch_size,

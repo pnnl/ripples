@@ -55,7 +55,7 @@ class RipplesConan(ConanFile):
         self.requires('nlohmann_json/3.9.1')
         self.requires('catch2/2.13.10')
         self.requires('cli11/2.1.1')
-        self.requires('libtrng/4.23.1')
+        self.requires('libtrng/4.25')
         if self.options.gperftools:
             self.requires('gperftools/2.15')
         if self.options.enable_benchmarks:

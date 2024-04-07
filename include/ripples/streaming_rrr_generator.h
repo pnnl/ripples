@@ -572,7 +572,7 @@ class GPUWalkWorker<GraphTy, PRNGeneratorTy, ItrTy, independent_cascade_tag>
     config_t(size_t) {}
 
     // This should be unused here.
-    size_t num_gpu_threads() const { return 1 << 15; }
+    size_t num_gpu_threads() const { throw std::runtime_error("This shouldn't be used."); return 1 << 15;}
   };
   GPUWalkWorker(const config_t &conf, const GraphTy &G,
                 const PRNGeneratorTy &rng,
@@ -584,6 +584,10 @@ class GPUWalkWorker<GraphTy, PRNGeneratorTy, ItrTy, independent_cascade_tag>
         gpu_ctx_(ctx),
         batch_size_(gpu_batch_size),
         pause_threshold_(pause_threshold) {
+  // allocate device-size RNGs
+  GPU<RUNTIME>::device_malloc(
+      (void **)&d_trng_state_,
+      G.num_nodes() * sizeof(PRNGeneratorTy));
 #ifdef HIERARCHICAL
     GPUCalculateDegrees(this->G_, *gpu_ctx_, ripples::independent_cascade_tag{},
                         small_frontier_max, medium_frontier_max,
@@ -677,7 +681,14 @@ class GPUWalkWorker<GraphTy, PRNGeneratorTy, ItrTy, independent_cascade_tag>
   }
 
   void rng_setup(const PRNGeneratorTy &master_rng, size_t num_seqs,
-                 size_t first_seq) {}
+                 size_t first_seq) {
+    GPU<RUNTIME>::set_device(gpu_ctx_->gpu_id);
+    size_t block_size = 256;
+    size_t num_blocks = (this->G_.num_nodes() + block_size - 1) / block_size;
+    size_t chunk_size = this->G_.num_nodes();
+    gpu_ic_rng_setup(d_trng_state_, master_rng, num_seqs, first_seq,
+                     num_blocks, block_size, chunk_size);
+  }
 
   size_t batch_size() const { return batch_size_; }
 
@@ -699,8 +710,8 @@ class GPUWalkWorker<GraphTy, PRNGeneratorTy, ItrTy, independent_cascade_tag>
       bool reset = remaining == 0;
       remaining = GPUBatchedBFSMultiColorFusedReload(
           this->G_, *gpu_ctx_, first, last, out_begin,
-          ripples::independent_cascade_tag{}, bfs_ctx_, threshold, batch_size,
-          reset);
+          d_trng_state_, ripples::independent_cascade_tag{}, bfs_ctx_, threshold,
+          batch_size, reset);
       i += batch_size - remaining;
     }
 #else  // !PAUSE_AND_RESUME
@@ -713,13 +724,13 @@ class GPUWalkWorker<GraphTy, PRNGeneratorTy, ItrTy, independent_cascade_tag>
         last = root_nodes_begin + worksize;
       auto out_begin = std::min(begin + i, begin + worksize);
 #ifdef FUSED_COLOR_SET
-      GPUBatchedBFSMultiColorFused(this->G_, *gpu_ctx_, first, last, out_begin,
-                                   ripples::independent_cascade_tag{},
-                                   bfs_ctx_);
+      GPUBatchedBFSMultiColorFused(
+          this->G_, *gpu_ctx_, first, last, out_begin,
+          d_trng_state_, ripples::independent_cascade_tag{}, bfs_ctx_);
 #else
       GPUBatchedTieredQueueBFS(this->G_, *gpu_ctx_, first, last, out_begin,
-                               ripples::independent_cascade_tag{}, bfs_ctx_,
-                               NumColors);
+                               d_trng_state_, ripples::independent_cascade_tag{},
+                               bfs_ctx_, NumColors);
 #endif
     }
 #endif  // !PAUSE_AND_RESUME
@@ -728,6 +739,7 @@ class GPUWalkWorker<GraphTy, PRNGeneratorTy, ItrTy, independent_cascade_tag>
  private:
   size_t batch_size_;
   PRNGeneratorTy rng_;
+  PRNGeneratorTy *d_trng_state_;
   trng::uniform_int_dist u_;
   std::shared_ptr<gpu_ctx<RUNTIME, GraphTy>> gpu_ctx_;
 #ifdef HIERARCHICAL
@@ -756,20 +768,20 @@ class GPUWalkWorker<GraphTy, PRNGeneratorTy, ItrTy, independent_cascade_tag>
     auto roots_end = root_nodes_first + size;
 #ifdef PROFILE_OVERHEAD
     return GPUBatchedBFSMultiColorFusedReload(
-        this->G_, *gpu_ctx_, roots_begin, roots_end, first,
+        this->G_, *gpu_ctx_, roots_begin, roots_end, first, d_trng_state_, 
         ripples::independent_cascade_tag{}, bfs_ctx_, threshold, batch_size,
         reset);
 #else   // !PROFILE_OVERHEAD
     if ((threshold == 1.0) && (reset == true)) {
       // std::cout << "Running non-reload version" << std::endl;
       GPUBatchedBFSMultiColorFused(this->G_, *gpu_ctx_, roots_begin, roots_end,
-                                   first, ripples::independent_cascade_tag{},
+                                   first, d_trng_state_, ripples::independent_cascade_tag{},
                                    bfs_ctx_);
       return 0;
     } else {
       // std::cout << "Running reload version" << std::endl;
       return GPUBatchedBFSMultiColorFusedReload(
-          this->G_, *gpu_ctx_, roots_begin, roots_end, first,
+          this->G_, *gpu_ctx_, roots_begin, roots_end, first, d_trng_state_, 
           ripples::independent_cascade_tag{}, bfs_ctx_, threshold, batch_size,
           reset);
     }
@@ -798,10 +810,10 @@ class GPUWalkWorker<GraphTy, PRNGeneratorTy, ItrTy, independent_cascade_tag>
 
 #if defined(FUSED_COLOR_SET)
   GPUBatchedBFSMultiColorFused(this->G_, *gpu_ctx_, roots_begin, roots_end,
-                               first, ripples::independent_cascade_tag{},
+                               first, d_trng_state_, ripples::independent_cascade_tag{},
                                bfs_ctx_);
 #elif defined(HIERARCHICAL)
-    GPUBatchedTieredQueueBFS(this->G_, *gpu_ctx_, roots_begin, roots_end, first,
+    GPUBatchedTieredQueueBFS(this->G_, *gpu_ctx_, roots_begin, roots_end, first, d_trng_state_,
                              ripples::independent_cascade_tag{}, bfs_ctx_,
                              NumColors);
 #elif defined(EXPERIMENTAL_SCAN_BFS)
@@ -857,7 +869,11 @@ class StreamingRRRGenerator {
     }
 
     typename gpu_worker_t::config_t gpu_conf(num_gpu_workers_);
-    auto num_gpu_threads_per_worker = gpu_conf.num_gpu_threads();
+    size_t num_gpu_threads_per_worker = std::is_same<diff_model_tag,
+                                                     independent_cascade_tag>::value
+                                           ? G.num_nodes()
+                                           : gpu_conf.num_gpu_threads();
+    // auto num_gpu_threads_per_worker = gpu_conf.num_gpu_threads();
     auto num_rng_sequences =
         num_cpu_workers_ * cpu_batch_size_ +
         num_gpu_workers_ * (num_gpu_threads_per_worker + 1);

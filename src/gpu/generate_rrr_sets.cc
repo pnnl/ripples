@@ -60,10 +60,12 @@ __global__ void kernel_lt_trng_setup(gpu_PRNGeneratorTy *d_trng_states,
 
 __global__ void kernel_ic_trng_setup(gpu_PRNGeneratorTy *d_trng_states,
                                      gpu_PRNGeneratorTy r, size_t num_seqs,
-                                     size_t first_seq) {
+                                     size_t first_seq, size_t chunk_size) {
   int tid = blockIdx.x * blockDim.x + threadIdx.x;
-  d_trng_states[tid] = r;
-  d_trng_states[tid].split(num_seqs, first_seq + tid);
+  if(tid < chunk_size) {
+    d_trng_states[tid] = r;
+    d_trng_states[tid].split(num_seqs, first_seq + tid);
+  }
 }
 
 void gpu_lt_rng_setup(gpu_PRNGeneratorTy *d_trng_state,
@@ -82,13 +84,14 @@ void gpu_lt_rng_setup(gpu_PRNGeneratorTy *d_trng_state,
 
 void gpu_ic_rng_setup(gpu_PRNGeneratorTy *d_trng_state,
                       const gpu_PRNGeneratorTy &r, size_t num_seqs,
-                      size_t first_seq, size_t n_blocks, size_t block_size) {
+                      size_t first_seq, size_t n_blocks, size_t block_size,
+                      size_t chunk_size) {
 #if defined(RIPPLES_ENABLE_CUDA)
   kernel_ic_trng_setup<<<n_blocks, block_size>>>(d_trng_state, r, num_seqs,
-                                                 first_seq);
+                                                 first_seq, chunk_size);
 #elif defined(RIPPLES_ENABLE_HIP)
   hipLaunchKernelGGL(kernel_ic_trng_setup, n_blocks, block_size, 0, 0,
-                     d_trng_state, r, num_seqs, first_seq);
+                     d_trng_state, r, num_seqs, first_seq, chunk_size);
 #else
 #error "Unsupported GPU runtime"
 #endif
