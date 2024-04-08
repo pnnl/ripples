@@ -585,6 +585,7 @@ class GPUWalkWorker<GraphTy, PRNGeneratorTy, ItrTy, independent_cascade_tag>
         batch_size_(gpu_batch_size),
         pause_threshold_(pause_threshold) {
   // allocate device-size RNGs
+  GPU<RUNTIME>::set_device(ctx->gpu_id);
   GPU<RUNTIME>::device_malloc(
       (void **)&d_trng_state_,
       G.num_nodes() * sizeof(PRNGeneratorTy));
@@ -624,6 +625,7 @@ class GPUWalkWorker<GraphTy, PRNGeneratorTy, ItrTy, independent_cascade_tag>
                            std::to_string(gpu_id++) + ".csv";
     bfs_ctx_.print_utilization_to_file(filename);
 #endif
+    GPU<RUNTIME>::device_free(d_trng_state_);
   }
 
 #ifdef REORDERING

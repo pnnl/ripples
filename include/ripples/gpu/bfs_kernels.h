@@ -63,9 +63,9 @@ class uniform_int_chop_gpu {
     static_assert(sizeof(typename gpu_PRNGeneratorTy::result_type) >= sizeof(result_t),
                   "gpu_PRNGeneratorTy::result_type is too small, must be larger than"
                   " the result type.");
-    constexpr size_t num_bits = sizeof(result_t) * 8;
-    constexpr size_t num_gen_bits = sizeof(typename gpu_PRNGeneratorTy::result_type) * 8;
-    constexpr size_t num_leftover = num_gen_bits - num_bits;
+    constexpr uint32_t num_bits = sizeof(result_t) * 8;
+    constexpr uint32_t num_gen_bits = sizeof(typename gpu_PRNGeneratorTy::result_type) * 8;
+    constexpr uint32_t num_leftover = num_gen_bits - num_bits;
     return static_cast<result_t>(generator() >> num_leftover);
   }
 };
@@ -75,7 +75,7 @@ class uniform_int_chop_gpu {
 #elif defined RIPPLES_ENABLE_UINT16_WEIGHTS
   using dist_t = uniform_int_chop_gpu<uint16_t>;
 #else
-  using dist_t = thrust::uniform_real_distribution<float>;
+  using dist_t = trng::uniform01_dist<float>;
 #endif // RIPPLES_WEIGHT_QUANT
 
 // Override popcount for 32 or 64-bit integers
@@ -443,11 +443,13 @@ __global__ void fused_color_thread_scatter_kernel(
   const int color_set_id =
       global_id % color_dim;  // 0, 1, 2, 3, ..., 0, 1, 2, 3, ...
   if (input_id < num_nodes) {
-    auto generator(d_trng_states[global_id]);
     vertex_type vertex_id = vertex[input_id];
+    auto generator(d_trng_states[vertex_id]);
     const color_type full_colors = colors[global_id];
     index_type start_edge = index[vertex_id];
     index_type end_edge = index[vertex_id + 1];
+    vertex_type jump_chunk = (end_edge - start_edge) * popcount(full_colors);
+    generator.jump(jump_chunk * color_set_id);
     // Write the edges and colors to the output array
     for (vertex_type i = 0; i < end_edge - start_edge; ++i) {
       color_type full_colors_temp = full_colors;
@@ -468,7 +470,10 @@ __global__ void fused_color_thread_scatter_kernel(
         atomicOr(frontier_addr, color_mask);
       }
     }
-    d_trng_states[global_id] = generator;
+    if(color_set_id == 0){
+      d_trng_states[vertex_id].jump(jump_chunk *
+                                  color_dim);
+    }
   }
 }
 
@@ -498,11 +503,13 @@ __global__ void fused_color_set_scatter_kernel(
   const int color_set = tid / color_dim;  // 0, 0, 0, 0, ..., 1, 1, 1, 1, ...
   const int edges_per_block = blockDim.x / color_dim;
   if (bid < num_nodes) {
-    auto generator(d_trng_states[global_id]);
+    auto generator(d_trng_states[bid]);
     vertex_type vertex_id = vertex[bid];
     color_type full_colors = colors[bid * color_dim + color_id];
     index_type start_edge = index[vertex_id];
     index_type end_edge = index[vertex_id + 1];
+    vertex_type jump_chunk = (end_edge - start_edge) * popcount(full_colors);
+    generator.jump(jump_chunk * color_set);
     // Write the weights and edges to the output array
     for (index_type i = color_set; i < end_edge - start_edge;
          i += edges_per_block) {
@@ -524,7 +531,9 @@ __global__ void fused_color_set_scatter_kernel(
         atomicOr(frontier_addr, color_mask);
       }
     }
-    d_trng_states[global_id] = generator;
+    if(color_id == 0){
+      d_trng_states[bid].jump(jump_chunk * color_dim);
+    }
   }
 }
 

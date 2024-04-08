@@ -1529,7 +1529,6 @@ void GPUBatchedBFSMultiColorFused(const GraphTy &G,
     size_t threshold = 0;
     const size_t num_blocks =
         (host_workloads[threshold] + block_size - 1) / block_size;
-    size_t rng_offset = 0;
 // Enqueue binned kernels
 #ifdef UTILIZATION_PROFILE
     bfs_ctx.small_queue.push_back(host_workloads[threshold]);
@@ -1541,8 +1540,7 @@ void GPUBatchedBFSMultiColorFused(const GraphTy &G,
       fused_color_thread_scatter_kernel<RUNTIME, GraphTy, color_type, gpu_PRNGeneratorTy>
           <<<num_blocks, thread_size, 0, streams[threshold]>>>(
               d_index, d_edge, d_weight, small_vertices_ptr, small_colors_ptr,
-              frontier_matrix_ptr, d_trng_state_ + rng_offset, host_workloads[threshold], color_dim);
-      rng_offset+=host_workloads[threshold];
+              frontier_matrix_ptr, d_trng_state_, host_workloads[threshold], color_dim);
     }
     threshold++;
 #ifdef UTILIZATION_PROFILE
@@ -1555,9 +1553,8 @@ void GPUBatchedBFSMultiColorFused(const GraphTy &G,
       fused_color_set_scatter_kernel<RUNTIME, GraphTy, color_type, gpu_PRNGeneratorTy>
           <<<host_workloads[threshold], thread_size, 0, streams[threshold]>>>(
               d_index, d_edge, d_weight, medium_vertices_ptr, medium_colors_ptr,
-              frontier_matrix_ptr, d_trng_state_ + rng_offset,
+              frontier_matrix_ptr, d_trng_state_,
               host_workloads[threshold], color_dim);
-      rng_offset+=host_workloads[threshold];
     }
     threshold++;
 #ifdef UTILIZATION_PROFILE
@@ -1570,9 +1567,8 @@ void GPUBatchedBFSMultiColorFused(const GraphTy &G,
       fused_color_set_scatter_kernel<RUNTIME, GraphTy, color_type, gpu_PRNGeneratorTy>
           <<<host_workloads[threshold], 256, 0, streams[threshold]>>>(
               d_index, d_edge, d_weight, large_vertices_ptr, large_colors_ptr,
-              frontier_matrix_ptr, d_trng_state_ + rng_offset,
+              frontier_matrix_ptr, d_trng_state_,
               host_workloads[threshold], color_dim);
-      rng_offset+=host_workloads[threshold];
     }
     threshold++;
 #ifdef UTILIZATION_PROFILE
@@ -1586,7 +1582,7 @@ void GPUBatchedBFSMultiColorFused(const GraphTy &G,
           <<<host_workloads[threshold], 1024, 0, streams[threshold]>>>(
               d_index, d_edge, d_weight, extreme_vertices_ptr,
               extreme_colors_ptr, frontier_matrix_ptr,
-              d_trng_state_ + rng_offset, host_workloads[threshold], color_dim);
+              d_trng_state_, host_workloads[threshold], color_dim);
     }
     for (size_t i = 0; i < streams.size(); i++) {
       GPU<RUNTIME>::stream_sync(streams[i]);
@@ -1900,7 +1896,7 @@ size_t GPUBatchedBFSMultiColorFusedReload(
       fused_color_thread_scatter_kernel<RUNTIME, GraphTy, color_type, gpu_PRNGeneratorTy>
           <<<num_blocks, thread_size, 0, streams[threshold]>>>(
               d_index, d_edge, d_weight, small_vertices_ptr, small_colors_ptr,
-              frontier_matrix_ptr, d_trng_state_ + rng_offset,
+              frontier_matrix_ptr, d_trng_state_, rng_offset,
               host_workloads[threshold], color_dim);
       rng_offset += host_workloads[threshold];
     }
@@ -1910,7 +1906,7 @@ size_t GPUBatchedBFSMultiColorFusedReload(
       fused_color_set_scatter_kernel<RUNTIME, GraphTy, color_type, gpu_PRNGeneratorTy>
           <<<host_workloads[threshold], thread_size, 0, streams[threshold]>>>(
               d_index, d_edge, d_weight, medium_vertices_ptr, medium_colors_ptr,
-              frontier_matrix_ptr, d_trng_state_ + rng_offset,
+              frontier_matrix_ptr, d_trng_state_, rng_offset,
               host_workloads[threshold], color_dim);
       rng_offset += host_workloads[threshold];
     }
@@ -1920,7 +1916,7 @@ size_t GPUBatchedBFSMultiColorFusedReload(
       fused_color_set_scatter_kernel<RUNTIME, GraphTy, color_type, gpu_PRNGeneratorTy>
           <<<host_workloads[threshold], 256, 0, streams[threshold]>>>(
               d_index, d_edge, d_weight, large_vertices_ptr, large_colors_ptr,
-              frontier_matrix_ptr, d_trng_state_ + rng_offset,
+              frontier_matrix_ptr, d_trng_state_, rng_offset,
               host_workloads[threshold], color_dim);
       rng_offset += host_workloads[threshold];
     }
@@ -1931,7 +1927,7 @@ size_t GPUBatchedBFSMultiColorFusedReload(
           <<<host_workloads[threshold], 1024, 0, streams[threshold]>>>(
               d_index, d_edge, d_weight, extreme_vertices_ptr,
               extreme_colors_ptr, frontier_matrix_ptr,
-              d_trng_state_ + rng_offset, host_workloads[threshold], color_dim);
+              d_trng_state_, rng_offset, host_workloads[threshold], color_dim);
     }
     for (size_t i = 0; i < streams.size(); i++) {
       GPU<RUNTIME>::stream_sync(streams[i]);
