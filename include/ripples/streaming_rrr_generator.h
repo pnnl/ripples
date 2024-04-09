@@ -1042,23 +1042,28 @@ class StreamingRRRGenerator {
 #endif
 #endif
 
-    // // Figure out if the total batch size is larger than the work needed to
-    // be executed size_t total_batch_size = num_cpu_workers_ * cpu_batch_size_
-    // + num_gpu_workers_ * gpu_batch_size_; size_t work_size_ =
-    // std::distance(begin, end); size_t new_gpu_batch_size_ = gpu_batch_size_;
-    // size_t new_cpu_batch_size_ = cpu_batch_size_;
-    // if (total_batch_size > work_size_) {
-    //   // If so, we need to adjust the batch sizes, prioritizing the GPU
-    //   workers if (num_gpu_workers_ > 0) {
-    //     new_gpu_batch_size_ = std::min((std::distance(begin, end) +
-    //     num_gpu_workers_ - 1) / num_gpu_workers_, gpu_batch_size_);
-    //   }
-    //   work_size_ -= num_gpu_workers_ * new_gpu_batch_size_;
-    //   if (num_cpu_workers_ > 0) {
-    //     new_cpu_batch_size_ = std::min((work_size_ + num_cpu_workers_ - 1) /
-    //     num_cpu_workers_, cpu_batch_size_);
-    //   }
-    // }
+    // Figure out if the total batch size is larger than the work needed to
+    // be executed
+    size_t total_batch_size =
+        num_cpu_workers_ * cpu_batch_size_ + num_gpu_workers_ * gpu_batch_size_;
+    size_t work_size_ = std::distance(begin, end);
+    size_t new_gpu_batch_size_ = gpu_batch_size_;
+    size_t new_cpu_batch_size_ = cpu_batch_size_;
+    if (total_batch_size > work_size_) {
+      // If so, we need to adjust the batch sizes, prioritizing the GPU workers
+      if (num_gpu_workers_ > 0) {
+        new_gpu_batch_size_ =
+            std::min((std::distance(begin, end) + num_gpu_workers_ - 1) /
+                         num_gpu_workers_,
+                     gpu_batch_size_);
+      }
+      work_size_ -= num_gpu_workers_ * new_gpu_batch_size_;
+      if (num_cpu_workers_ > 0) {
+        new_cpu_batch_size_ =
+            std::min((work_size_ + num_cpu_workers_ - 1) / num_cpu_workers_,
+                     cpu_batch_size_);
+      }
+    }
     // Set omp max levels to 3 to allow for nested parallelism
     if (num_cpu_teams_) {
       omp_set_max_active_levels(3);
@@ -1078,10 +1083,10 @@ class StreamingRRRGenerator {
 #ifdef REORDERING
             if (workers[rank]->is_cpu()) {
               workers[rank]->svc_loop(mpmc_head, begin, end, root_nodes.begin(),
-                                      cpu_batch_size_);
+                                      new_cpu_batch_size_);
             } else {
               workers[rank]->svc_loop(mpmc_head, begin, end, root_nodes.begin(),
-                                      gpu_batch_size_);
+                                      new_gpu_batch_size_);
             }
 #else
             workers[rank]->svc_loop(mpmc_head, begin, end);
@@ -1092,7 +1097,7 @@ class StreamingRRRGenerator {
         else {
 #ifdef REORDERING
           workers[rank_outer]->svc_loop(mpmc_head, begin, end,
-                                        root_nodes.begin(), cpu_batch_size_);
+                                        root_nodes.begin(), new_cpu_batch_size_);
 #else
           workers[rank_outer]->svc_loop(mpmc_head, begin, end);
 #endif
@@ -1104,7 +1109,7 @@ class StreamingRRRGenerator {
       {
 #ifdef REORDERING
         workers[omp_get_thread_num()]->svc_loop(
-            mpmc_head, begin, end, root_nodes.begin(), gpu_batch_size_);
+            mpmc_head, begin, end, root_nodes.begin(), new_gpu_batch_size_);
 #else
         workers[omp_get_thread_num()]->svc_loop(mpmc_head, begin, end);
 #endif
