@@ -116,6 +116,24 @@ size_t FindCoverage(const RRRSetsTy &RR, const SeedSetTy &S) {
   return result;
 }
 
+template <typename RRRSetsTy, typename SeedSetTy>
+size_t FindCoverage(const RRRSetsTy &RR, const size_t RRSize, const SeedSetTy &S) {
+  size_t result = 0;
+
+#pragma omp parallel for reduction(+ : result)
+  for (size_t i = 0; i < RRSize; ++i) {
+    auto itr = S.end();
+    for (size_t j = 0; itr == S.end() && j < RR[i].size(); ++j) {
+      itr = std::find(S.begin(), S.end(), RR[i][j]);
+    }
+
+    if (itr != S.end()) {
+      result += 1;
+    }
+  }
+  return result;
+}
+
 //! The OPIM-C algroithm for Influence Maximization
 //!
 //! \tparam GraphTy The type of the input graph.

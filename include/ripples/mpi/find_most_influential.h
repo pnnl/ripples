@@ -716,6 +716,16 @@ class MPIStreamingFindMostInfluential {
       // std::cout << *std::max_element(vertex_coverage_.begin(), vertex_coverage_.end()) << std::endl;
     }
 
+    #ifdef SPECULATIVE_EXECUTION
+    omp_set_max_active_levels(1);
+    if(mpi_rank == 0) {
+      return std::make_pair(coveredAndSelected[0], result);
+    } else {
+      result.resize(k);
+      return std::make_pair(static_cast<vertex_type>(0), result);
+    }
+    #else
+
     if(mpi_converged_) {
       // Broadcast from rank 0 coveredAndSelected
       MPI_Bcast(coveredAndSelected, 2, MPI_UINT32_T, 0, MPI_COMM_WORLD);
@@ -739,6 +749,7 @@ class MPIStreamingFindMostInfluential {
     omp_set_max_active_levels(1);
 
     return std::make_pair(f, result);
+    #endif // SPECULATIVE_EXECUTION
   }
 
  private:

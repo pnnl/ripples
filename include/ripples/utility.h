@@ -47,6 +47,7 @@
 #include <utility>
 #include <memory>
 #include <cmath>
+#include <iostream>
 
 #ifdef __APPLE__
 #include <libkern/OSByteOrder.h>

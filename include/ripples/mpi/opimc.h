@@ -71,6 +71,16 @@ size_t FindGlobalCoverage(const RRRSetsTy &RR, const SeedSetTy &S) {
   return globalResult;
 }
 
+template <typename RRRSetsTy, typename SeedSetTy>
+size_t FindGlobalCoverage(const RRRSetsTy &RR, const size_t &RRSize, const SeedSetTy &S) {
+  size_t globalResult = 0;
+  size_t localResult = FindCoverage(RR, RRSize, S);
+
+  MPI_Allreduce(&localResult, &globalResult, 1, MPI_UINT64_T, MPI_SUM, MPI_COMM_WORLD);
+
+  return globalResult;
+}
+
 template <typename GraphTy, typename ConfTy, typename GeneratorTy,
           typename diff_model_tag, typename ExTagTrait>
 std::vector<typename GraphTy::vertex_type> OPIMC(const GraphTy &G,
@@ -90,16 +100,16 @@ std::vector<typename GraphTy::vertex_type> OPIMC(const GraphTy &G,
   record.ThetaMax = thetaMax;
 
   size_t iMax = ceil(log2(thetaMax / thetaZero));
-  float delta = CFG.delta / (3 * iMax);
+  float delta_opimc = CFG.delta / (3 * iMax);
 
   // Compute the local work
   int world_size;
   MPI_Comm_size(MPI_COMM_WORLD, &world_size);
-  thetaZero = ceil(thetaZero / world_size);
+  size_t thetaPrime = ceil(thetaZero / world_size);
 
   RRRsetAllocator<GraphTy> allocator;
-  RRRsets<GraphTy> R1(thetaZero, RRRset<GraphTy>(allocator));
-  RRRsets<GraphTy> R2(thetaZero, RRRset<GraphTy>(allocator));
+  RRRsets<GraphTy> R1(thetaPrime, RRRset<GraphTy>(allocator));
+  RRRsets<GraphTy> R2(thetaPrime, RRRset<GraphTy>(allocator));
 
   auto timeGenerateRRRSetStart = std::chrono::high_resolution_clock::now();
   GenerateRRRSets(G, gen, R1.begin(), R1.end(), record,
@@ -113,9 +123,9 @@ std::vector<typename GraphTy::vertex_type> OPIMC(const GraphTy &G,
   record.GenerateRRRSets.push_back(timeGenerateRRRSetEnd -
                                    timeGenerateRRRSetStart);
   record.RRRSetsGenerated.push_back(R1.size() + R2.size());
-  #ifdef PRINTF_TIL_YOU_DROP
   int world_rank;
   MPI_Comm_rank(MPI_COMM_WORLD, &world_rank);
+  #ifdef PRINTF_TIL_YOU_DROP
   auto duration_ms = std::chrono::duration_cast<std::chrono::milliseconds>(
       timeGenerateRRRSetEnd - timeGenerateRRRSetStart);
   size_t rr_set_size = 0;
@@ -144,13 +154,117 @@ std::vector<typename GraphTy::vertex_type> OPIMC(const GraphTy &G,
     record.FindMostInfluentialSet.push_back(timeFindMostInfluentialEnd -
                                             timeFindMostInfluentialStart);
 
+    #ifdef SPECULATIVE_EXECUTION
+    
+    bool use_speculative_results = true;
+    size_t R1Size_prev = R1.size();
+    size_t R2Size_prev = R2.size();
+
+    if(world_rank != 0) {
+
+      thetaPrime = ceil((thetaZero * (2 << i)) / (world_size - 1));
+
+      size_t delta = thetaPrime - R1.size();
+
+      // Check to see if there is enough free memory to allocate the new RRRsets
+      size_t free_memory = GetAvailableMemory();
+      size_t num_rr_sets = R1.size() + R2.size();
+      size_t rr_set_size = 0;
+      #pragma omp parallel
+      {
+        #pragma omp for reduction(+:rr_set_size)
+        for (const auto &rr_set : R1) {
+          rr_set_size += rr_set.size();
+        }
+        #pragma omp for reduction(+:rr_set_size)
+        for (const auto &rr_set : R2) {
+          rr_set_size += rr_set.size();
+        }
+      }
+      size_t average_rr_set_size = rr_set_size / num_rr_sets;
+      size_t new_rr_set_size = average_rr_set_size * delta;
+      if (new_rr_set_size > free_memory) {
+        console->info("Rank = {}, Not enough memory to allocate new RRRsets", world_rank);
+        use_speculative_results = false;
+        break;
+      }
+
+      R1.insert(R1.end(), delta, RRRset<GraphTy>(allocator));
+      R2.insert(R2.end(), delta, RRRset<GraphTy>(allocator));
+
+      auto begin1 = R1.end() - delta;
+      auto begin2 = R2.end() - delta;
+
+      auto timeGenerateRRRSetStart = std::chrono::high_resolution_clock::now();
+      GenerateRRRSets(G, gen, begin1, R1.end(), record,
+                      std::forward<diff_model_tag>(model_tag),
+                      typename ExTagTrait::generate_ex_tag{});
+      GenerateRRRSets(G, gen, begin2, R2.end(), record,
+                      std::forward<diff_model_tag>(model_tag),
+                      typename ExTagTrait::generate_ex_tag{});
+      auto timeGenerateRRRSetEnd = std::chrono::high_resolution_clock::now();
+
+      record.GenerateRRRSets.push_back(timeGenerateRRRSetEnd -
+                                      timeGenerateRRRSetStart);
+      record.RRRSetsGenerated.push_back(std::distance(begin1, R1.end()) +
+                                        std::distance(begin2, R2.end()));
+      #ifdef PRINTF_TIL_YOU_DROP
+      int world_rank;
+      MPI_Comm_rank(MPI_COMM_WORLD, &world_rank);
+      auto duration_ms = std::chrono::duration_cast<std::chrono::milliseconds>(
+        timeGenerateRRRSetEnd - timeGenerateRRRSetStart);
+      rr_set_size = 0;
+      for (const auto &rr_set : R1) {
+        rr_set_size += rr_set.size();
+      }
+      for (const auto &rr_set : R2) {
+        rr_set_size += rr_set.size();
+      }
+      console->info(
+          "Rank = {}, RRSetsGenerated = {}, Time = {}, Total RRSetSize = {}", world_rank,
+          std::distance(begin1, R1.end()) + std::distance(begin2, R2.end()),
+          duration_ms.count(), rr_set_size);
+      #endif  // PRINTF_TIL_YOU_DROP
+    }
+    size_t R1_total_size = R1Size_prev;
+    MPI_Allreduce(MPI_IN_PLACE, &R1_total_size, 1, MPI_UINT64_T, MPI_SUM, MPI_COMM_WORLD);
+    uint32_t coverage1_nonconst = coverage1;
+    MPI_Bcast(&coverage1_nonconst, 1, MPI_UINT32_T, 0, MPI_COMM_WORLD);
+    console->info("Coverage1: {}/{}", coverage1_nonconst, R1_total_size);
+
+    size_t R2_total_size = R2Size_prev;
+    MPI_Allreduce(MPI_IN_PLACE, &R2_total_size, 1, MPI_UINT64_T, MPI_SUM, MPI_COMM_WORLD);
+    results.resize(CFG.k);
+    if(world_rank == 0) {
+      results = std::move(seeds);
+    }
+    MPI_Bcast(results.data(), CFG.k, MPI_UINT32_T, 0, MPI_COMM_WORLD);
+    size_t coverage2 = FindGlobalCoverage(R2, R2Size_prev, results);
+    console->info("Coverage2: {}/{}", coverage2, R2_total_size);
+
+    float upperBound = UpperBound(coverage1_nonconst, delta_opimc,
+                                  G.num_nodes(), R1_total_size);
+    float lowerBound = LowerBound(coverage2, delta_opimc, G.num_nodes(), R2_total_size);
+
+    float alpha = lowerBound / upperBound;
+
+    console->info("Alpha: {}/{} = {}", lowerBound, upperBound, alpha);
+
+    if (alpha >= (A - CFG.epsilon)) break;
+    // Reduce use_speculative_results
+    MPI_Allreduce(MPI_IN_PLACE, &use_speculative_results, 1, MPI_C_BOOL, MPI_LAND, MPI_COMM_WORLD);
+    if (!use_speculative_results){
+      console->info("Out of memory! Ending early with current results.");
+      break;
+    }
+    #else
     console->info("Coverage1: {}/{}", coverage1 * R1.size() * world_size, R1.size() * world_size);
     size_t coverage2 = FindGlobalCoverage(R2, seeds);
     console->info("Coverage2: {}/{}", coverage2, R2.size() * world_size);
 
-    float upperBound = UpperBound(coverage1 * R1.size() * world_size, delta,
+    float upperBound = UpperBound(coverage1 * R1.size() * world_size, delta_opimc,
                                   G.num_nodes(), R1.size() * world_size);
-    float lowerBound = LowerBound(coverage2, delta, G.num_nodes(), R2.size() * world_size);
+    float lowerBound = LowerBound(coverage2, delta_opimc, G.num_nodes(), R2.size() * world_size);
 
     float alpha = lowerBound / upperBound;
 
@@ -199,6 +313,9 @@ std::vector<typename GraphTy::vertex_type> OPIMC(const GraphTy &G,
         std::distance(begin1, R1.end()) + std::distance(begin2, R2.end()),
         duration_ms.count(), rr_set_size);
     #endif  // PRINTF_TIL_YOU_DROP
+
+    #endif // SPECULATIVE_EXECUTION
+
   }
 
   return results;
