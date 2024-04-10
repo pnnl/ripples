@@ -186,45 +186,45 @@ std::vector<typename GraphTy::vertex_type> OPIMC(const GraphTy &G,
       if (new_rr_set_size > free_memory) {
         console->info("Rank = {}, Not enough memory to allocate new RRRsets", world_rank);
         use_speculative_results = false;
-        break;
       }
+      else{
+        R1.insert(R1.end(), delta, RRRset<GraphTy>(allocator));
+        R2.insert(R2.end(), delta, RRRset<GraphTy>(allocator));
 
-      R1.insert(R1.end(), delta, RRRset<GraphTy>(allocator));
-      R2.insert(R2.end(), delta, RRRset<GraphTy>(allocator));
+        auto begin1 = R1.end() - delta;
+        auto begin2 = R2.end() - delta;
 
-      auto begin1 = R1.end() - delta;
-      auto begin2 = R2.end() - delta;
+        auto timeGenerateRRRSetStart = std::chrono::high_resolution_clock::now();
+        GenerateRRRSets(G, gen, begin1, R1.end(), record,
+                        std::forward<diff_model_tag>(model_tag),
+                        typename ExTagTrait::generate_ex_tag{});
+        GenerateRRRSets(G, gen, begin2, R2.end(), record,
+                        std::forward<diff_model_tag>(model_tag),
+                        typename ExTagTrait::generate_ex_tag{});
+        auto timeGenerateRRRSetEnd = std::chrono::high_resolution_clock::now();
 
-      auto timeGenerateRRRSetStart = std::chrono::high_resolution_clock::now();
-      GenerateRRRSets(G, gen, begin1, R1.end(), record,
-                      std::forward<diff_model_tag>(model_tag),
-                      typename ExTagTrait::generate_ex_tag{});
-      GenerateRRRSets(G, gen, begin2, R2.end(), record,
-                      std::forward<diff_model_tag>(model_tag),
-                      typename ExTagTrait::generate_ex_tag{});
-      auto timeGenerateRRRSetEnd = std::chrono::high_resolution_clock::now();
-
-      record.GenerateRRRSets.push_back(timeGenerateRRRSetEnd -
-                                      timeGenerateRRRSetStart);
-      record.RRRSetsGenerated.push_back(std::distance(begin1, R1.end()) +
-                                        std::distance(begin2, R2.end()));
-      #ifdef PRINTF_TIL_YOU_DROP
-      int world_rank;
-      MPI_Comm_rank(MPI_COMM_WORLD, &world_rank);
-      auto duration_ms = std::chrono::duration_cast<std::chrono::milliseconds>(
-        timeGenerateRRRSetEnd - timeGenerateRRRSetStart);
-      rr_set_size = 0;
-      for (const auto &rr_set : R1) {
-        rr_set_size += rr_set.size();
+        record.GenerateRRRSets.push_back(timeGenerateRRRSetEnd -
+                                        timeGenerateRRRSetStart);
+        record.RRRSetsGenerated.push_back(std::distance(begin1, R1.end()) +
+                                          std::distance(begin2, R2.end()));
+        #ifdef PRINTF_TIL_YOU_DROP
+        int world_rank;
+        MPI_Comm_rank(MPI_COMM_WORLD, &world_rank);
+        auto duration_ms = std::chrono::duration_cast<std::chrono::milliseconds>(
+          timeGenerateRRRSetEnd - timeGenerateRRRSetStart);
+        rr_set_size = 0;
+        for (const auto &rr_set : R1) {
+          rr_set_size += rr_set.size();
+        }
+        for (const auto &rr_set : R2) {
+          rr_set_size += rr_set.size();
+        }
+        console->info(
+            "Rank = {}, RRSetsGenerated = {}, Time = {}, Total RRSetSize = {}", world_rank,
+            std::distance(begin1, R1.end()) + std::distance(begin2, R2.end()),
+            duration_ms.count(), rr_set_size);
+        #endif  // PRINTF_TIL_YOU_DROP
       }
-      for (const auto &rr_set : R2) {
-        rr_set_size += rr_set.size();
-      }
-      console->info(
-          "Rank = {}, RRSetsGenerated = {}, Time = {}, Total RRSetSize = {}", world_rank,
-          std::distance(begin1, R1.end()) + std::distance(begin2, R2.end()),
-          duration_ms.count(), rr_set_size);
-      #endif  // PRINTF_TIL_YOU_DROP
     }
     size_t R1_total_size = R1Size_prev;
     MPI_Allreduce(MPI_IN_PLACE, &R1_total_size, 1, MPI_UINT64_T, MPI_SUM, MPI_COMM_WORLD);
