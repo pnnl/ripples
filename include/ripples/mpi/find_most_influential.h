@@ -707,11 +707,13 @@ class MPIStreamingFindMostInfluential {
           "Set Size {}",
           world_rank, result.size(), duration_time, workers_[0]->get_num_rr_sets(),
           workers_[0]->get_rr_set_size());
-#endif // PRINTF_TIL_YOU_DROP
+      #endif // PRINTF_TIL_YOU_DROP
+      #ifdef MPI_GATHER
       if(!mpi_converged_){
         ConvergenceCheck();
       }
       if (mpi_converged_ && mpi_rank != 0) break;
+      #endif // MPI_GATHER
       // std::cout << "Done update counters" << std::endl;
       // std::cout << *std::max_element(vertex_coverage_.begin(), vertex_coverage_.end()) << std::endl;
     }
@@ -725,7 +727,7 @@ class MPIStreamingFindMostInfluential {
       return std::make_pair(static_cast<vertex_type>(0), result);
     }
     #else
-
+    #ifdef MPI_GATHER
     if(mpi_converged_) {
       // Broadcast from rank 0 coveredAndSelected
       MPI_Bcast(coveredAndSelected, 2, MPI_UINT32_T, 0, MPI_COMM_WORLD);
@@ -733,6 +735,7 @@ class MPIStreamingFindMostInfluential {
       result.resize(k);
       MPI_Bcast(result.data(), k, MPI_UINT32_T, 0, MPI_COMM_WORLD);
     }
+    #endif // MPI_GATHER
 
     int world_size = 0;
     MPI_Comm_size(MPI_COMM_WORLD, &world_size);

@@ -11,7 +11,8 @@ class RipplesConan(ConanFile):
                'metall_checkpointing' : [True, False],
                'weight_type' : ['float', 'uint16', 'uint8'],
                'disable_sorting' : [True, False],
-               'speculative_execution' : [True, False]}
+               'speculative_execution' : [True, False],
+               'mpi_gather' : [True, False]}
     default_options = {'gperftools': True,
                        'nvidia_cub': False,
                        'enable_benchmarks' : False,
@@ -20,7 +21,8 @@ class RipplesConan(ConanFile):
                        'metall_checkpointing' : True,
                        'weight_type' : 'float',
                        'disable_sorting' : False,
-                       'speculative_execution' : True}
+                       'speculative_execution' : True,
+                       'mpi_gather' : True}
     settings = "os", "compiler", "build_type", "arch"
 
     def configure(self):
@@ -48,7 +50,12 @@ class RipplesConan(ConanFile):
         tc.cache_variables['RIPPLES_ENABLE_UINT16_WEIGHTS'] = self.options.weight_type == 'uint16'
         tc.cache_variables['RIPPLES_ENABLE_UINT8_WEIGHTS'] = self.options.weight_type == 'uint8'
         tc.cache_variables['RIPPLES_DISABLE_SORTING'] = self.options.disable_sorting
-        tc.cache_variables['RIPPLES_ENABLE_SPECULATIVE_EXECUTION'] = self.options.speculative_execution
+        tc.cache_variables['RIPPLES_ENABLE_MPI_GATHER'] = self.options.mpi_gather
+        if self.options.mpi_gather:
+            tc.cache_variables['RIPPLES_ENABLE_SPECULATIVE_EXECUTION'] = self.options.speculative_execution
+        else:
+            # Speculative execution is not supported without MPI gather
+            tc.cache_variables['RIPPLES_ENABLE_SPECULATIVE_EXECUTION'] = False
         tc.generate()
         deps = CMakeDeps(self)
         deps.generate()
