@@ -357,7 +357,11 @@ class MPIStreamingFindMostInfluential {
       MPI_Gatherv(rr_sizes_1d_.data(), static_cast<int>(rr_sizes_1d_.size()), MPI_UINT64_T,
                   rr_sizes_1d_gathered.data(), rr_sizes_1d_gathered_recv.data(),
                   rr_sizes_1d_gathered_displ.data(), MPI_UINT64_T, 0, MPI_COMM_WORLD);
-      
+      #ifdef PRINTF_TIL_YOU_DROP
+      if(mpi_rank == 0){
+        console->info("Rank = {}, RR Sizes Gathered", mpi_rank);
+      }
+      #endif // PRINTF_TIL_YOU_DROP
       MPI_Gatherv(rr_sets_1d_.data(), static_cast<int>(rr_sets_1d_.size()), MPI_UINT32_T,
                   rr_sets_1d_gathered.data(), rr_sets_1d_gathered_recv.data(),
                   rr_sets_1d_gathered_displ.data(), MPI_UINT32_T, 0, MPI_COMM_WORLD);
