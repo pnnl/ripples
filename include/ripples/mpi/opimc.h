@@ -183,7 +183,7 @@ std::vector<typename GraphTy::vertex_type> OPIMC(const GraphTy &G,
       }
       size_t average_rr_set_size = rr_set_size / num_rr_sets;
       size_t new_rr_set_size = average_rr_set_size * delta;
-      if (new_rr_set_size > free_memory) {
+      if (new_rr_set_size * 2 > free_memory) {
         console->info("Rank = {}, Not enough memory to allocate new RRRsets", world_rank);
         use_speculative_results = false;
       }
