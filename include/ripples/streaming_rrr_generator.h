@@ -165,22 +165,22 @@ class CPUWalkWorker : public WalkWorker<GraphTy, ItrTy> {
       std::advance(last, batch_size);
       if (last > end) last = end;
       #ifdef PRINTF_TIL_YOU_DROP
-      auto start_time = std::chrono::high_resolution_clock::now();
+      // auto start_time = std::chrono::high_resolution_clock::now();
       #endif
       batch(first, last, root_nodes_begin + offset);
       #ifdef PRINTF_TIL_YOU_DROP
-      auto end_time = std::chrono::high_resolution_clock::now();
-      auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(end_time - start_time);
-      auto num_rr_sets = std::distance(first, last);
-      size_t total_vertices = 0;
-      for (auto it = first; it != last; ++it) {
-        total_vertices += it->size();
-      }
-      std::string time_string = "CPU time taken for batch: " +
-          std::to_string(duration.count()) +
-          " ms, Number of RR sets: " + std::to_string(num_rr_sets) +
-          ", Total vertices: " + std::to_string(total_vertices) + "\n";
-      std::cout << time_string << std::flush;
+      // auto end_time = std::chrono::high_resolution_clock::now();
+      // auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(end_time - start_time);
+      // auto num_rr_sets = std::distance(first, last);
+      // size_t total_vertices = 0;
+      // for (auto it = first; it != last; ++it) {
+      //   total_vertices += it->size();
+      // }
+      // std::string time_string = "CPU time taken for batch: " +
+      //     std::to_string(duration.count()) +
+      //     " ms, Number of RR sets: " + std::to_string(num_rr_sets) +
+      //     ", Total vertices: " + std::to_string(total_vertices) + "\n";
+      // std::cout << time_string << std::flush;
       #endif
     }
   }

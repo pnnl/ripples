@@ -12,7 +12,9 @@ class RipplesConan(ConanFile):
                'weight_type' : ['float', 'uint16', 'uint8'],
                'disable_sorting' : [True, False],
                'speculative_execution' : [True, False],
-               'mpi_gather' : [True, False]}
+               'mpi_gather' : [True, False],
+               'mpi_chunking' : [True, False],
+               'gpu_int_prng' : [True, False]}
     default_options = {'gperftools': True,
                        'nvidia_cub': False,
                        'enable_benchmarks' : False,
@@ -22,7 +24,9 @@ class RipplesConan(ConanFile):
                        'weight_type' : 'float',
                        'disable_sorting' : False,
                        'speculative_execution' : True,
-                       'mpi_gather' : True}
+                       'mpi_gather' : True,
+                       'mpi_chunking' : True,
+                       'gpu_int_prng' : False}
     settings = "os", "compiler", "build_type", "arch"
 
     def configure(self):
@@ -56,6 +60,8 @@ class RipplesConan(ConanFile):
         else:
             # Speculative execution is not supported without MPI gather
             tc.cache_variables['RIPPLES_ENABLE_SPECULATIVE_EXECUTION'] = False
+        tc.cache_variables['RIPPLES_ENABLE_MPI_CHUNKING'] = self.options.mpi_chunking
+        tc.cache_variables['RIPPLES_ENABLE_GPU_INT_PRNG'] = self.options.gpu_int_prng
         tc.generate()
         deps = CMakeDeps(self)
         deps.generate()

@@ -346,14 +346,14 @@ class MPIStreamingFindMostInfluential {
                         rr_sets_1d_gathered_displ.begin()+1);
       #ifdef PRINTF_TIL_YOU_DROP
       console->info("Rank = {}, RR Set Size Displacement Calculated", mpi_rank);
-      if(mpi_rank == 0){
-        for (int i = 0; i < world_size; ++i) {
-          console->info("Rank = {}, Index = {}, RR Set Size Recv: {}", mpi_rank, i, rr_sets_1d_gathered_recv[i]);
-          console->info("Rank = {}, Index = {}, RR Set Size Dipl: {}", mpi_rank, i, rr_sets_1d_gathered_displ[i]);
-          console->info("Rank = {}, Index = {}, RR Sizes Recv: {}", mpi_rank, i, rr_sizes_1d_gathered_recv[i]);
-          console->info("Rank = {}, Index = {}, RR Sizes Displ: {}", mpi_rank, i, rr_sizes_1d_gathered_displ[i]);
-        }
-      }
+      // if(mpi_rank == 0){
+      //   for (int i = 0; i < world_size; ++i) {
+      //     console->info("Rank = {}, Index = {}, RR Set Size Recv: {}", mpi_rank, i, rr_sets_1d_gathered_recv[i]);
+      //     console->info("Rank = {}, Index = {}, RR Set Size Dipl: {}", mpi_rank, i, rr_sets_1d_gathered_displ[i]);
+      //     console->info("Rank = {}, Index = {}, RR Sizes Recv: {}", mpi_rank, i, rr_sizes_1d_gathered_recv[i]);
+      //     console->info("Rank = {}, Index = {}, RR Sizes Displ: {}", mpi_rank, i, rr_sizes_1d_gathered_displ[i]);
+      //   }
+      // }
       #endif // PRINTF_TIL_YOU_DROP
       // Gather all RR sets on rank 0
       MPI_Gatherv(rr_sizes_1d_.data(), static_cast<int>(rr_sizes_1d_.size()), MPI_UINT64_T,
@@ -408,6 +408,7 @@ class MPIStreamingFindMostInfluential {
     uint32_t *dest = reduced_vertex_coverage_.data();
     uint32_t *src = vertex_coverage_.data();
 
+#ifdef MPI_CHUNKING
     int world_size;
     MPI_Comm_size(MPI_COMM_WORLD, &world_size);
     int mpi_rank;
@@ -416,7 +417,7 @@ class MPIStreamingFindMostInfluential {
     std::vector<MPI_Request> requests(world_size);
     uint32_t chunk_size = vertex_coverage_.size() / world_size;
     uint32_t last_block_size = chunk_size + vertex_coverage_.size() % world_size;
-
+#endif // MPI_CHUNKING
 #if defined(RIPPLES_ENABLE_CUDA) || defined(RIPPLES_ENABLE_HIP)
     if (num_gpu_workers_ != 0) {
       dest = d_cpu_reduced_counters_;
@@ -447,24 +448,41 @@ class MPIStreamingFindMostInfluential {
 
       // MPI_Reduce(src, dest, vertex_coverage_.size(),
       // 	    MPI_UINT32_T, MPI_SUM, 0, MPI_COMM_WORLD);
+      #ifdef MPI_CHUNKING
       for (size_t i = 0; i < world_size; ++i) {
         MPI_Ireduce(tmp.data() + i * chunk_size,
                     reduced_vertex_coverage_.data() + i * chunk_size,
                     i != (world_size - 1) ? chunk_size : last_block_size,
                     MPI_UINT32_T, MPI_SUM, i, MPI_COMM_WORLD, &requests[i]);
       }
+      #else // MPI_CHUNKING
+      MPI_Reduce(tmp.data(), reduced_vertex_coverage_.data(),
+                 vertex_coverage_.size(), MPI_UINT32_T, MPI_SUM, 0,
+                 MPI_COMM_WORLD);
+      GPU<RUNTIME>::h2d(reinterpret_cast<void *>(dest),
+                        reinterpret_cast<void *>(reduced_vertex_coverage_.data()),
+                        sizeof(uint32_t) * vertex_coverage_.size());
+      #endif // MPI_CHUNKING
 
     } else
 #endif
     {
+      #ifdef MPI_CHUNKING
       for (size_t i = 0; i < world_size; ++i) {
         MPI_Ireduce(src + i * chunk_size, dest + i * chunk_size,
                     i != (world_size - 1) ? chunk_size : last_block_size,
                     MPI_UINT32_T, MPI_SUM, i, MPI_COMM_WORLD, &requests[i]);
       }
+      #else // MPI_CHUNKING
+      MPI_Reduce(src, dest, vertex_coverage_.size(), MPI_UINT32_T, MPI_SUM, 0,
+                 MPI_COMM_WORLD);
+      #endif // MPI_CHUNKING
     }
-    for (auto & request : requests)
+    #ifdef MPI_CHUNKING
+    for (auto & request : requests){
       MPI_Wait(&request, MPI_STATUS_IGNORE);
+    }
+    #endif // MPI_CHUNKING
   }
 
   void UpdateCounters(vertex_type last_seed) {
@@ -525,6 +543,7 @@ class MPIStreamingFindMostInfluential {
     console->info("Rank = {}, Reduced Counters: {} ms", world_rank, duration_ms.count());
     auto timeFindMaxStart = std::chrono::high_resolution_clock::now();
     #endif // PRINTF_TIL_YOU_DROP
+    #ifdef MPI_CHUNKING
 
     int world_size;
     MPI_Comm_size(MPI_COMM_WORLD, &world_size);
@@ -599,7 +618,55 @@ class MPIStreamingFindMostInfluential {
 
     coveredAndSelected[0] = result[0];
     coveredAndSelected[1] = result[1];
+    #else // MPI_CHUNKING
+    #if defined(RIPPLES_ENABLE_CUDA) || defined(RIPPLES_ENABLE_HIP)
+    if (num_gpu_workers_ != 0) {
+      uint32_t *global_counter = d_cpu_reduced_counters_;
 
+      if (mpi_rank == 0) {
+        GPURuntimeTrait<RUNTIME>::set_device(0);
+        auto result = GPUMaxElement(global_counter, vertex_coverage_.size());
+        // std::cout << "Max Element " << result.first << " " << result.second
+        // << std::endl;
+        coveredAndSelected[0] += result.second;
+        coveredAndSelected[1] = result.first;
+      }
+      MPI_Bcast(&coveredAndSelected, 2, MPI_UINT32_T, 0, MPI_COMM_WORLD);
+      // std::cout << "$$$$ " << mpi_rank << " "<< coveredAndSelected[0] <<
+      // std::endl;
+      return std::pair<vertex_type, size_t>(coveredAndSelected[1],
+                                            coveredAndSelected[0]);
+    }
+#endif
+    if (mpi_rank == 0) {
+      uint32_t vertex = 0;
+      uint32_t coverage = 0;
+      // auto itr = std::max_element(reduced_vertex_coverage_.begin(), reduced_vertex_coverage_.end());
+      #pragma omp parallel
+      {
+        uint32_t vertex_local = 0;
+        uint32_t coverage_local = 0;
+
+        #pragma omp for
+        for (uint32_t i = 0; i < reduced_vertex_coverage_.size(); ++i) {
+          if (coverage_local < reduced_vertex_coverage_[i]) {
+            coverage_local = reduced_vertex_coverage_[i];
+            vertex_local = i;
+          }
+        }
+      #pragma omp critical
+        {
+          if (coverage < coverage_local) {
+            coverage = coverage_local;
+            vertex = vertex_local;
+          }
+        }
+      }
+      coveredAndSelected[0] += coverage;
+      coveredAndSelected[1] = vertex;
+      }
+    MPI_Bcast(&coveredAndSelected, 2, MPI_UINT32_T, 0, MPI_COMM_WORLD);
+    #endif // MPI_CHUNKING
     return std::pair<vertex_type, size_t>(coveredAndSelected[1],
                                           coveredAndSelected[0]);
   }

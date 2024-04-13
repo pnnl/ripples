@@ -69,7 +69,7 @@ class uniform_int_chop_gpu {
     return static_cast<result_t>(generator() >> num_leftover);
   }
 };
-
+#if defined GPU_INT_PRNG
 #if defined RIPPLES_ENABLE_UINT8_WEIGHTS
   using dist_t = uniform_int_chop_gpu<uint8_t>;
 #elif defined RIPPLES_ENABLE_UINT16_WEIGHTS
@@ -77,6 +77,15 @@ class uniform_int_chop_gpu {
 #else
   using dist_t = trng::uniform01_dist<float>;
 #endif // RIPPLES_WEIGHT_QUANT
+#else // GPU_INT_PRNG
+#if defined RIPPLES_ENABLE_UINT8_WEIGHTS
+  using dist_t = thrust::uniform_int_distribution<uint8_t>;
+#elif defined RIPPLES_ENABLE_UINT16_WEIGHTS
+  using dist_t = thrust::uniform_int_distribution<uint16_t>;
+#else
+  using dist_t = trng::uniform01_dist<float>;
+#endif // RIPPLES_WEIGHT_QUANT
+#endif // GPU_INT_PRNG
 
 // Override popcount for 32 or 64-bit integers
 __device__ __forceinline__ int popcount(uint32_t x) { return __popc(x); }
