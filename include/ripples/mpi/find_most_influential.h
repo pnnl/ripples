@@ -346,11 +346,13 @@ class MPIStreamingFindMostInfluential {
                         rr_sets_1d_gathered_displ.begin()+1);
       #ifdef PRINTF_TIL_YOU_DROP
       console->info("Rank = {}, RR Set Size Displacement Calculated", mpi_rank);
-      for (int i = 0; i < world_size; ++i) {
-        console->info("Rank = {}, Index = {}, RR Set Size Recv: {}", mpi_rank, i, rr_sets_1d_gathered_recv[i]);
-        console->info("Rank = {}, Index = {}, RR Set Size Dipl: {}", mpi_rank, i, rr_sets_1d_gathered_displ[i]);
-        console->info("Rank = {}, Index = {}, RR Sizes Recv: {}", mpi_rank, i, rr_sizes_1d_gathered_recv[i]);
-        console->info("Rank = {}, Index = {}, RR Sizes Displ: {}", mpi_rank, i, rr_sizes_1d_gathered_displ[i]);
+      if(mpi_rank == 0){
+        for (int i = 0; i < world_size; ++i) {
+          console->info("Rank = {}, Index = {}, RR Set Size Recv: {}", mpi_rank, i, rr_sets_1d_gathered_recv[i]);
+          console->info("Rank = {}, Index = {}, RR Set Size Dipl: {}", mpi_rank, i, rr_sets_1d_gathered_displ[i]);
+          console->info("Rank = {}, Index = {}, RR Sizes Recv: {}", mpi_rank, i, rr_sizes_1d_gathered_recv[i]);
+          console->info("Rank = {}, Index = {}, RR Sizes Displ: {}", mpi_rank, i, rr_sizes_1d_gathered_displ[i]);
+        }
       }
       #endif // PRINTF_TIL_YOU_DROP
       // Gather all RR sets on rank 0
@@ -358,9 +360,7 @@ class MPIStreamingFindMostInfluential {
                   rr_sizes_1d_gathered.data(), rr_sizes_1d_gathered_recv.data(),
                   rr_sizes_1d_gathered_displ.data(), MPI_UINT64_T, 0, MPI_COMM_WORLD);
       #ifdef PRINTF_TIL_YOU_DROP
-      if(mpi_rank == 0){
-        console->info("Rank = {}, RR Sizes Gathered", mpi_rank);
-      }
+      console->info("Rank = {}, RR Sizes Gathered", mpi_rank);
       #endif // PRINTF_TIL_YOU_DROP
       MPI_Gatherv(rr_sets_1d_.data(), static_cast<int>(rr_sets_1d_.size()), MPI_UINT32_T,
                   rr_sets_1d_gathered.data(), rr_sets_1d_gathered_recv.data(),
