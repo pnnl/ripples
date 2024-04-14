@@ -69,6 +69,21 @@ class uniform_int_chop_gpu {
     return static_cast<result_t>(generator() >> num_leftover);
   }
 };
+
+template <typename result_t>
+class uniform_float_chop {
+ public:
+  // __device__ explicit uniform_int_chop_gpu() = default;
+  template <typename gpu_PRNGeneratorTy>
+  __device__ result_t operator()(gpu_PRNGeneratorTy &generator){
+    static_assert(sizeof(typename gpu_PRNGeneratorTy::result_type) >= sizeof(result_t),
+                  "gpu_PRNGeneratorTy::result_type is too small, must be larger than"
+                  " the result type.");
+    return dist(generator) * std::numeric_limits<result_t>::max();
+  }
+  private :
+    trng::uniform01_dist<float> dist;
+};
 #if defined GPU_INT_PRNG
 #if defined RIPPLES_ENABLE_UINT8_WEIGHTS
   using dist_t = uniform_int_chop_gpu<uint8_t>;
@@ -79,9 +94,9 @@ class uniform_int_chop_gpu {
 #endif // RIPPLES_WEIGHT_QUANT
 #else // GPU_INT_PRNG
 #if defined RIPPLES_ENABLE_UINT8_WEIGHTS
-  using dist_t = thrust::uniform_int_distribution<uint8_t>;
+  using dist_t = uniform_float_chop<uint8_t>;
 #elif defined RIPPLES_ENABLE_UINT16_WEIGHTS
-  using dist_t = thrust::uniform_int_distribution<uint16_t>;
+  using dist_t = uniform_float_chop<uint16_t>;
 #else
   using dist_t = trng::uniform01_dist<float>;
 #endif // RIPPLES_WEIGHT_QUANT
