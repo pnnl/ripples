@@ -41,6 +41,11 @@ Publications
                Tumeo, and Ananth Kalyanaraman. "cuRipples: influence
                maximization on multi-CPU systems." In Proceedings of the 34th
                ACM International Conference on Supercomputing.
+.. [ICS2024] Reece Neff, Mostafa Eghbali Zarch, Marco Minutoli, Mahantesh Halappanavar, Antonino
+               Tumeo, Ananth Kalyanaraman, and Michela Becchi. "FuseIM: Fusing Probabilistic
+               Traversals for Influence Maximization on Exascale Systems." In Proceedings of the 38th
+               ACM International Conference on Supercomputing.
+
 
 Quickstart with Conan
 =====================
