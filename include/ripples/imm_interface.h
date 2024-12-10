@@ -83,29 +83,6 @@ using ICStreamingGenerator =
 	    GraphBwd, trng::lcg64,
 	  typename ripples::RRRsets<GraphBwd>::iterator,
 	    ripples::independent_cascade_tag>;
-
-#if 0
-
-template <typename GraphTy, typename ConfTy, typename GeneratorTy,
-          typename diff_model_tag>
-extern std::vector<typename GraphTy::vertex_type> IMM(const GraphTy &G, const ConfTy &CFG, double l, GeneratorTy &gen,
-                diff_model_tag &&model_tag, sequential_tag &&ex_tag);
-
-template <typename GraphTy, typename ConfTy, typename GeneratorTy,
-          typename diff_model_tag>
-extern std::vector<typename GraphTy::vertex_type> IMM(const GraphTy &G, const ConfTy &CFG, double l, GeneratorTy &gen,
-                diff_model_tag &&model_tag, omp_parallel_tag &&ex_tag);
-
-template <typename GraphTy, typename ConfTy, typename GeneratorTy,
-          typename diff_model_tag>
-extern std::vector<typename GraphTy::vertex_type> IMM(const GraphTy &G, const ConfTy &CFG, double l, GeneratorTy &gen,
-                IMMExecutionRecord&, diff_model_tag &&model_tag, sequential_tag &&ex_tag);
-
-template <typename GraphTy, typename ConfTy, typename GeneratorTy,
-          typename diff_model_tag>
-extern std::vector<typename GraphTy::vertex_type> IMM(const GraphTy &G, const ConfTy &CFG, double l, GeneratorTy &gen,
-                IMMExecutionRecord &, diff_model_tag &&model_tag, omp_parallel_tag &&ex_tag);
-#endif
 }
 
 #endif

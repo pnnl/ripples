@@ -8,7 +8,7 @@ from conan.tools.scm import Git
 class LibtrngConan(ConanFile):
     name = "libtrng"
     license = "BSD"
-    version = "4.23.1"
+    version = "4.25"
     author = "Heiko Bauke"
     description = "Tina's Random Number Generator Library"
     topics = ("Pseudo-Random Number Generator")
@@ -18,9 +18,8 @@ class LibtrngConan(ConanFile):
 
     def source(self):
         git = Git(self)
-        clone_args = ['--depth', '1', '--branch', 'basic_hip_support']
-        git.clone(url='https://github.com/mminutoli/trng4.git',
-                  args=clone_args, target='.')
+        git.clone(url='https://github.com/rabauke/trng4.git', target='.')
+        git.checkout(commit='16a7aa2f5b8e404fcf77da2fcab0b652678a43b5')
 
     def layout(self):
         cmake_layout(self)

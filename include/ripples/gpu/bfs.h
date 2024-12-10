@@ -55,10 +55,15 @@
 #include "thrust/sort.h"
 #include "thrust/transform_scan.h"
 
+#include "trng/lcg64.hpp"
+#include "trng/uniform01_dist.hpp"
+#include "trng/uniform_int_dist.hpp"
+#include "trng/uniform_dist.hpp"
+
 #if defined(RIPPLES_ENABLE_CUDA)
-#define MAX_COLOR_WIDTH 32
+#define MAX_COLOR_WIDTH 2
 #elif defined(RIPPLES_ENABLE_HIP)
-#define MAX_COLOR_WIDTH 64
+#define MAX_COLOR_WIDTH 2
 #endif
 
 #include "ripples/gpu/bfs_kernels.h"
@@ -69,9 +74,9 @@
 
 #define HIERARCHICAL
 
-#define REORDERING
+// #define REORDERING
 
-#define SORTING
+// #define SORTING
 
 #define FUSED_COLOR_SET
 
@@ -170,7 +175,9 @@ template <typename GraphTy, typename ColorTy = typename GraphTy::vertex_type,
 struct BFSMultiContext {
   BFSMultiContext(size_t num_nodes = 0, size_t small = 0, size_t medium = 0,
                   size_t large = 0, size_t extreme = 0, size_t gpu_id = 0)
-      : small_vertices(small),
+      : 
+      #ifdef PAUSE_AND_RESUME
+        small_vertices(small),
         medium_vertices(medium + small),
         large_vertices(large + medium + small),
         extreme_vertices(extreme + large + medium + small),
@@ -185,7 +192,23 @@ struct BFSMultiContext {
         workloads(4),
         host_workloads(4),
         host_reduced_frontier(num_sets),
-        output_mappings(num_sets * sizeof(ColorTy) * 8) {
+        output_mappings(num_sets * sizeof(ColorTy) * 8)
+      #else
+        small_vertices(small),
+        medium_vertices(medium),
+        large_vertices(large),
+        extreme_vertices(extreme),
+        small_colors(small * num_sets),
+        medium_colors((medium) * num_sets),
+        large_colors((large) * num_sets),
+        extreme_colors((extreme) * num_sets),
+        frontier_matrix(num_nodes * num_sets),
+        visited_matrix(num_nodes * num_sets),
+        host_visited_matrix(num_nodes * num_sets),
+        workloads(4),
+        host_workloads(4)
+      #endif
+        {
     GPU<RUNTIME>::set_device(gpu_id);
     streams = std::vector<typename GPU<RUNTIME>::stream_type>(
         4, GPU<RUNTIME>::create_stream());
@@ -202,12 +225,14 @@ struct BFSMultiContext {
   thrust::device_vector<typename GraphTy::vertex_type> workloads;
   thrust::host_vector<typename GraphTy::vertex_type> host_workloads;
   thrust::device_vector<ColorTy> frontier_matrix;
-  thrust::device_vector<ColorTy> reduced_frontier;
   thrust::device_vector<ColorTy> visited_matrix;
   thrust::host_vector<ColorTy> host_visited_matrix;
-  thrust::host_vector<ColorTy> host_reduced_frontier;
   std::vector<typename GPU<RUNTIME>::stream_type> streams;
+  #ifdef PAUSE_AND_RESUME
+  thrust::device_vector<ColorTy> reduced_frontier;
+  thrust::host_vector<ColorTy> host_reduced_frontier;
   std::vector<OutputTy> output_mappings;
+  #endif
 #ifdef PROFILE_OVERHEAD
   std::vector<size_t> setup_time;
   std::vector<size_t> traversal_time;
@@ -296,7 +321,8 @@ __host__ __device__ __inline__ T clearColor(T colors, T color) {
 
 template <typename VertexTy, typename WeightTy, typename GraphTy>
 struct GPUEdgeScatter {
-  VertexTy d_index;
+  using index_type = typename GraphTy::index_type;
+  index_type d_index;
   VertexTy d_edge;
   WeightTy d_weight;
   template <typename Tuple>
@@ -366,6 +392,7 @@ void GPUBatchedBFS(GraphTy &G, const DeviceContextTy &Context, SItrTy B,
                    SItrTy E, OItrTy O, diff_model_tag &&tag) {
   using DeviceGraphTy = typename DeviceContextTy::device_graph_type;
   using vertex_type = typename GraphTy::vertex_type;
+  using index_type = typename GraphTy::index_type;
   using weight_type = typename GraphTy::weight_type;
 
   constexpr unsigned int NumColors = 8 * sizeof(vertex_type);
@@ -642,6 +669,7 @@ void GPUBatchedScanBFS(GraphTy &G, const DeviceContextTy &Context, SItrTy B,
                        SItrTy E, OItrTy O, diff_model_tag &&tag) {
   using DeviceGraphTy = typename DeviceContextTy::device_graph_type;
   using vertex_type = typename GraphTy::vertex_type;
+  using index_type = typename GraphTy::index_type;
   using weight_type = typename GraphTy::weight_type;
 
   constexpr unsigned int NumColors = 8 * sizeof(vertex_type);
@@ -885,15 +913,16 @@ void GPUBatchedScanBFS(GraphTy &G, const DeviceContextTy &Context, SItrTy B,
 #define NUM_LEVELS 4
 
 template <typename GraphTy, typename DeviceContextTy, typename SItrTy,
-          typename OItrTy, typename diff_model_tag,
+          typename OItrTy, typename gpu_PRNGeneratorTy, typename diff_model_tag,
           typename ColorTy = typename GraphTy::vertex_type>
 void GPUBatchedTieredQueueBFS(const GraphTy &G, const DeviceContextTy &Context,
-                              SItrTy B, SItrTy E, OItrTy O,
+                              SItrTy B, SItrTy E, OItrTy O, gpu_PRNGeneratorTy *d_trng_state_,
                               diff_model_tag &&tag,
                               BFSContext<GraphTy, ColorTy> &bfs_ctx,
                               ColorTy NumColors = 32) {
   using DeviceGraphTy = typename DeviceContextTy::device_graph_type;
   using vertex_type = typename GraphTy::vertex_type;
+  using index_type = typename GraphTy::index_type;
   using weight_type = typename GraphTy::weight_type;
   using color_type = ColorTy;
 
@@ -1307,15 +1336,20 @@ void GPUBatchedTieredQueueBFS(const GraphTy &G, const DeviceContextTy &Context,
 }
 
 template <typename GraphTy, typename DeviceContextTy, typename SItrTy,
-          typename OItrTy, typename diff_model_tag, typename BFSCtxTy>
+          typename OItrTy, typename gpu_PRNGeneratorTy, typename diff_model_tag,
+          typename BFSCtxTy>
 void GPUBatchedBFSMultiColorFused(const GraphTy &G,
                                   const DeviceContextTy &Context, SItrTy B,
-                                  SItrTy E, OItrTy O, diff_model_tag &&tag,
-                                  BFSCtxTy &bfs_ctx) {
+                                  SItrTy E, OItrTy O,
+                                  gpu_PRNGeneratorTy *d_trng_state_,
+                                  diff_model_tag &&tag, BFSCtxTy &bfs_ctx) {
   using DeviceGraphTy = typename DeviceContextTy::device_graph_type;
   using vertex_type = typename GraphTy::vertex_type;
+  using index_type = typename GraphTy::index_type;
   using weight_type = typename GraphTy::weight_type;
   using color_type = typename BFSCtxTy::color_type;
+
+  static_assert(sizeof(index_type) == 8);
 
 #ifdef PROFILE_OVERHEAD
   auto start = std::chrono::high_resolution_clock::now();
@@ -1432,6 +1466,8 @@ void GPUBatchedBFSMultiColorFused(const GraphTy &G,
   size_t remaining_count = 0;
 #endif  // PROFILE_OVERHEAD
 
+// std::cout << "Entering while loop: " << Context.gpu_id << std::endl;
+
   while (!finished) {
 #ifdef FRONTIER_PROFILE
     GPU<RUNTIME>::device_sync();
@@ -1464,11 +1500,13 @@ void GPUBatchedBFSMultiColorFused(const GraphTy &G,
     GPU<RUNTIME>::device_sync();
     auto start_scatter = std::chrono::high_resolution_clock::now();
 #endif
+// std::cout << "Beginning of while loop: " << Context.gpu_id << std::endl;
     finished = true;
     // Set workloads to 0
     thrust::fill(thrust::device.on(streams[0]), workloads.begin(),
                  workloads.end(), 0);
     GPU<RUNTIME>::stream_sync(streams[0]);
+    // std::cout << "Build frontier queue: " << Context.gpu_id << std::endl;
     build_frontier_queues_kernel<RUNTIME, GraphTy, color_type, WarpMaskTy>
         <<<num_build_blocks, num_threads, 0, streams[0]>>>(
             d_index, small_vertices_ptr, medium_vertices_ptr,
@@ -1497,11 +1535,12 @@ void GPUBatchedBFSMultiColorFused(const GraphTy &G,
     bfs_ctx.small_warps.push_back(num_blocks * thread_size);
 #endif  // UTILIZATION_PROFILE
     if (host_workloads[threshold] > 0) {
+      // std::cout << "Queueing " << host_workloads[threshold] << " small: " << Context.gpu_id << std::endl;
       finished = false;
-      fused_color_thread_scatter_kernel<RUNTIME, GraphTy, color_type>
+      fused_color_thread_scatter_kernel<RUNTIME, GraphTy, color_type, gpu_PRNGeneratorTy>
           <<<num_blocks, thread_size, 0, streams[threshold]>>>(
               d_index, d_edge, d_weight, small_vertices_ptr, small_colors_ptr,
-              frontier_matrix_ptr, host_workloads[threshold], color_dim);
+              frontier_matrix_ptr, d_trng_state_, host_workloads[threshold], color_dim);
     }
     threshold++;
 #ifdef UTILIZATION_PROFILE
@@ -1509,11 +1548,13 @@ void GPUBatchedBFSMultiColorFused(const GraphTy &G,
     bfs_ctx.medium_warps.push_back((host_workloads[threshold] * thread_size));
 #endif  // UTILIZATION_PROFILE
     if (host_workloads[threshold] > 0) {
+      // std::cout << "Queueing " << host_workloads[threshold] << " medium: " << Context.gpu_id << std::endl;
       finished = false;
-      fused_color_set_scatter_kernel<RUNTIME, GraphTy, color_type>
+      fused_color_set_scatter_kernel<RUNTIME, GraphTy, color_type, gpu_PRNGeneratorTy>
           <<<host_workloads[threshold], thread_size, 0, streams[threshold]>>>(
               d_index, d_edge, d_weight, medium_vertices_ptr, medium_colors_ptr,
-              frontier_matrix_ptr, host_workloads[threshold], color_dim);
+              frontier_matrix_ptr, d_trng_state_,
+              host_workloads[threshold], color_dim);
     }
     threshold++;
 #ifdef UTILIZATION_PROFILE
@@ -1521,11 +1562,13 @@ void GPUBatchedBFSMultiColorFused(const GraphTy &G,
     bfs_ctx.large_warps.push_back((host_workloads[threshold] * 256));
 #endif  // UTILIZATION_PROFILE
     if (host_workloads[threshold] > 0) {
+      // std::cout << "Queueing " << host_workloads[threshold] << " large: " << Context.gpu_id << std::endl;
       finished = false;
-      fused_color_set_scatter_kernel<RUNTIME, GraphTy, color_type>
+      fused_color_set_scatter_kernel<RUNTIME, GraphTy, color_type, gpu_PRNGeneratorTy>
           <<<host_workloads[threshold], 256, 0, streams[threshold]>>>(
               d_index, d_edge, d_weight, large_vertices_ptr, large_colors_ptr,
-              frontier_matrix_ptr, host_workloads[threshold], color_dim);
+              frontier_matrix_ptr, d_trng_state_,
+              host_workloads[threshold], color_dim);
     }
     threshold++;
 #ifdef UTILIZATION_PROFILE
@@ -1533,16 +1576,18 @@ void GPUBatchedBFSMultiColorFused(const GraphTy &G,
     bfs_ctx.extreme_warps.push_back((host_workloads[threshold] * 1024));
 #endif  // UTILIZATION_PROFILE
     if (host_workloads[threshold] > 0) {
+      // std::cout << "Queueing " << host_workloads[threshold] << " extreme: " << Context.gpu_id << std::endl;
       finished = false;
-      fused_color_set_scatter_kernel<RUNTIME, GraphTy, color_type>
+      fused_color_set_scatter_kernel<RUNTIME, GraphTy, color_type, gpu_PRNGeneratorTy>
           <<<host_workloads[threshold], 1024, 0, streams[threshold]>>>(
               d_index, d_edge, d_weight, extreme_vertices_ptr,
               extreme_colors_ptr, frontier_matrix_ptr,
-              host_workloads[threshold], color_dim);
+              d_trng_state_, host_workloads[threshold], color_dim);
     }
     for (size_t i = 0; i < streams.size(); i++) {
       GPU<RUNTIME>::stream_sync(streams[i]);
     }
+    // std::cout << "Queues done: " << Context.gpu_id << std::endl;
 #ifdef FRONTIER_PROFILE
     // Add up host_workloads 0 through 3
     size_t vertex_size = 0;
@@ -1585,7 +1630,7 @@ void GPUBatchedBFSMultiColorFused(const GraphTy &G,
   start = std::chrono::high_resolution_clock::now();
 #endif  // PROFILE_OVERHEAD
 
-  // std::cout << "Free! " << Context.gpu_id << std::endl;
+  // std::cout << "Post-Processing: " << Context.gpu_id << std::endl;
 
   host_visited_matrix = visited_matrix;
   // size_t num_vertices_check = 0;
@@ -1618,6 +1663,7 @@ void GPUBatchedBFSMultiColorFused(const GraphTy &G,
   // std::cout << "Number of vertices = " << num_vertices << " num_check = " <<
   // num_vertices_check << std::endl; assert(num_vertices >= num_colors &&
   // "Number of vertices is incorrect"); std::cout << "Done Removing" << "\n";
+  // std::cout << "Done: " << Context.gpu_id << std::endl;
 
 #ifdef PROFILE_OVERHEAD
   end = std::chrono::high_resolution_clock::now();
@@ -1636,15 +1682,16 @@ void GPUBatchedBFSMultiColorFused(const GraphTy &G,
 #ifdef PAUSE_AND_RESUME
 
 template <typename GraphTy, typename DeviceContextTy, typename SItrTy,
-          typename OItrTy, typename diff_model_tag, typename ThresholdTy,
-          typename BFSCtxTy>
+          typename OItrTy, typename gpu_PRNGeneratorTy, typename diff_model_tag,
+          typename ThresholdTy, typename BFSCtxTy>
 size_t GPUBatchedBFSMultiColorFusedReload(
     const GraphTy &G, const DeviceContextTy &Context, SItrTy B, SItrTy E,
-    OItrTy O, diff_model_tag &&tag, BFSCtxTy &bfs_ctx,
-    const ThresholdTy pause_threshold, const size_t num_colors,
-    const bool reset) {
+    OItrTy O, gpu_PRNGeneratorTy *d_trng_state_, diff_model_tag &&tag,
+    BFSCtxTy &bfs_ctx, const ThresholdTy pause_threshold,
+    const size_t num_colors, const bool reset) {
   using DeviceGraphTy = typename DeviceContextTy::device_graph_type;
   using vertex_type = typename GraphTy::vertex_type;
+  using index_type = typename GraphTy::index_type;
   using weight_type = typename GraphTy::weight_type;
   using color_type = typename BFSCtxTy::color_type;
 
@@ -1842,38 +1889,45 @@ size_t GPUBatchedBFSMultiColorFusedReload(
     size_t threshold = 0;
     const size_t num_blocks =
         (host_workloads[threshold] + block_size - 1) / block_size;
+    size_t rng_offset = 0;
     // Enqueue binned kernels
     if (host_workloads[threshold] > 0) {
       finished = false;
-      fused_color_thread_scatter_kernel<RUNTIME, GraphTy, color_type>
+      fused_color_thread_scatter_kernel<RUNTIME, GraphTy, color_type, gpu_PRNGeneratorTy>
           <<<num_blocks, thread_size, 0, streams[threshold]>>>(
               d_index, d_edge, d_weight, small_vertices_ptr, small_colors_ptr,
-              frontier_matrix_ptr, host_workloads[threshold], color_dim);
+              frontier_matrix_ptr, d_trng_state_, rng_offset,
+              host_workloads[threshold], color_dim);
+      rng_offset += host_workloads[threshold];
     }
     threshold++;
     if (host_workloads[threshold] > 0) {
       finished = false;
-      fused_color_set_scatter_kernel<RUNTIME, GraphTy, color_type>
+      fused_color_set_scatter_kernel<RUNTIME, GraphTy, color_type, gpu_PRNGeneratorTy>
           <<<host_workloads[threshold], thread_size, 0, streams[threshold]>>>(
               d_index, d_edge, d_weight, medium_vertices_ptr, medium_colors_ptr,
-              frontier_matrix_ptr, host_workloads[threshold], color_dim);
+              frontier_matrix_ptr, d_trng_state_, rng_offset,
+              host_workloads[threshold], color_dim);
+      rng_offset += host_workloads[threshold];
     }
     threshold++;
     if (host_workloads[threshold] > 0) {
       finished = false;
-      fused_color_set_scatter_kernel<RUNTIME, GraphTy, color_type>
+      fused_color_set_scatter_kernel<RUNTIME, GraphTy, color_type, gpu_PRNGeneratorTy>
           <<<host_workloads[threshold], 256, 0, streams[threshold]>>>(
               d_index, d_edge, d_weight, large_vertices_ptr, large_colors_ptr,
-              frontier_matrix_ptr, host_workloads[threshold], color_dim);
+              frontier_matrix_ptr, d_trng_state_, rng_offset,
+              host_workloads[threshold], color_dim);
+      rng_offset += host_workloads[threshold];
     }
     threshold++;
     if (host_workloads[threshold] > 0) {
       finished = false;
-      fused_color_set_scatter_kernel<RUNTIME, GraphTy, color_type>
+      fused_color_set_scatter_kernel<RUNTIME, GraphTy, color_type, gpu_PRNGeneratorTy>
           <<<host_workloads[threshold], 1024, 0, streams[threshold]>>>(
               d_index, d_edge, d_weight, extreme_vertices_ptr,
               extreme_colors_ptr, frontier_matrix_ptr,
-              host_workloads[threshold], color_dim);
+              d_trng_state_, rng_offset, host_workloads[threshold], color_dim);
     }
     for (size_t i = 0; i < streams.size(); i++) {
       GPU<RUNTIME>::stream_sync(streams[i]);
@@ -1952,6 +2006,7 @@ void GPUCalculateDegrees(GraphTy &G, const DeviceContextTy &Context,
                          int &extreme_neighbors) {
   using DeviceGraphTy = typename DeviceContextTy::device_graph_type;
   using vertex_type = typename GraphTy::vertex_type;
+  using index_type = typename GraphTy::index_type;
 
   GPU<RUNTIME>::set_device(Context.gpu_id);
 

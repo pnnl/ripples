@@ -58,12 +58,13 @@ namespace ripples {
 
 template <GPURuntime R, typename GraphTy, typename gpu_PRNGeneratorTy>
 __global__ void kernel_lt_per_thread(
-    size_t bs, typename gpu_graph<R, GraphTy>::vertex_t *index,
+    size_t bs, typename gpu_graph<R, GraphTy>::index_t *index,
     typename gpu_graph<R, GraphTy>::vertex_t *edges,
     typename gpu_graph<R, GraphTy>::weight_t *weights, size_t num_nodes,
     gpu_PRNGeneratorTy *d_trng_states, mask_word_t *d_res_masks,
     size_t num_mask_words) {
   using vertex_type = typename gpu_graph<R, GraphTy>::vertex_t;
+  using index_type = typename gpu_graph<R, GraphTy>::index_t;
 
   int tid = blockIdx.x * blockDim.x + threadIdx.x;
   if (tid < bs) {
@@ -82,7 +83,7 @@ __global__ void kernel_lt_per_thread(
     dr_res_mask[res_size++] = src;
 
     float threshold;
-    vertex_type first, last;
+    index_type first, last;
     vertex_type v;
     while (src != num_nodes) {
       // rng

@@ -6,7 +6,7 @@
 //
 //===----------------------------------------------------------------------===//
 //
-// Copyright (c) 2019, Battelle Memorial Institute
+// Copyright (c) 2024, Battelle Memorial Institute
 //
 // Battelle Memorial Institute (hereinafter Battelle) hereby grants permission
 // to any person or entity lawfully obtaining a copy of this software and
@@ -40,61 +40,23 @@
 //
 //===----------------------------------------------------------------------===//
 
-#include <unordered_map>
+#ifndef RIPPLES_OPIMC_CONFIGURATION_H
+#define RIPPLES_OPIMC_CONFIGURATION_H
 
-#include "trng/uniform01_dist.hpp"
-#include "trng/uniform_int_dist.hpp"
-
-#include "ripples/gpu/generate_rrr_sets.h"
-#include "ripples/gpu/gpu_graph.h"
+#include "ripples/imm_configuration.h"
 
 namespace ripples {
+//! The OPIM-C algorithm configuration descriptor.
+struct OPIMCConfiguration : public IMMConfiguration {
+  float delta{.05};
 
-__global__ void kernel_lt_trng_setup(gpu_PRNGeneratorTy *d_trng_states,
-                                     gpu_PRNGeneratorTy r, size_t num_seqs,
-                                     size_t first_seq) {
-  int tid = blockIdx.x * blockDim.x + threadIdx.x;
-  d_trng_states[tid] = r;
-  d_trng_states[tid].split(num_seqs, first_seq + tid);
-}
-
-__global__ void kernel_ic_trng_setup(gpu_PRNGeneratorTy *d_trng_states,
-                                     gpu_PRNGeneratorTy r, size_t num_seqs,
-                                     size_t first_seq, size_t chunk_size) {
-  int tid = blockIdx.x * blockDim.x + threadIdx.x;
-  if(tid < chunk_size) {
-    d_trng_states[tid] = r;
-    d_trng_states[tid].split(num_seqs, first_seq + tid);
+  void addCmdOptions(CLI::App &app) {
+    IMMConfiguration::addCmdOptions(app);
+    app.add_option("--delta", delta,
+                   "Parameter controlling the success probability (1 - delta).")
+        ->group("Algorithm Options");
   }
-}
-
-void gpu_lt_rng_setup(gpu_PRNGeneratorTy *d_trng_state,
-                      const gpu_PRNGeneratorTy &r, size_t num_seqs,
-                      size_t first_seq, size_t n_blocks, size_t block_size) {
-#if defined(RIPPLES_ENABLE_CUDA)
-  kernel_lt_trng_setup<<<n_blocks, block_size>>>(d_trng_state, r, num_seqs,
-                                                 first_seq);
-#elif defined(RIPPLES_ENABLE_HIP)
-  hipLaunchKernelGGL(kernel_lt_trng_setup, n_blocks, block_size, 0, 0,
-                     d_trng_state, r, num_seqs, first_seq);
-#else
-#error "Unsupported GPU runtime"
-#endif
-}
-
-void gpu_ic_rng_setup(gpu_PRNGeneratorTy *d_trng_state,
-                      const gpu_PRNGeneratorTy &r, size_t num_seqs,
-                      size_t first_seq, size_t n_blocks, size_t block_size,
-                      size_t chunk_size) {
-#if defined(RIPPLES_ENABLE_CUDA)
-  kernel_ic_trng_setup<<<n_blocks, block_size>>>(d_trng_state, r, num_seqs,
-                                                 first_seq, chunk_size);
-#elif defined(RIPPLES_ENABLE_HIP)
-  hipLaunchKernelGGL(kernel_ic_trng_setup, n_blocks, block_size, 0, 0,
-                     d_trng_state, r, num_seqs, first_seq, chunk_size);
-#else
-#error "Unsupported GPU runtime"
-#endif
-}
-
+};
 }  // namespace ripples
+
+#endif

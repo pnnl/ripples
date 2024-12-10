@@ -46,59 +46,29 @@
 #include <chrono>
 #include <vector>
 
+#include "ripples/generate_rrr_sets_record.h"
+#include "ripples/find_most_influential_record.h"
+
 namespace ripples {
 
 //! IMM execution record.
-struct IMMExecutionRecord {
+struct IMMExecutionRecord : public GenerateRRRSetsRecord,
+                            public FindMostInfluentialSetRecord {
   using ex_time_ms = std::chrono::duration<double, std::milli>;
   using ex_time_ns = std::chrono::nanoseconds;
 
-  struct cpu_walk_prof {
-    size_t NumSets;
-    ex_time_ms Total;
-
-    cpu_walk_prof()
-      : NumSets()
-      , Total() {}
-  };
-
-  struct gpu_walk_prof {
-    size_t NumSets;
-    ex_time_ms Total;
-    ex_time_ns Kernel, D2H, Post;
-
-    gpu_walk_prof()
-      : NumSets()
-      , Total(), Kernel(), D2H(), Post()
-    {}
-  };
-
-  struct walk_iteration_prof {
-    std::vector<cpu_walk_prof> CPUWalks{};
-    std::vector<gpu_walk_prof> GPUWalks{};
-    size_t NumSets{0};
-    ex_time_ms Total{0};
-
-    walk_iteration_prof()
-      : CPUWalks(), GPUWalks(), NumSets(), Total() {}
-  };
-
   IMMExecutionRecord()
-    : NumThreads()
-    , Theta()
-    , ThetaPrimeDeltas()
-    , ThetaEstimationTotal()
-    , ThetaEstimationMostInfluential()
-    , Counting()
-    , Pivoting()
-    , Microbenchmarking()
-    , CPUBatchSize(64)
-    , GPUBatchSize(64)
-    , GenerateRRRSets()
-    , FindMostInfluentialSet()
-    , Total()
-    , RRRSetSize()
-    , WalkIterations() {}
+      : GenerateRRRSetsRecord(),
+        FindMostInfluentialSetRecord(),
+        NumThreads(),
+        Theta(),
+        ThetaPrimeDeltas(),
+        ThetaEstimationTotal(),
+        ThetaEstimationMostInfluential(),
+        GenerateRRRSets(),
+        FindMostInfluentialSet(),
+        Total(),
+        RRRSetSize() {}
 
   //! Number of threads used during the execution.
   size_t NumThreads;
@@ -112,14 +82,6 @@ struct IMMExecutionRecord {
   std::vector<ex_time_ms> ThetaEstimationGenerateRRR;
   //! Execution times of the FindMostInfluentialSet steps in Theta estimation.
   std::vector<ex_time_ms> ThetaEstimationMostInfluential;
-  std::vector<ex_time_ms> Counting;
-  std::vector<ex_time_ms> Pivoting;
-  //! Total microbenchmarking time.
-  ex_time_ms Microbenchmarking;
-  //! CPU Batch Size
-  size_t CPUBatchSize;
-  //! GPU Batch Size
-  size_t GPUBatchSize;
   //! Execution time of the RRR sets generation phase.
   ex_time_ms GenerateRRRSets;
   //! Execution time of the maximum coverage phase.
@@ -127,8 +89,6 @@ struct IMMExecutionRecord {
   //! Total execution time.
   ex_time_ms Total;
   size_t RRRSetSize;
-  //! Iterations breakdown
-  std::vector<walk_iteration_prof> WalkIterations;
 };
 
 }  // namespace ripples

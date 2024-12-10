@@ -184,6 +184,81 @@ void BatchedBFS(const GraphTy &G, SItrTy B, SItrTy E, OItrTy O,
 template <typename GraphTy, typename SItrTy, typename OItrTy,
           typename PRNGeneratorTy, typename diff_model_tag,
           typename ColorTy = uint64_t>
+void BatchedBFSNeighborColor(const GraphTy &G, SItrTy B, SItrTy E, OItrTy O,
+                                PRNGeneratorTy &generator, diff_model_tag &&tag,
+                                BFSCPUContext &cpu_ctx) {
+  size_t rank = omp_get_thread_num();
+  constexpr ColorTy color_size = sizeof(ColorTy) * 8;
+  assert(std::distance(B, E) <= color_size &&
+         "Only up to 64 BFS are supported");
+  using vertex_type = typename GraphTy::vertex_type;
+  using weight_type = typename GraphTy::weight_type;
+// Perform chunk fill
+  std::fill(cpu_ctx.old_visited_matrix.begin(), cpu_ctx.old_visited_matrix.end(), 0);
+  std::fill(cpu_ctx.new_visited_matrix.begin(), cpu_ctx.new_visited_matrix.end(), 0);
+  ColorTy itr_color_mask = (ColorTy)1 << color_size - 1;
+  for (auto itr = B; itr < E; ++itr, itr_color_mask >>= 1) {
+    cpu_ctx.new_visited_matrix[*itr] |= itr_color_mask;
+  }
+  bool found_one = true;
+  auto &old_visited_matrix = cpu_ctx.old_visited_matrix;
+  auto &new_visited_matrix = cpu_ctx.new_visited_matrix;
+  using dist_t = std::conditional_t<
+      std::is_floating_point_v<typename GraphTy::weight_type>,
+      trng::uniform01_dist<typename GraphTy::weight_type>,
+      uniform_int_chop<typename GraphTy::weight_type>>;
+
+  dist_t value;
+  while (found_one) {
+    found_one = false;
+// Iterate over both visited_vertex and new_visited_vertex
+    for (vertex_type vertex = 0; vertex < G.num_nodes(); ++vertex) {
+      const ColorTy visited_old = old_visited_matrix[vertex];
+      const ColorTy visited_new = new_visited_matrix[vertex];
+      if (visited_old != visited_new) {
+        found_one = true;
+        ColorTy colors = visited_new ^ visited_old;
+        old_visited_matrix[vertex] |= visited_new;
+        // Convert the colors to an array of color masks
+        ColorTy color_masks[color_size];
+        ColorTy num_colors = 0;
+        while (colors != 0) {
+          ColorTy color = __builtin_clzll(colors);
+          color_masks[num_colors++] =
+              (static_cast<ColorTy>(1) << (color_size - 1 - color));
+          colors -= (static_cast<ColorTy>(1) << (color_size - 1 - color));
+        }
+        for (auto u : G.neighbors(vertex)) {
+          const ColorTy old_mask = new_visited_matrix[u.vertex];
+          ColorTy new_mask = 0;
+#pragma omp simd reduction(| : new_mask)
+          for (size_t i = 0; i < num_colors; ++i) {
+            const ColorTy color_mask = color_masks[i];
+            if (!(old_mask & color_mask) &&
+                value(generator[0][i]) <= u.weight) {
+              new_mask |= color_mask;
+            }
+          }
+          if (new_mask != 0) {
+            new_visited_matrix[u.vertex] |= new_mask;
+          }
+        }
+      }
+    }
+  }
+  for (int i = 0; i < G.num_nodes(); ++i) {
+    ColorTy colors = new_visited_matrix[i];
+    while (colors != 0) {
+      ColorTy color = __builtin_clzll(colors);
+      (O + color)->push_back(i);
+      colors -= (static_cast<ColorTy>(1) << (color_size - 1 - color));
+    }
+  }
+}
+
+template <typename GraphTy, typename SItrTy, typename OItrTy,
+          typename PRNGeneratorTy, typename diff_model_tag,
+          typename ColorTy = uint64_t>
 void BatchedBFSNeighborColorOMP(const GraphTy &G, SItrTy B, SItrTy E, OItrTy O,
                                 PRNGeneratorTy &generator, diff_model_tag &&tag,
                                 BFSCPUContext &cpu_ctx,

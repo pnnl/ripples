@@ -6,7 +6,7 @@
 //
 //===----------------------------------------------------------------------===//
 //
-// Copyright (c) 2019, Battelle Memorial Institute
+// Copyright (c) 2024, Battelle Memorial Institute
 //
 // Battelle Memorial Institute (hereinafter Battelle) hereby grants permission
 // to any person or entity lawfully obtaining a copy of this software and
@@ -40,61 +40,59 @@
 //
 //===----------------------------------------------------------------------===//
 
-#include <unordered_map>
+#ifndef RIPPLES_GENERATE_RRR_SETS_RECORD_H
+#define RIPPLES_GENERATE_RRR_SETS_RECORD_H
 
-#include "trng/uniform01_dist.hpp"
-#include "trng/uniform_int_dist.hpp"
-
-#include "ripples/gpu/generate_rrr_sets.h"
-#include "ripples/gpu/gpu_graph.h"
+#include <chrono>
+#include <vector>
 
 namespace ripples {
 
-__global__ void kernel_lt_trng_setup(gpu_PRNGeneratorTy *d_trng_states,
-                                     gpu_PRNGeneratorTy r, size_t num_seqs,
-                                     size_t first_seq) {
-  int tid = blockIdx.x * blockDim.x + threadIdx.x;
-  d_trng_states[tid] = r;
-  d_trng_states[tid].split(num_seqs, first_seq + tid);
-}
+//! Generate RRR sets Record.
+struct GenerateRRRSetsRecord {
+  using ex_time_ms = std::chrono::duration<double, std::milli>;
+  using ex_time_ns = std::chrono::nanoseconds;
 
-__global__ void kernel_ic_trng_setup(gpu_PRNGeneratorTy *d_trng_states,
-                                     gpu_PRNGeneratorTy r, size_t num_seqs,
-                                     size_t first_seq, size_t chunk_size) {
-  int tid = blockIdx.x * blockDim.x + threadIdx.x;
-  if(tid < chunk_size) {
-    d_trng_states[tid] = r;
-    d_trng_states[tid].split(num_seqs, first_seq + tid);
-  }
-}
+  struct cpu_walk_prof {
+    size_t NumSets;
+    ex_time_ms Total;
 
-void gpu_lt_rng_setup(gpu_PRNGeneratorTy *d_trng_state,
-                      const gpu_PRNGeneratorTy &r, size_t num_seqs,
-                      size_t first_seq, size_t n_blocks, size_t block_size) {
-#if defined(RIPPLES_ENABLE_CUDA)
-  kernel_lt_trng_setup<<<n_blocks, block_size>>>(d_trng_state, r, num_seqs,
-                                                 first_seq);
-#elif defined(RIPPLES_ENABLE_HIP)
-  hipLaunchKernelGGL(kernel_lt_trng_setup, n_blocks, block_size, 0, 0,
-                     d_trng_state, r, num_seqs, first_seq);
-#else
-#error "Unsupported GPU runtime"
-#endif
-}
+    cpu_walk_prof() : NumSets(), Total() {}
+  };
 
-void gpu_ic_rng_setup(gpu_PRNGeneratorTy *d_trng_state,
-                      const gpu_PRNGeneratorTy &r, size_t num_seqs,
-                      size_t first_seq, size_t n_blocks, size_t block_size,
-                      size_t chunk_size) {
-#if defined(RIPPLES_ENABLE_CUDA)
-  kernel_ic_trng_setup<<<n_blocks, block_size>>>(d_trng_state, r, num_seqs,
-                                                 first_seq, chunk_size);
-#elif defined(RIPPLES_ENABLE_HIP)
-  hipLaunchKernelGGL(kernel_ic_trng_setup, n_blocks, block_size, 0, 0,
-                     d_trng_state, r, num_seqs, first_seq, chunk_size);
-#else
-#error "Unsupported GPU runtime"
-#endif
-}
+  struct gpu_walk_prof {
+    size_t NumSets;
+    ex_time_ms Total;
+    ex_time_ns Kernel, D2H, Post;
+
+    gpu_walk_prof() : NumSets(), Total(), Kernel(), D2H(), Post() {}
+  };
+
+  struct walk_iteration_prof {
+    std::vector<cpu_walk_prof> CPUWalks{};
+    std::vector<gpu_walk_prof> GPUWalks{};
+    size_t NumSets{0};
+    ex_time_ms Total{0};
+
+    walk_iteration_prof() : CPUWalks(), GPUWalks(), NumSets(), Total() {}
+  };
+
+  GenerateRRRSetsRecord()
+      : CPUBatchSize(64),
+        GPUBatchSize(64),
+        WalkIterations(),
+        Microbenchmarking() {}
+
+  //! CPU Batch Size
+  size_t CPUBatchSize;
+  //! GPU Batch Size
+  size_t GPUBatchSize;
+  //! Iterations breakdown
+  std::vector<walk_iteration_prof> WalkIterations;
+  //! Total microbenchmarking time.
+  ex_time_ms Microbenchmarking;
+};
 
 }  // namespace ripples
+
+#endif

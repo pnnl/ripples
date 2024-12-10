@@ -42,28 +42,6 @@
 #include "ripples/gpu/gpu_runtime_trait.h"
 
 namespace ripples {
-template <GPURuntime R, typename GraphTy>
-__global__ void build_graph_kernel(
-    typename gpu_graph<R, GraphTy>::vertex_t *d_edges,
-    typename gpu_graph<R, GraphTy>::weight_t *d_weights,
-    typename gpu_graph<R, GraphTy>::vertex_t *d_index,
-    typename GraphTy::edge_type *d_src_weighted_edges,
-    typename GraphTy::edge_type **d_src_index, size_t num_nodes) {
-  using vertex_t = typename gpu_graph<R, GraphTy>::vertex_t;
-
-  int tid = blockIdx.x * blockDim.x + threadIdx.x;
-  if (tid < num_nodes) {
-    vertex_t first = d_src_index[tid] - d_src_index[0];
-    vertex_t last = d_src_index[tid + 1] - d_src_index[0];
-    if (tid == 0) d_index[0] = 0;
-    d_index[tid + 1] = last;
-    for (; first < last; ++first) {
-      d_edges[first] = d_src_weighted_edges[first].vertex;
-      d_weights[first] = d_src_weighted_edges[first].weight;
-    }
-  }
-}
-
 //! \brief Construct a device-side CUDA Graph from a host-side Graph.
 //!
 //! \param hg The host-side Graph to be mirrored.
@@ -79,55 +57,29 @@ gpu_graph<R, GraphTy> *make_gpu_graph(const GraphTy &hg) {
       hg.num_edges() * sizeof(typename gpu_graph<R, GraphTy>::weight_t));
   GPU<R>::device_malloc(
       reinterpret_cast<void **>(&res->d_index_),
-      (hg.num_nodes() + 1) * sizeof(typename gpu_graph<R, GraphTy>::vertex_t));
+      (hg.num_nodes() + 1) * sizeof(typename gpu_graph<R, GraphTy>::index_t));
 
-  // copy graph to device
-  using destination_type = typename GraphTy::edge_type;
-  destination_type *d_weighted_edges;
-  GPU<R>::device_malloc(reinterpret_cast<void **>(&d_weighted_edges),
-                        hg.num_edges() * sizeof(destination_type));
-  GPU<R>::h2d(d_weighted_edges, hg.csr_edges(),
-              hg.num_edges() * sizeof(destination_type));
-  destination_type **d_index;
-  GPU<R>::device_malloc(reinterpret_cast<void **>(&d_index),
-                        (hg.num_nodes() + 1) * sizeof(destination_type *));
-  GPU<R>::h2d(d_index, hg.csr_index(),
-              (hg.num_nodes() + 1) * sizeof(destination_type *));
-
-  // build
-#if defined(RIPPLES_ENABLE_CUDA)
-  constexpr int block_size = 512;
-  auto n_blocks = (hg.num_nodes() + block_size - 1) / block_size;
-  build_graph_kernel<R, GraphTy>
-      <<<n_blocks, block_size>>>(res->d_edges_, res->d_weights_, res->d_index_,
-                                 d_weighted_edges, d_index, hg.num_nodes());
-#elif defined(RIPPLES_ENABLE_HIP)
-  constexpr int block_size = 256;
-  dim3 threads(block_size, 1, 1);
-  dim3 blocks((hg.num_nodes() + block_size - 1) / block_size, 1, 1);
-  hipLaunchKernelGGL((build_graph_kernel<R, GraphTy>), blocks, threads, 0, 0,
-                     res->d_edges_, res->d_weights_, res->d_index_,
-                     d_weighted_edges, d_index, hg.num_nodes());
-#else
-#error "Unsupported GPU runtime"
-#endif
-
-  GPU<R>::device_sync();
-  GPU<R>::device_free(d_weighted_edges);
-  GPU<R>::device_free(d_index);
+  GPU<R>::h2d(res->d_edges_, hg.csr_edges(),
+              hg.num_edges() * sizeof(typename gpu_graph<R, GraphTy>::vertex_t));
+  GPU<R>::h2d(res->d_weights_, hg.csr_weights(),
+              hg.num_edges() * sizeof(typename gpu_graph<R, GraphTy>::weight_t));
+  GPU<R>::h2d(res->d_index_, hg.csr_index(),
+              (hg.num_nodes() + 1) * sizeof(typename gpu_graph<R, GraphTy>::index_t));
 
   return res;
 }
 
 #if defined(RIPPLES_ENABLE_CUDA)
-template gpu_graph<CUDA, IMMGraphTy> *make_gpu_graph<CUDA, IMMGraphTy>(
-    const IMMGraphTy &);
-template gpu_graph<CUDA, HCGraphTy> *make_gpu_graph<CUDA, HCGraphTy>(
-    const HCGraphTy &);
+template gpu_graph<GPURuntime::CUDA, IMMGraphTy> *make_gpu_graph(
+    const IMMGraphTy &hg);
+template gpu_graph<GPURuntime::CUDA, HCGraphTy> *make_gpu_graph(
+    const HCGraphTy &hg);
 #elif defined(RIPPLES_ENABLE_HIP)
-template gpu_graph<HIP, IMMGraphTy> *make_gpu_graph<HIP, IMMGraphTy>(
-    const IMMGraphTy &);
-template gpu_graph<HIP, HCGraphTy> *make_gpu_graph<HIP, HCGraphTy>(
-    const HCGraphTy &);
+template gpu_graph<GPURuntime::HIP, IMMGraphTy> *make_gpu_graph(
+    const IMMGraphTy &hg);
+template gpu_graph<GPURuntime::HIP, HCGraphTy> *make_gpu_graph(
+    const HCGraphTy &hg);
+#else
+#error "No GPU runtime defined"
 #endif
 }  // namespace ripples

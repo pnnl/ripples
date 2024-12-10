@@ -59,7 +59,7 @@
 
 #include "ripples/add_rrrset.h"
 #include "ripples/batched_add_rrrset.h"
-#include "ripples/imm_execution_record.h"
+#include "ripples/generate_rrr_sets_record.h"
 
 #if defined(RIPPLES_ENABLE_CUDA) || defined(RIPPLES_ENABLE_HIP)
 #include "ripples/gpu/bfs.h"
@@ -83,6 +83,8 @@ std::atomic<size_t> gpu_id{0};
 #endif
 
 #define BENCHMARK
+
+#define PRINTF_TIL_YOU_DROP
 
 namespace ripples {
 
@@ -117,7 +119,7 @@ class WalkWorker {
 #if GPU_PROFILE
  public:
   virtual void begin_prof_iter() = 0;
-  virtual void prof_record(typename IMMExecutionRecord::walk_iteration_prof &,
+  virtual void prof_record(typename GenerateRRRSetsRecord::walk_iteration_prof &,
                            size_t) = 0;
 #endif
 };
@@ -162,7 +164,24 @@ class CPUWalkWorker : public WalkWorker<GraphTy, ItrTy> {
       auto last = first;
       std::advance(last, batch_size);
       if (last > end) last = end;
+      #ifdef PRINTF_TIL_YOU_DROP
+      // auto start_time = std::chrono::high_resolution_clock::now();
+      #endif
       batch(first, last, root_nodes_begin + offset);
+      #ifdef PRINTF_TIL_YOU_DROP
+      // auto end_time = std::chrono::high_resolution_clock::now();
+      // auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(end_time - start_time);
+      // auto num_rr_sets = std::distance(first, last);
+      // size_t total_vertices = 0;
+      // for (auto it = first; it != last; ++it) {
+      //   total_vertices += it->size();
+      // }
+      // std::string time_string = "CPU time taken for batch: " +
+      //     std::to_string(duration.count()) +
+      //     " ms, Number of RR sets: " + std::to_string(num_rr_sets) +
+      //     ", Total vertices: " + std::to_string(total_vertices) + "\n";
+      // std::cout << time_string << std::flush;
+      #endif
     }
   }
 #endif
@@ -180,12 +199,19 @@ class CPUWalkWorker : public WalkWorker<GraphTy, ItrTy> {
       std::advance(first, i);
       auto last = first;
       std::advance(last, batch_size);
-      if (last > root_nodes_begin + worksize)
+      if (last > root_nodes_begin + worksize){
         last = root_nodes_begin + worksize;
+      }
       auto out_begin = std::min(begin + i, begin + worksize);
-      BatchedBFSNeighborColorOMP(this->G_, first, last, out_begin, local_rng,
+      if(cpu_threads_per_team_ == 1){
+        BatchedBFSNeighborColor(this->G_, first, last, out_begin, local_rng,
+                                 diff_model_tag{}, cpu_ctx_);
+      }
+      else{
+        BatchedBFSNeighborColorOMP(this->G_, first, last, out_begin, local_rng,
                                  diff_model_tag{}, cpu_ctx_,
                                  cpu_threads_per_team_);
+      }
     }
   }
 
@@ -236,9 +262,15 @@ class CPUWalkWorker : public WalkWorker<GraphTy, ItrTy> {
     auto local_rng = rng_;
     auto v_end = std::min(v_start + max_batch_size_, v_start + size);
     while (v_start < (root_nodes_first + size)) {
-      BatchedBFSNeighborColorOMP(this->G_, v_start, v_end, first, local_rng,
+      if(cpu_threads_per_team_ == 1){
+        BatchedBFSNeighborColor(this->G_, v_start, v_end, first, local_rng,
+                                 diff_model_tag{}, cpu_ctx_);
+      }
+      else{
+        BatchedBFSNeighborColorOMP(this->G_, v_start, v_end, first, local_rng,
                                  diff_model_tag{}, cpu_ctx_,
                                  cpu_threads_per_team_);
+      }
       first += std::distance(v_start, v_end);
       v_start += max_batch_size_;
       v_end = std::min(v_start + max_batch_size_, root_nodes_first + size);
@@ -276,10 +308,10 @@ class CPUWalkWorker : public WalkWorker<GraphTy, ItrTy> {
     else
       console->info("> idle worker");
   }
-  void prof_record(typename IMMExecutionRecord::walk_iteration_prof &r,
+  void prof_record(typename GenerateRRRSetsRecord::walk_iteration_prof &r,
                    size_t i) {
     assert(i < prof_bd.size());
-    typename IMMExecutionRecord::cpu_walk_prof res;
+    typename GenerateRRRSetsRecord::cpu_walk_prof res;
     auto &p(prof_bd[i]);
     res.NumSets = p.n_;
     res.Total = std::chrono::duration_cast<decltype(res.Total)>(p.d_);
@@ -515,10 +547,10 @@ class GPUWalkWorker<GraphTy, PRNGeneratorTy, ItrTy, linear_threshold_tag>
     } else
       console->info("> idle worker");
   }
-  void prof_record(typename IMMExecutionRecord::walk_iteration_prof &r,
+  void prof_record(typename GenearteRRRSetsRecord::walk_iteration_prof &r,
                    size_t i) {
     assert(i < prof_bd.size());
-    typename IMMExecutionRecord::gpu_walk_prof res;
+    typename GenerateRRRSetsRecord::gpu_walk_prof res;
     auto &p(prof_bd[i]);
     res.NumSets = p.n_;
     res.Total = std::chrono::duration_cast<decltype(res.Total)>(p.d_);
@@ -540,7 +572,7 @@ class GPUWalkWorker<GraphTy, PRNGeneratorTy, ItrTy, independent_cascade_tag>
     config_t(size_t) {}
 
     // This should be unused here.
-    size_t num_gpu_threads() const { return 1 << 15; }
+    size_t num_gpu_threads() const { throw std::runtime_error("This shouldn't be used."); return 1 << 15;}
   };
   GPUWalkWorker(const config_t &conf, const GraphTy &G,
                 const PRNGeneratorTy &rng,
@@ -552,6 +584,11 @@ class GPUWalkWorker<GraphTy, PRNGeneratorTy, ItrTy, independent_cascade_tag>
         gpu_ctx_(ctx),
         batch_size_(gpu_batch_size),
         pause_threshold_(pause_threshold) {
+  // allocate device-size RNGs
+  GPU<RUNTIME>::set_device(ctx->gpu_id);
+  GPU<RUNTIME>::device_malloc(
+      (void **)&d_trng_state_,
+      G.num_nodes() * sizeof(PRNGeneratorTy));
 #ifdef HIERARCHICAL
     GPUCalculateDegrees(this->G_, *gpu_ctx_, ripples::independent_cascade_tag{},
                         small_frontier_max, medium_frontier_max,
@@ -588,6 +625,7 @@ class GPUWalkWorker<GraphTy, PRNGeneratorTy, ItrTy, independent_cascade_tag>
                            std::to_string(gpu_id++) + ".csv";
     bfs_ctx_.print_utilization_to_file(filename);
 #endif
+    GPU<RUNTIME>::device_free(d_trng_state_);
   }
 
 #ifdef REORDERING
@@ -619,7 +657,24 @@ class GPUWalkWorker<GraphTy, PRNGeneratorTy, ItrTy, independent_cascade_tag>
 #else  // PAUSE_AND_RESUME
 #ifdef REORDERING
       // std::advance(root_nodes_begin, offset);
+      #ifdef PRINTF_TIL_YOU_DROP
+      auto start_time = std::chrono::high_resolution_clock::now();
+      #endif
       batch(first, last, root_nodes_begin + offset);
+      #ifdef PRINTF_TIL_YOU_DROP
+      auto end_time = std::chrono::high_resolution_clock::now();
+      auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(end_time - start_time);
+      auto num_rr_sets = std::distance(first, last);
+      size_t total_vertices = 0;
+      for (auto it = first; it != last; ++it) {
+        total_vertices += it->size();
+      }
+      std::string time_string = "GPU time taken for batch: " +
+          std::to_string(duration.count()) +
+          " ms, Number of RR sets: " + std::to_string(num_rr_sets) +
+          ", Total vertices: " + std::to_string(total_vertices) + "\n";
+      std::cout << time_string << std::flush;
+      #endif
 #else   // REORDERING
       batch(first, last);
 #endif  // REORDERING
@@ -628,7 +683,14 @@ class GPUWalkWorker<GraphTy, PRNGeneratorTy, ItrTy, independent_cascade_tag>
   }
 
   void rng_setup(const PRNGeneratorTy &master_rng, size_t num_seqs,
-                 size_t first_seq) {}
+                 size_t first_seq) {
+    GPU<RUNTIME>::set_device(gpu_ctx_->gpu_id);
+    size_t block_size = 256;
+    size_t num_blocks = (this->G_.num_nodes() + block_size - 1) / block_size;
+    size_t chunk_size = this->G_.num_nodes();
+    gpu_ic_rng_setup(d_trng_state_, master_rng, num_seqs, first_seq,
+                     num_blocks, block_size, chunk_size);
+  }
 
   size_t batch_size() const { return batch_size_; }
 
@@ -650,8 +712,8 @@ class GPUWalkWorker<GraphTy, PRNGeneratorTy, ItrTy, independent_cascade_tag>
       bool reset = remaining == 0;
       remaining = GPUBatchedBFSMultiColorFusedReload(
           this->G_, *gpu_ctx_, first, last, out_begin,
-          ripples::independent_cascade_tag{}, bfs_ctx_, threshold, batch_size,
-          reset);
+          d_trng_state_, ripples::independent_cascade_tag{}, bfs_ctx_, threshold,
+          batch_size, reset);
       i += batch_size - remaining;
     }
 #else  // !PAUSE_AND_RESUME
@@ -664,13 +726,13 @@ class GPUWalkWorker<GraphTy, PRNGeneratorTy, ItrTy, independent_cascade_tag>
         last = root_nodes_begin + worksize;
       auto out_begin = std::min(begin + i, begin + worksize);
 #ifdef FUSED_COLOR_SET
-      GPUBatchedBFSMultiColorFused(this->G_, *gpu_ctx_, first, last, out_begin,
-                                   ripples::independent_cascade_tag{},
-                                   bfs_ctx_);
+      GPUBatchedBFSMultiColorFused(
+          this->G_, *gpu_ctx_, first, last, out_begin,
+          d_trng_state_, ripples::independent_cascade_tag{}, bfs_ctx_);
 #else
       GPUBatchedTieredQueueBFS(this->G_, *gpu_ctx_, first, last, out_begin,
-                               ripples::independent_cascade_tag{}, bfs_ctx_,
-                               NumColors);
+                               d_trng_state_, ripples::independent_cascade_tag{},
+                               bfs_ctx_, NumColors);
 #endif
     }
 #endif  // !PAUSE_AND_RESUME
@@ -679,6 +741,7 @@ class GPUWalkWorker<GraphTy, PRNGeneratorTy, ItrTy, independent_cascade_tag>
  private:
   size_t batch_size_;
   PRNGeneratorTy rng_;
+  PRNGeneratorTy *d_trng_state_;
   trng::uniform_int_dist u_;
   std::shared_ptr<gpu_ctx<RUNTIME, GraphTy>> gpu_ctx_;
 #ifdef HIERARCHICAL
@@ -690,6 +753,7 @@ class GPUWalkWorker<GraphTy, PRNGeneratorTy, ItrTy, independent_cascade_tag>
   BFSMultiContext<GraphTy, uint32_t, MAX_COLOR_WIDTH, ItrTy> bfs_ctx_;
 #else  // PAUSE_AND_RESUME
 #ifdef FUSED_COLOR_SET
+  // BFSMultiContext<GraphTy, uint32_t, MAX_COLOR_WIDTH> bfs_ctx_;
   BFSMultiContext<GraphTy, uint32_t, MAX_COLOR_WIDTH> bfs_ctx_;
 #else   // FUSED_COLOR_SET
   BFSContext<GraphTy, uint64_t> bfs_ctx_;
@@ -706,20 +770,20 @@ class GPUWalkWorker<GraphTy, PRNGeneratorTy, ItrTy, independent_cascade_tag>
     auto roots_end = root_nodes_first + size;
 #ifdef PROFILE_OVERHEAD
     return GPUBatchedBFSMultiColorFusedReload(
-        this->G_, *gpu_ctx_, roots_begin, roots_end, first,
+        this->G_, *gpu_ctx_, roots_begin, roots_end, first, d_trng_state_, 
         ripples::independent_cascade_tag{}, bfs_ctx_, threshold, batch_size,
         reset);
 #else   // !PROFILE_OVERHEAD
     if ((threshold == 1.0) && (reset == true)) {
       // std::cout << "Running non-reload version" << std::endl;
       GPUBatchedBFSMultiColorFused(this->G_, *gpu_ctx_, roots_begin, roots_end,
-                                   first, ripples::independent_cascade_tag{},
+                                   first, d_trng_state_, ripples::independent_cascade_tag{},
                                    bfs_ctx_);
       return 0;
     } else {
       // std::cout << "Running reload version" << std::endl;
       return GPUBatchedBFSMultiColorFusedReload(
-          this->G_, *gpu_ctx_, roots_begin, roots_end, first,
+          this->G_, *gpu_ctx_, roots_begin, roots_end, first, d_trng_state_, 
           ripples::independent_cascade_tag{}, bfs_ctx_, threshold, batch_size,
           reset);
     }
@@ -748,10 +812,10 @@ class GPUWalkWorker<GraphTy, PRNGeneratorTy, ItrTy, independent_cascade_tag>
 
 #if defined(FUSED_COLOR_SET)
   GPUBatchedBFSMultiColorFused(this->G_, *gpu_ctx_, roots_begin, roots_end,
-                               first, ripples::independent_cascade_tag{},
+                               first, d_trng_state_, ripples::independent_cascade_tag{},
                                bfs_ctx_);
 #elif defined(HIERARCHICAL)
-    GPUBatchedTieredQueueBFS(this->G_, *gpu_ctx_, roots_begin, roots_end, first,
+    GPUBatchedTieredQueueBFS(this->G_, *gpu_ctx_, roots_begin, roots_end, first, d_trng_state_,
                              ripples::independent_cascade_tag{}, bfs_ctx_,
                              NumColors);
 #elif defined(EXPERIMENTAL_SCAN_BFS)
@@ -807,14 +871,18 @@ class StreamingRRRGenerator {
     }
 
     typename gpu_worker_t::config_t gpu_conf(num_gpu_workers_);
-    auto num_gpu_threads_per_worker = gpu_conf.num_gpu_threads();
+    size_t num_gpu_threads_per_worker = std::is_same<diff_model_tag,
+                                                     independent_cascade_tag>::value
+                                           ? G.num_nodes()
+                                           : gpu_conf.num_gpu_threads();
+    // auto num_gpu_threads_per_worker = gpu_conf.num_gpu_threads();
     auto num_rng_sequences =
-        num_cpu_workers_ * cpu_batch_size +
+        num_cpu_workers_ * cpu_batch_size_ +
         num_gpu_workers_ * (num_gpu_threads_per_worker + 1);
-    auto gpu_seq_offset = num_cpu_workers_ * cpu_batch_size + num_gpu_workers_;
+    auto gpu_seq_offset = num_cpu_workers_ * cpu_batch_size_ + num_gpu_workers_;
 #else
     assert(num_gpu_workers_ == 0);
-    size_t num_rng_sequences = num_cpu_workers_ * cpu_batch_size;
+    size_t num_rng_sequences = num_cpu_workers_ * cpu_batch_size_;
 #endif
 
     console->info("CPU Workers {}", num_cpu_workers);
@@ -854,15 +922,15 @@ class StreamingRRRGenerator {
         console->info("> mapping: omp={}\t->\tCPU", omp_num);
         console->info("cpu_worker_id = {}", cpu_worker_id);
         std::vector<std::vector<PRNGeneratorTy>> rng(
-            cpu_threads_per_team_, std::vector<PRNGeneratorTy>(cpu_batch_size));
+            cpu_threads_per_team_, std::vector<PRNGeneratorTy>(cpu_batch_size_));
 #pragma omp parallel for
         for (size_t i = 0; i < cpu_threads_per_team_; ++i) {
-          for (size_t j = 0; j < cpu_batch_size; ++j) {
+          for (size_t j = 0; j < cpu_batch_size_; ++j) {
             rng[i][j] = master_rng;
             rng[i][j].split(
                 num_rng_sequences,
-                cpu_worker_id * cpu_threads_per_team_ * cpu_batch_size +
-                    i * cpu_batch_size + j);
+                cpu_worker_id * cpu_threads_per_team_ * cpu_batch_size_ +
+                    i * cpu_batch_size_ + j);
           }
         }
         workers.push_back(new cpu_worker_t(G, rng, cpu_threads_per_team_));
@@ -955,7 +1023,7 @@ class StreamingRRRGenerator {
 #endif
   }
 
-  void generate(ItrTy begin, ItrTy end, IMMExecutionRecord &record) {
+  void generate(ItrTy begin, ItrTy end, GenerateRRRSetsRecord &record) {
 #if GPU_PROFILE
     auto start = std::chrono::high_resolution_clock::now();
     for (auto &w : workers) w->begin_prof_iter();
@@ -974,23 +1042,28 @@ class StreamingRRRGenerator {
 #endif
 #endif
 
-    // // Figure out if the total batch size is larger than the work needed to
-    // be executed size_t total_batch_size = num_cpu_workers_ * cpu_batch_size_
-    // + num_gpu_workers_ * gpu_batch_size_; size_t work_size_ =
-    // std::distance(begin, end); size_t new_gpu_batch_size_ = gpu_batch_size_;
-    // size_t new_cpu_batch_size_ = cpu_batch_size_;
-    // if (total_batch_size > work_size_) {
-    //   // If so, we need to adjust the batch sizes, prioritizing the GPU
-    //   workers if (num_gpu_workers_ > 0) {
-    //     new_gpu_batch_size_ = std::min((std::distance(begin, end) +
-    //     num_gpu_workers_ - 1) / num_gpu_workers_, gpu_batch_size_);
-    //   }
-    //   work_size_ -= num_gpu_workers_ * new_gpu_batch_size_;
-    //   if (num_cpu_workers_ > 0) {
-    //     new_cpu_batch_size_ = std::min((work_size_ + num_cpu_workers_ - 1) /
-    //     num_cpu_workers_, cpu_batch_size_);
-    //   }
-    // }
+    // Figure out if the total batch size is larger than the work needed to
+    // be executed
+    size_t total_batch_size =
+        num_cpu_workers_ * cpu_batch_size_ + num_gpu_workers_ * gpu_batch_size_;
+    size_t work_size_ = std::distance(begin, end);
+    size_t new_gpu_batch_size_ = gpu_batch_size_;
+    size_t new_cpu_batch_size_ = cpu_batch_size_;
+    if (total_batch_size > work_size_) {
+      // If so, we need to adjust the batch sizes, prioritizing the GPU workers
+      if (num_gpu_workers_ > 0) {
+        new_gpu_batch_size_ =
+            std::min((std::distance(begin, end) + num_gpu_workers_ - 1) /
+                         num_gpu_workers_,
+                     gpu_batch_size_);
+      }
+      work_size_ -= num_gpu_workers_ * new_gpu_batch_size_;
+      if (num_cpu_workers_ > 0) {
+        new_cpu_batch_size_ =
+            std::min((work_size_ + num_cpu_workers_ - 1) / num_cpu_workers_,
+                     cpu_batch_size_);
+      }
+    }
     // Set omp max levels to 3 to allow for nested parallelism
     if (num_cpu_teams_) {
       omp_set_max_active_levels(3);
@@ -1010,10 +1083,10 @@ class StreamingRRRGenerator {
 #ifdef REORDERING
             if (workers[rank]->is_cpu()) {
               workers[rank]->svc_loop(mpmc_head, begin, end, root_nodes.begin(),
-                                      cpu_batch_size_);
+                                      new_cpu_batch_size_);
             } else {
               workers[rank]->svc_loop(mpmc_head, begin, end, root_nodes.begin(),
-                                      gpu_batch_size_);
+                                      new_gpu_batch_size_);
             }
 #else
             workers[rank]->svc_loop(mpmc_head, begin, end);
@@ -1024,7 +1097,7 @@ class StreamingRRRGenerator {
         else {
 #ifdef REORDERING
           workers[rank_outer]->svc_loop(mpmc_head, begin, end,
-                                        root_nodes.begin(), cpu_batch_size_);
+                                        root_nodes.begin(), new_cpu_batch_size_);
 #else
           workers[rank_outer]->svc_loop(mpmc_head, begin, end);
 #endif
@@ -1036,7 +1109,7 @@ class StreamingRRRGenerator {
       {
 #ifdef REORDERING
         workers[omp_get_thread_num()]->svc_loop(
-            mpmc_head, begin, end, root_nodes.begin(), gpu_batch_size_);
+            mpmc_head, begin, end, root_nodes.begin(), new_gpu_batch_size_);
 #else
         workers[omp_get_thread_num()]->svc_loop(mpmc_head, begin, end);
 #endif
@@ -1076,7 +1149,7 @@ class StreamingRRRGenerator {
 
 #if defined(RIPPLES_ENABLE_CUDA) || defined(RIPPLES_ENABLE_HIP)
   void benchmark(size_t num_batches, size_t iterations,
-                 IMMExecutionRecord &record) {
+                 GenerateRRRSetsRecord&record) {
     console->info("Microbenchmarking");
     // Measure time of for loop
     auto micro_start = std::chrono::high_resolution_clock::now();
@@ -1154,8 +1227,8 @@ class StreamingRRRGenerator {
                                        (double)gpu_avg / (double)cpu_avg)),
                    (size_t)64);
       // Print adjusted
-      // std::cout << "Adjusted CPU batch size: " << cpu_batch_size_ <<
-      // std::endl;
+      std::cout << "Adjusted CPU batch size: " << cpu_batch_size_ <<
+      std::endl;
       if (cpu_batch_size_ == old_cpu_batch_size) {
         break;
       }

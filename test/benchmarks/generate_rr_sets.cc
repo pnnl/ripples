@@ -1,5 +1,6 @@
 #include <string>
 #include <vector>
+#include <iostream>
 
 #include "omp.h"
 
@@ -28,8 +29,12 @@ void benchmark(const std::string &report_dir, const std::string &modelName,
         report_dir + "/" + modelName + "-" + std::to_string(scale) + ".json";
     std::ofstream OS(report_file);
 
+    std::cout << "Generating " << modelName << " graph with scale " << scale << std::endl;
+
     auto gen = G(scale);
     NetworKit::Graph G = gen.generate();
+
+    std::cout << "Populating edge list" << std::endl;
 
     auto edgeRange = G.edgeRange();
     #if defined RIPPLES_ENABLE_UINT8_WEIGHTS
@@ -48,6 +53,8 @@ void benchmark(const std::string &report_dir, const std::string &modelName,
       EL.push_back({uint32_t(e.u), uint32_t(e.v), wt});
     }
 
+    std::cout << EL.size() << " edges" << std::endl;
+
     trng::lcg64 generator;
     generator.seed(0UL);
     generator.split(2, 1);
@@ -63,8 +70,34 @@ void benchmark(const std::string &report_dir, const std::string &modelName,
                                     ripples::ForwardDirection<uint32_t>>;
     using GraphBwd = ripples::Graph<uint32_t, dest_type,
                                     ripples::BackwardDirection<uint32_t>>;
+    std::cout << "Building forward graph" << std::endl;
     GraphFwd Gfwd(EL.begin(), EL.end(), false);
+
+    // Traverse the graph and all of its edges, ensure ids are within numEdges and numNodes
+    // for (size_t u = 0; u < Gfwd.num_nodes(); ++u) {
+    //   for (auto e : Gfwd.neighbors(u)) {
+    //     if (e.vertex >= Gfwd.num_nodes()) {
+    //       std::cerr << "Invalid forward edge: " << u << " -> " << e.vertex << std::endl;
+    //       std::cerr << "numNodes: " << Gfwd.num_nodes() << std::endl;
+    //       std::cerr << "numEdges: " << Gfwd.num_edges() << std::endl;
+    //       throw std::runtime_error("Invalid forward edge");
+    //     }
+    //   }
+    // }
+
+    std::cout << "Building backwards graph" << std::endl;
     GraphBwd Gbwd = Gfwd.get_transpose();
+
+    // for (size_t u = 0; u < Gbwd.num_nodes(); ++u) {
+    //   for (auto e : Gbwd.neighbors(u)) {
+    //     if (e.vertex >= Gbwd.num_nodes()) {
+    //       std::cerr << "Invalid back edge: " << u << " -> " << e.vertex << std::endl;
+    //       std::cerr << "numNodes: " << Gbwd.num_nodes() << std::endl;
+    //       std::cerr << "numEdges: " << Gbwd.num_edges() << std::endl;
+    //       throw std::runtime_error("Invalid back edge");
+    //     }
+    //   }
+    // }
 
     std::vector<ripples::RRRset<GraphBwd>> RRRsets(numRRRsets);
     ripples::IMMExecutionRecord record;
@@ -78,24 +111,28 @@ void benchmark(const std::string &report_dir, const std::string &modelName,
             CFG.streaming_cpu_teams, CFG.streaming_gpu_workers,
             CFG.gpu_batch_size, CFG.cpu_batch_size,
             CFG.worker_to_gpu);
-
-    ripples::GenerateRRRSets(Gbwd, se, RRRsets.begin(), RRRsets.end(), record,
-                             ripples::independent_cascade_tag{},
-                             ripples::omp_parallel_tag{});
+    
+    std::cout << "Generating RRR sets" << std::endl;
 
     bench.complexityN(scale)
-        .title("Seed Selection no Atomics")
+        .title("Sampling Struct of Arrays")
         .performanceCounters(true)
         .output(nullptr)
         .run(modelName,
              [&]() {
-               auto r = ripples::FindMostInfluentialSet(
-                   Gbwd, CFG, RRRsets.begin(), RRRsets.end(), record,
-                   CFG.seed_select_max_gpu_workers != 0,
-                   ripples::omp_parallel_tag{});
-               ankerl::nanobench::doNotOptimizeAway(r);
+               ripples::GenerateRRRSets(
+                             Gbwd, se, RRRsets.begin(), RRRsets.end(), record,
+                             ripples::independent_cascade_tag{},
+                             ripples::omp_parallel_tag{});
              })
         .render(ankerl::nanobench::templates::json(), OS);
+    
+    std::cout << "RRR Set Generation Done!" << std::endl;
+
+    // auto r = ripples::FindMostInfluentialSet(
+    //                Gbwd, CFG, RRRsets.begin(), RRRsets.end(), record,
+    //                CFG.seed_select_max_gpu_workers != 0,
+    //                ripples::omp_parallel_tag{});
   }
 }
 
@@ -130,15 +167,14 @@ int main(int argc, char **argv) {
   CFG.k = 10;
 
   size_t numThreads{0};
-#pragma omp parallel
-  {
-#pragma omp single
-    numThreads = omp_get_num_threads();
-  }
+  numThreads = omp_get_max_threads();
+
+  std::cout << "Using " << numThreads << " threads" << std::endl;
 
   switch (ConfigFor) {
 #if defined(RIPPLES_ENABLE_CUDA) || defined(RIPPLES_ENABLE_HIP)
     case EngineConfig::Both:
+      std::cout << "Using CPU and GPU" << std::endl;
       CFG.streaming_workers = numThreads;
       CFG.streaming_gpu_workers =
           ripples::GPURuntimeTrait<RUNTIME>::num_devices();
@@ -147,6 +183,7 @@ int main(int argc, char **argv) {
           ripples::GPURuntimeTrait<RUNTIME>::num_devices();
       break;
     case EngineConfig::GPU:
+      std::cout << "Using GPU only" << std::endl;
       CFG.streaming_workers =
           1 + ripples::GPURuntimeTrait<RUNTIME>::num_devices();
       CFG.streaming_gpu_workers =
@@ -159,11 +196,13 @@ int main(int argc, char **argv) {
 #endif
     default:
     case EngineConfig::CPU:
+      std::cout << "Using CPU only" << std::endl;
       CFG.streaming_workers = numThreads;
       CFG.streaming_gpu_workers = 0;
       CFG.streaming_cpu_teams = 0;
       CFG.seed_select_max_workers = numThreads;
       CFG.seed_select_max_gpu_workers = 0;
+      CFG.cpu_batch_size = 64;
   }
 
   benchmark(report_dir, "RMAT", [](int scale) {
