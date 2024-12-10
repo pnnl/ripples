@@ -55,6 +55,42 @@
 
 namespace ripples {
 
+template <typename result_t>
+class uniform_int_chop {
+ public:
+  // uniform_int_chop();
+  template <typename PRNGeneratorTy>
+  result_t operator()(PRNGeneratorTy &generator){
+    static_assert(sizeof(typename PRNGeneratorTy::result_type) >= sizeof(result_t),
+                  "PRNGeneratorTy::result_type is too small, must be larger than"
+                  " the result type.");
+    constexpr size_t num_bits = sizeof(result_t) * 8;
+    constexpr size_t num_gen_bits = sizeof(typename PRNGeneratorTy::result_type) * 8;
+    constexpr size_t num_leftover = num_gen_bits - num_bits;
+    return static_cast<result_t>(generator() >> num_leftover);
+  }
+};
+
+// template <typename DistributionTy, typename WeightTy>
+// class DistWrapper {
+//  public:
+//   using result_type = typename DistributionTy::result_type;
+//   using weight_type = WeightTy;
+//   DistWrapper();
+//   template <typename PRNGeneratorTy>
+//   WeightTy operator()(PRNGeneratorTy &generator) {
+//     if constexpr (std::is_floating_point_v<WeightTy>) {
+//       return static_cast<WeightTy>(dist_(generator));
+//     } else {
+//       auto upper_bound = std::numeric_limits<WeightTy>::max();
+//       return static_cast<WeightTy>(dist_(generator) * upper_bound);
+//     }
+//   }
+
+//  private:
+//   DistributionTy &dist_;
+// };
+
 //! \brief Execute a randomize BFS to generate a Random RR Set.
 //!
 //! \tparam GraphTy The type of the graph.
@@ -71,8 +107,12 @@ void AddRRRSet(const GraphTy &G, typename GraphTy::vertex_type r,
                PRNGeneratorTy &generator, RRRset<GraphTy> &result,
                diff_model_tag &&tag) {
   using vertex_type = typename GraphTy::vertex_type;
+  using dist_t = std::conditional_t<
+      std::is_floating_point_v<typename GraphTy::weight_type>,
+      trng::uniform01_dist<typename GraphTy::weight_type>,
+      uniform_int_chop<typename GraphTy::weight_type>>;
 
-  trng::uniform01_dist<float> value;
+  dist_t value;
 
   std::queue<vertex_type> queue;
   std::vector<bool> visited(G.num_nodes(), false);

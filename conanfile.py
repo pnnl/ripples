@@ -8,13 +8,15 @@ class RipplesConan(ConanFile):
                'nvidia_cub' : [True, False],
                'enable_benchmarks' : [True, False],
                'gpu' : [None, 'amd', 'nvidia'],
-               'metall_checkpointing' : [True, False]}
+               'metall_checkpointing' : [True, False],
+               'weight_type' : ['float', 'uint16', 'uint8']}
     default_options = {'gperftools': True,
                        'nvidia_cub': False,
                        'enable_benchmarks' : False,
                        'metall': False,
                        'gpu' : None,
-                       'metall_checkpointing' : True}
+                       'metall_checkpointing' : True,
+                       'weight_type' : 'float'}
     settings = "os", "compiler", "build_type", "arch"
 
     def configure(self):
@@ -38,6 +40,9 @@ class RipplesConan(ConanFile):
 
         if self.options.gperftools:
             tc.cache_variables['RIPPLES_ENABLE_TCMALLOC'] = True
+        tc.cache_variables['RIPPLES_ENABLE_FLOAT_WEIGHTS'] = self.options.weight_type == 'float'
+        tc.cache_variables['RIPPLES_ENABLE_UINT16_WEIGHTS'] = self.options.weight_type == 'uint16'
+        tc.cache_variables['RIPPLES_ENABLE_UINT8_WEIGHTS'] = self.options.weight_type == 'uint8'
         tc.generate()
         deps = CMakeDeps(self)
         deps.generate()

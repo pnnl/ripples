@@ -48,8 +48,13 @@
 #include "ripples/streaming_rrr_generator.h"
 
 namespace ripples {
-
-using dest_type = ripples::WeightedDestination<uint32_t, float>;
+#if defined RIPPLES_ENABLE_UINT8_WEIGHTS
+  using dest_type = ripples::WeightedDestination<uint32_t, uint8_t>;
+#elif defined RIPPLES_ENABLE_UINT16_WEIGHTS
+  using dest_type = ripples::WeightedDestination<uint32_t, uint16_t>;
+#else
+  using dest_type = ripples::WeightedDestination<uint32_t, float>;
+#endif // RIPPLES_WEIGHT_QUANT
 #if defined ENABLE_METALL
   using GraphFwd =
       ripples::Graph<uint32_t, dest_type, ripples::ForwardDirection<uint32_t>,

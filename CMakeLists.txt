@@ -38,12 +38,23 @@ option(RIPPLES_ENABLE_CUDA "Enable the NVIDIA GPU acceleration" OFF)
 option(RIPPLES_ENABLE_HIP  "Enable the HIP GPU acceleration" OFF)
 option(RIPPLES_ENABLE_METALL "Enable support for the Metall library" OFF)
 option(RIPPLES_ENABLE_METALL_CHECKPOINTING "Enable checkpointing with Metall" OFF)
+option(RIPPLES_ENABLE_FLOAT_WEIGHTS "Enable float weights" OFF)
+option(RIPPLES_ENABLE_UINT16_WEIGHTS "Enable uint16_t weights" OFF)
+option(RIPPLES_ENABLE_UINT8_WEIGHTS "Enable uint8_t weights" OFF)
 
 include_directories(${CMAKE_CURRENT_SOURCE_DIR}/include)
 
 set(CMAKE_CXX_FLAGS_RELEASE "${CMAKE_CXX_FLAGS_RELEASE} -O3")
 set(CMAKE_CXX_FLAGS_DEBUG "${CMAKE_CXX_FLAGS_DEBUG} -g")
 set(CMAKE_CXX_FLAGS_RELWITHDEBINFO "${CMAKE_CXX_FLAGS_RELEASE} ${CMAKE_CXX_FLAGS_DEBUG}")
+
+# Global compile definitions
+add_compile_definitions(
+  $<$<BOOL:${RIPPLES_ENABLE_FLOAT_WEIGHTS}>:RIPPLES_ENABLE_FLOAT_WEIGHTS=1>
+  $<$<BOOL:${RIPPLES_ENABLE_UINT16_WEIGHTS}>:RIPPLES_ENABLE_UINT16_WEIGHTS=1>
+  $<$<BOOL:${RIPPLES_ENABLE_UINT8_WEIGHTS}>:RIPPLES_ENABLE_UINT8_WEIGHTS=1>
+)
+
 
 find_package(MPI)
 find_package(OpenMP)
